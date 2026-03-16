@@ -1,0 +1,10 @@
+dbs:
+  - path: /app/data/pb_data/data.db
+    replicas:
+      - type: s3
+        endpoint: ${LITESTREAM_REPLICA_ENDPOINT}
+        bucket: ${LITESTREAM_REPLICA_BUCKET}
+        path: data.db
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true

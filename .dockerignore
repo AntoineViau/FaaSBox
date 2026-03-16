@@ -1,0 +1,12 @@
+.git/
+data/pb_data/
+data/pb_public/
+ui/node_modules/
+ui/.angular/
+.claude/
+functions/
+tickets/
+docs/
+server/faasbox
+*.md
+!README.md
