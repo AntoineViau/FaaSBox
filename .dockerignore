@@ -3,9 +3,9 @@ data/pb_data/
 data/pb_public/
 ui/node_modules/
 ui/.angular/
-.claude/
+.claude
 functions/
-tickets/
+tickets
 docs/
 server/faasbox
 *.md

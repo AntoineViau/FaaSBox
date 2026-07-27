@@ -7,11 +7,12 @@ server/faasbox
 server/functions/
 *.log
 .env*
+# Internal (private repo, symlinked in — no trailing slash so symlinks match too)
 CLAUDE.md
 GEMINI.md
-.claude/
-archives/
-tickets/
+.claude
+archives
+tickets
 .vscode
 .DS_Store
 Thumbs.db
