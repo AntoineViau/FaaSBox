@@ -8,8 +8,43 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 )
+
+// writeDepsMarker records hash as the dependency spec node_modules was built for.
+func writeDepsMarker(t *testing.T, dir, hash string) {
+	t.Helper()
+	modPath := filepath.Join(dir, "node_modules")
+	if err := os.MkdirAll(modPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modPath, depsHashFile), []byte(hash), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// installCounter puts a fake "bun" on PATH and returns a function reporting how
+// many times it was invoked.
+func installCounter(t *testing.T) func() int {
+	t.Helper()
+	binDir := t.TempDir()
+	countPath := filepath.Join(binDir, "runs")
+	script := "#!/bin/sh\necho x >> \"" + countPath + "\"\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(binDir, "bun"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	oldPath := os.Getenv("PATH")
+	os.Setenv("PATH", binDir+string(os.PathListSeparator)+oldPath)
+	t.Cleanup(func() { os.Setenv("PATH", oldPath) })
+
+	return func() int {
+		data, err := os.ReadFile(countPath)
+		if err != nil {
+			return 0
+		}
+		return strings.Count(string(data), "\n")
+	}
+}
 
 func TestEnsureDeps_NoPackageJson(t *testing.T) {
 	dir := t.TempDir()
@@ -20,82 +55,123 @@ func TestEnsureDeps_NoPackageJson(t *testing.T) {
 	}
 }
 
-func TestEnsureDeps_NodeModulesNewer(t *testing.T) {
+func TestEnsureDeps_MarkerMatches(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create package.json with an old mtime
-	pkgPath := filepath.Join(dir, "package.json")
-	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	past := time.Now().Add(-1 * time.Hour)
-	os.Chtimes(pkgPath, past, past)
-
-	// Create node_modules with a newer mtime (now)
-	modPath := filepath.Join(dir, "node_modules")
-	if err := os.MkdirAll(modPath, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// node_modules is newer → should skip install and return nil
-	err := ensureDeps(context.Background(), dir)
+	hash, err := depsHash(dir)
 	if err != nil {
-		t.Errorf("expected nil when node_modules is newer, got: %v", err)
-	}
-}
-
-func TestEnsureDeps_NodeModulesOlder(t *testing.T) {
-	dir := t.TempDir()
-
-	// Create node_modules with an old mtime
-	modPath := filepath.Join(dir, "node_modules")
-	if err := os.MkdirAll(modPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	past := time.Now().Add(-1 * time.Hour)
-	os.Chtimes(modPath, past, past)
+	writeDepsMarker(t, dir, hash)
 
-	// Create package.json with current mtime (newer than node_modules)
-	pkgPath := filepath.Join(dir, "package.json")
-	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{}}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// node_modules is older → should try bun install.
-	// With a cancelled context, we can verify it actually attempts the install.
+	// Marker matches → install must be skipped. The cancelled context would make
+	// bun install fail, so a nil error proves nothing was run.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := ensureDeps(ctx, dir)
-	if err == nil {
+	if err := ensureDeps(ctx, dir); err != nil {
+		t.Errorf("expected nil when the deps marker matches, got: %v", err)
+	}
+}
+
+func TestEnsureDeps_MarkerMismatch(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeDepsMarker(t, dir, "stale-hash")
+
+	// Marker does not match the current spec → should try bun install.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := ensureDeps(ctx, dir); err == nil {
 		t.Error("expected error (bun install attempted with cancelled ctx), got nil")
 	}
 }
 
-func TestEnsureDeps_NodeModulesSameMtime(t *testing.T) {
+func TestEnsureDeps_NodeModulesWithoutMarker(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create both with the exact same mtime
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// node_modules left over from an install that predates the marker
+	if err := os.MkdirAll(filepath.Join(dir, "node_modules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := ensureDeps(ctx, dir); err == nil {
+		t.Error("expected error (bun install attempted with cancelled ctx), got nil")
+	}
+}
+
+func TestEnsureDeps_SkipsInstallWhenSpecUnchanged(t *testing.T) {
+	dir := t.TempDir()
 	pkgPath := filepath.Join(dir, "package.json")
 	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	modPath := filepath.Join(dir, "node_modules")
-	if err := os.MkdirAll(modPath, 0o755); err != nil {
+
+	runs := installCounter(t)
+	depsMu.Delete(dir)
+
+	if err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if got := runs(); got != 1 {
+		t.Fatalf("expected 1 install on first call, got %d", got)
+	}
+
+	// syncRecordToDisk used to rewrite package.json on every save, which refreshed
+	// its mtime and forced a reinstall. Identical content must now be a no-op.
+	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	ts := time.Now().Add(-30 * time.Minute)
-	os.Chtimes(pkgPath, ts, ts)
-	os.Chtimes(modPath, ts, ts)
+	if err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected no reinstall when the spec is unchanged, got %d installs", got)
+	}
+}
 
-	// Same mtime → node_modules is NOT after package.json → should try install.
+func TestEnsureDeps_LockfileChangeTriggersInstall(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bun.lock"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hash, err := depsHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDepsMarker(t, dir, hash)
+
+	// Same package.json, different lockfile → with --frozen-lockfile the installed
+	// tree would differ, so this counts as a spec change.
+	if err := os.WriteFile(filepath.Join(dir, "bun.lock"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := ensureDeps(ctx, dir)
-	if err == nil {
-		t.Error("expected error (bun install attempted with cancelled ctx when mtimes are equal), got nil")
+	if err := ensureDeps(ctx, dir); err == nil {
+		t.Error("expected error (bun install attempted after lockfile change), got nil")
 	}
 }
 

@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,12 +15,32 @@ import (
 // depsMu holds a per-directory mutex to prevent concurrent bun install runs.
 var depsMu sync.Map // map[string]*sync.Mutex
 
-// ensureDeps runs "bun install" in funcDir if package.json is newer than node_modules.
-// A per-directory lock prevents concurrent installs for the same function.
+// depsHashFile records the dependency spec node_modules was built for. It lives
+// inside node_modules so that removing the directory also invalidates the marker.
+const depsHashFile = ".faasbox-deps"
+
+// depsHash returns a hash of package.json and bun.lock (when present).
+// bun.lock is part of the hash because with --frozen-lockfile it is the lockfile,
+// not package.json, that determines the installed tree.
+func depsHash(funcDir string) (string, error) {
+	pkg, err := os.ReadFile(filepath.Join(funcDir, "package.json"))
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	h.Write(pkg)
+	if lock, err := os.ReadFile(filepath.Join(funcDir, "bun.lock")); err == nil {
+		h.Write(lock)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// ensureDeps runs "bun install" in funcDir when the dependency spec changed since
+// the last successful install. A per-directory lock prevents concurrent installs
+// for the same function.
 func ensureDeps(ctx context.Context, funcDir string) error {
 	pkgPath := filepath.Join(funcDir, "package.json")
-	pkgInfo, err := os.Stat(pkgPath)
-	if err != nil {
+	if _, err := os.Stat(pkgPath); err != nil {
 		return nil // no package.json → nothing to do
 	}
 
@@ -28,9 +50,14 @@ func ensureDeps(ctx context.Context, funcDir string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Skip install if node_modules is newer than package.json
+	want, err := depsHash(funcDir)
+	if err != nil {
+		return nil // package.json vanished between the check and the lock
+	}
+
+	// Skip install if node_modules was built for this exact dependency spec
 	modulesPath := filepath.Join(funcDir, "node_modules")
-	if modInfo, err := os.Stat(modulesPath); err == nil && modInfo.ModTime().After(pkgInfo.ModTime()) {
+	if got, err := os.ReadFile(filepath.Join(modulesPath, depsHashFile)); err == nil && string(got) == want {
 		return nil
 	}
 
@@ -50,6 +77,11 @@ func ensureDeps(ctx context.Context, funcDir string) error {
 	}
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%w: %s", err, stderr.String())
+	}
+
+	// Best-effort marker: if writing it fails we simply reinstall next time.
+	if err := os.MkdirAll(modulesPath, 0o755); err == nil {
+		os.WriteFile(filepath.Join(modulesPath, depsHashFile), []byte(want), 0o644)
 	}
 	return nil
 }

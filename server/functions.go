@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -141,7 +142,7 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 
 	script := record.GetString("script")
 	if script != "" {
-		if err := os.WriteFile(filepath.Join(dir, "index.ts"), []byte(script), 0o644); err != nil {
+		if err := writeIfChanged(filepath.Join(dir, "index.ts"), []byte(script), 0o644); err != nil {
 			return fmt.Errorf("failed to write index.ts for %s: %w", name, err)
 		}
 	}
@@ -149,7 +150,7 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	pkgPath := filepath.Join(dir, "package.json")
 	pkg := record.GetString("packageJson")
 	if pkg != "" {
-		if err := os.WriteFile(pkgPath, []byte(pkg), 0o644); err != nil {
+		if err := writeIfChanged(pkgPath, []byte(pkg), 0o644); err != nil {
 			return fmt.Errorf("failed to write package.json for %s: %w", name, err)
 		}
 	} else {
@@ -157,6 +158,16 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	}
 
 	return nil
+}
+
+// writeIfChanged writes data only when the content differs. Rewriting an identical
+// file would refresh its mtime and churn the disk (and Litestream replication) for
+// nothing.
+func writeIfChanged(path string, data []byte, perm os.FileMode) error {
+	if existing, err := os.ReadFile(path); err == nil && bytes.Equal(existing, data) {
+		return nil
+	}
+	return os.WriteFile(path, data, perm)
 }
 
 // deleteRecordFromDisk removes the function directory from disk.
