@@ -9,9 +9,11 @@ server/functions/
 .env*
 # Internal (private repo, symlinked in — no trailing slash so symlinks match too)
 CLAUDE.md
-GEMINI.md
+AGENTS.md
 .claude
 archives
+knowledge
+memory
 tickets
 .vscode
 .DS_Store

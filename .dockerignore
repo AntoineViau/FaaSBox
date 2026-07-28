@@ -6,7 +6,11 @@ ui/.angular/
 .claude
 functions/
 tickets
+knowledge
+memory
+archives
 docs/
 server/faasbox
+*.go.html
 *.md
 !README.md
