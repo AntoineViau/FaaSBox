@@ -271,8 +271,8 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(args)) != "install" {
-		t.Errorf("expected 'install', got %q", string(args))
+	if strings.TrimSpace(string(args)) != "install --ignore-scripts" {
+		t.Errorf("expected 'install --ignore-scripts', got %q", string(args))
 	}
 
 	// Test Case B: With bun.lock -> SHOULD have --frozen-lockfile
@@ -294,8 +294,8 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(args)) != "install --frozen-lockfile" {
-		t.Errorf("expected 'install --frozen-lockfile', got %q", string(args))
+	if strings.TrimSpace(string(args)) != "install --ignore-scripts --frozen-lockfile" {
+		t.Errorf("expected 'install --ignore-scripts --frozen-lockfile', got %q", string(args))
 	}
 }
 

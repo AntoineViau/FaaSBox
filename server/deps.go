@@ -61,7 +61,10 @@ func ensureDeps(ctx context.Context, funcDir string) error {
 		return nil
 	}
 
-	args := []string{"install"}
+	// --ignore-scripts: npm lifecycle scripts would run outside every guard the
+	// invocation path provides (no execution timeout, no bounded output capture),
+	// so a single malicious transitive dependency would get a free hand.
+	args := []string{"install", "--ignore-scripts"}
 	lockPath := filepath.Join(funcDir, "bun.lock")
 	if _, err := os.Stat(lockPath); err == nil {
 		args = append(args, "--frozen-lockfile")
