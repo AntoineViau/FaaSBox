@@ -295,7 +295,7 @@ func TestRequireAPIKey(t *testing.T) {
 			Headers: map[string]string{
 				"X-API-Key": key,
 			},
-			TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+			TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 			DisableTestAppCleanup: true,
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				registerFaaSRoutes(app, e, t.TempDir())
@@ -323,7 +323,7 @@ func TestRequireAPIKey(t *testing.T) {
 			Headers: map[string]string{
 				"X-API-Key": key,
 			},
-			TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+			TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 			DisableTestAppCleanup: true,
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				registerFaaSRoutes(app, e, t.TempDir())
@@ -351,7 +351,7 @@ func TestRequireAPIKey(t *testing.T) {
 			Headers: map[string]string{
 				"X-API-Key": key,
 			},
-			TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+			TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 			DisableTestAppCleanup: true,
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				registerFaaSRoutes(app, e, functionsDir)
@@ -378,7 +378,7 @@ func TestRequireAPIKey(t *testing.T) {
 			Headers: map[string]string{
 				"X-API-Key": key,
 			},
-			TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+			TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 			DisableTestAppCleanup: true,
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				registerFaaSRoutes(app, e, t.TempDir())
@@ -406,7 +406,7 @@ func TestRequireAPIKey(t *testing.T) {
 			Headers: map[string]string{
 				"X-API-Key": key,
 			},
-			TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+			TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 			DisableTestAppCleanup: true,
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				registerFaaSRoutes(app, e, functionsDir)

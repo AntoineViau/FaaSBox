@@ -201,4 +201,3 @@ func syncDiskFromDB(app core.App, functionsDir string) {
 
 	app.Logger().Info("faasbox: synced functions from DB to disk", "count", len(records))
 }
-

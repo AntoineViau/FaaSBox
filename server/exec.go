@@ -26,7 +26,9 @@ func (e *errNotFound) Error() string { return fmt.Sprintf("function %q not found
 // errDepsFailed indicates dependency installation failed.
 type errDepsFailed struct{ Cause error }
 
-func (e *errDepsFailed) Error() string { return fmt.Sprintf("failed to install dependencies: %s", e.Cause) }
+func (e *errDepsFailed) Error() string {
+	return fmt.Sprintf("failed to install dependencies: %s", e.Cause)
+}
 func (e *errDepsFailed) Unwrap() error { return e.Cause }
 
 type execResult struct {

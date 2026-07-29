@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	faasboxLogsCollection     = "faasbox_logs"
-	defaultMaxLogRetention    = 1000
+	faasboxLogsCollection  = "faasbox_logs"
+	defaultMaxLogRetention = 1000
 )
 
 // maxLogRetention is the maximum number of logs to keep.
