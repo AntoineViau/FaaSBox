@@ -18,6 +18,19 @@ docker run -d -p 8080:8080 \
 ### Persistence
 The `-v faasbox-data:/app/data/pb_data` flag is critical. It creates a Docker volume that stores your SQLite database, settings, and uploaded files. Without this, you will lose your API keys and logs every time the container restarts.
 
+### Sizing an Instance
+
+Four size bounds are set at startup and hold until the next restart. Their defaults suit a general-purpose instance; an instance that serves large exports, or one that only supervises, will want different ones.
+
+| Variable | Default | Bounds |
+|----------|---------|--------|
+| `FAASBOX_MAX_OUTPUT_SIZE` | `1048576` | Bytes captured **per output stream** during a run. Worst case per invocation is twice this, `stdout` plus `stderr`. |
+| `FAASBOX_MAX_BODY_SIZE` | `1048576` | Bytes accepted in a request body. Beyond it, `413`. |
+| `FAASBOX_MAX_LOG_OUTPUT` | `8192` | Bytes of `stdout`/`stderr` kept per log record. |
+| `FAASBOX_MAX_LOG_PAYLOAD` | `4096` | Bytes of `requestPayload` kept per log record. |
+
+An invalid, negative or zero value falls back to the default with a message in the server log; it never blocks startup. See [04 - Environment Variables](04-environment-variables.md) for the full list of server settings and for the caveat on raising `FAASBOX_MAX_LOG_OUTPUT` against an existing database.
+
 ## 2. Litestream Replication (Optional)
 
 For ephemeral environments (containers that lose their filesystem on restart), FaaSBox includes [Litestream](https://litestream.io/) to continuously replicate the SQLite database to any S3-compatible storage.

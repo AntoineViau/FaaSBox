@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
-	"strconv"
 	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
@@ -16,12 +13,12 @@ const (
 	defaultMaxLogRetention = 1000
 )
 
-// Persisted log entries are bounded far below the execution capture limits
-// (10 MB per stream, 1 MB per request body): the full output stays in the
-// immediate HTTP response, only the stored copy is capped.
+// Persisted log entries are bounded far below the execution capture limits:
+// the full output stays in the immediate HTTP response, only the stored copy
+// is capped.
 const (
-	maxLoggedOutput  = 8 << 10 // 8 KB per captured stream
-	maxLoggedPayload = 4 << 10 // 4 KB for the request payload
+	defaultMaxLoggedOutput  = 8 << 10 // 8 KB per captured stream
+	defaultMaxLoggedPayload = 4 << 10 // 4 KB for the request payload
 
 	// logMarkerSlack covers the truncation marker appended past the cap.
 	// A TextField with no explicit Max defaults to 5000 runes and rejects
@@ -34,18 +31,20 @@ const (
 
 // maxLogRetention is the maximum number of logs to keep.
 // Configurable via FAASBOX_MAX_LOG_RETENTION environment variable.
-var maxLogRetention = func() int {
-	s := os.Getenv("FAASBOX_MAX_LOG_RETENTION")
-	if s == "" {
-		return defaultMaxLogRetention
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 1 {
-		log.Printf("faasbox: invalid FAASBOX_MAX_LOG_RETENTION=%q, using default %d", s, defaultMaxLogRetention)
-		return defaultMaxLogRetention
-	}
-	return n
-}()
+var maxLogRetention = envInt("FAASBOX_MAX_LOG_RETENTION", defaultMaxLogRetention)
+
+// maxLoggedOutput and maxLoggedPayload bound what a log record stores.
+//
+// Raising them only takes effect on a database whose faasbox_logs collection
+// does not exist yet: ensureLogsCollection derives the declared field size
+// from these values and never revisits an existing collection. Raising the
+// output cap on an established database would let recordExecution build a
+// value the declared Max rejects, and the record would be dropped. Reset the
+// database after changing them (cf. AGENTS.md, "Stade du projet").
+var (
+	maxLoggedOutput  = envInt("FAASBOX_MAX_LOG_OUTPUT", defaultMaxLoggedOutput)
+	maxLoggedPayload = envInt("FAASBOX_MAX_LOG_PAYLOAD", defaultMaxLoggedPayload)
+)
 
 // ensureLogsCollection creates the faasbox_logs collection if it doesn't exist.
 func ensureLogsCollection(app core.App) error {

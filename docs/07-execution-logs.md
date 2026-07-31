@@ -19,7 +19,7 @@ Each log entry contains comprehensive details about a function run:
 
 ## Output Truncation
 
-Stored logs are capped: **8 KB** per output stream and **4 KB** for the request payload. Beyond the cap, the value is cut and a marker stating the original size is appended:
+Stored logs are capped: **8 KB** per output stream (`FAASBOX_MAX_LOG_OUTPUT`) and **4 KB** for the request payload (`FAASBOX_MAX_LOG_PAYLOAD`). Beyond the cap, the value is cut and a marker stating the original size is appended:
 
 ```
 ...[truncated, 5242880 bytes total]

@@ -16,7 +16,7 @@ X-API-Key: fbx_your_key_here
 Executes the function with the given name.
 
 - **Path Parameter**: `{name}` - The name of the function (folder name).
-- **Request Body**: Any valid JSON (max 1 MB).
+- **Request Body**: Any valid JSON (max 1 MB by default, `FAASBOX_MAX_BODY_SIZE`).
 - **Response**:
     ```json
     {
@@ -32,7 +32,7 @@ Executes the function with the given name.
     - `401`: Missing or invalid API key.
     - `403`: Key disabled, expired, not authorized for this function, or carrying a scope that cannot be read (see [06 - API Keys & Security](06-api-keys-and-security.md)).
     - `404`: Function not found.
-    - `413`: Request body too large (> 1 MB).
+    - `413`: Request body too large (default 1 MB, configurable via `FAASBOX_MAX_BODY_SIZE`).
     - `429`: Too many concurrent invocations (default 4, configurable via `FAASBOX_MAX_CONCURRENCY`).
     - `502`: The function ran, but its output was cut at the capture limit and what remains is not valid JSON. The result is incomplete and is not returned. The error message carries the effective limit and names `FAASBOX_MAX_OUTPUT_SIZE`, the variable that raises it.
     - `504`: Function timed out (> 30s).
@@ -41,7 +41,7 @@ Executes the function with the given name.
     ```json
     {
       "function": "export-report",
-      "error": "function output exceeded the 10485760 bytes capture limit and the truncated result is not valid JSON; raise FAASBOX_MAX_OUTPUT_SIZE or return less data",
+      "error": "function output exceeded the 1048576 bytes capture limit and the truncated result is not valid JSON; raise FAASBOX_MAX_OUTPUT_SIZE or return less data",
       "truncated": true,
       "stderr": "...",
       "duration_ms": 128

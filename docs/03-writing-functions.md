@@ -55,7 +55,9 @@ console.log(JSON.stringify(result));
 
 ### When the Output Is Too Big
 
-Each stream is captured up to a limit (see [Technical Limits](#technical-limits)). Past it, the rest is dropped and the response carries `"truncated": true`.
+Each stream is captured up to **1 MB** by default (see [Technical Limits](#technical-limits)). Past it, the rest is dropped and the response carries `"truncated": true`. The bound applies per stream: `stdout` and `stderr` each get their own megabyte.
+
+> **Changed default.** The capture limit used to be 10 MB. It is now 1 MB, matching the request body limit — there was no reason to accept ten times more on the way out than on the way in. A function that returns between 1 and 10 MB now gets cut where it used to pass whole. If that is your case, raise `FAASBOX_MAX_OUTPUT_SIZE` on the server.
 
 If your function writes JSON and the cut lands mid-document, the result is unusable: FaaSBox refuses it with a `502` instead of handing back the surviving fragment as a plain string. The error message states the effective limit and names the variable that raises it, `FAASBOX_MAX_OUTPUT_SIZE` — set it on the server and restart. Returning less data works too, and is usually the better fix.
 
@@ -142,11 +144,13 @@ This is the fastest way to iterate on a function. You can also use `curl` for au
 |---------|-------|
 | Execution Timeout | 30 seconds |
 | Install Timeout | 60 seconds |
-| Max Request Body | 1 MB |
-| Max Stdout Capture | 10 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
-| Max Stderr Capture | 10 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
-| Max Stdout/Stderr Stored in Logs | 8 KB each |
-| Max Request Payload Stored in Logs | 4 KB |
-| Max Concurrent Executions | 4 (global) |
+| Max Request Body | 1 MB (`FAASBOX_MAX_BODY_SIZE`) |
+| Max Stdout Capture | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
+| Max Stderr Capture | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
+| Max Stdout/Stderr Stored in Logs | 8 KB each (`FAASBOX_MAX_LOG_OUTPUT`) |
+| Max Request Payload Stored in Logs | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`) |
+| Max Concurrent Executions | 4 (global, `FAASBOX_MAX_CONCURRENCY`) |
+
+Every limit that names a variable is a **default**, not a hard ceiling: set the variable on the server and restart. See [04 - Environment Variables](04-environment-variables.md).
 
 Capture limits and log limits are separate: the HTTP response carries the full captured output, while the copy written to `faasbox_logs` is trimmed. See [07 - Execution Logs](07-execution-logs.md).

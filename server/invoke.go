@@ -5,35 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
 const (
 	defaultMaxConcurrency = 4
-	maxBodySize           = 1 << 20 // 1 MB
+	defaultMaxBodySize    = 1 << 20 // 1 MB
 )
 
 // maxConcurrency is the maximum number of concurrent Bun processes.
 // Configurable via FAASBOX_MAX_CONCURRENCY environment variable.
-var maxConcurrency = func() int {
-	s := os.Getenv("FAASBOX_MAX_CONCURRENCY")
-	if s == "" {
-		return defaultMaxConcurrency
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 1 {
-		log.Printf("faasbox: invalid FAASBOX_MAX_CONCURRENCY=%q, using default %d", s, defaultMaxConcurrency)
-		return defaultMaxConcurrency
-	}
-	return n
-}()
+var maxConcurrency = envInt("FAASBOX_MAX_CONCURRENCY", defaultMaxConcurrency)
+
+// maxBodySize is the number of bytes accepted in a request body.
+// Configurable via FAASBOX_MAX_BODY_SIZE environment variable.
+var maxBodySize = envInt("FAASBOX_MAX_BODY_SIZE", defaultMaxBodySize)
 
 // sem limits the number of concurrent Bun processes.
 var sem = make(chan struct{}, maxConcurrency)
@@ -55,7 +46,7 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 	// Read one extra byte beyond the limit to detect oversized payloads.
 	// Without this, LimitReader silently truncates the body and the function
 	// receives broken JSON, producing a confusing parsing error.
-	body, err := io.ReadAll(io.LimitReader(e.Request.Body, maxBodySize+1))
+	body, err := io.ReadAll(io.LimitReader(e.Request.Body, int64(maxBodySize)+1))
 	if err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{
 			"error": "failed to read request body",

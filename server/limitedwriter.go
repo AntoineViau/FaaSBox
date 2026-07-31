@@ -2,29 +2,19 @@ package main
 
 import (
 	"bytes"
-	"log"
-	"os"
-	"strconv"
 )
 
-const defaultMaxOutputSize = 10 << 20 // 10 MB
+const defaultMaxOutputSize = 1 << 20 // 1 MB
 
 // maxOutputSize is the number of bytes captured per subprocess stream.
 // Configurable via FAASBOX_MAX_OUTPUT_SIZE environment variable. The cap is
 // surfaced to callers whose output it invalidates, so it has to be adjustable
 // without a rebuild.
-var maxOutputSize = func() int {
-	s := os.Getenv("FAASBOX_MAX_OUTPUT_SIZE")
-	if s == "" {
-		return defaultMaxOutputSize
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil || n < 1 {
-		log.Printf("faasbox: invalid FAASBOX_MAX_OUTPUT_SIZE=%q, using default %d", s, defaultMaxOutputSize)
-		return defaultMaxOutputSize
-	}
-	return n
-}()
+//
+// The default matches the request body cap: accepting ten times more on the
+// way out than on the way in has no justification. It applies per stream, so
+// the worst case of a single invocation is twice this value.
+var maxOutputSize = envInt("FAASBOX_MAX_OUTPUT_SIZE", defaultMaxOutputSize)
 
 // limitedWriter captures subprocess output up to a maximum size.
 // Beyond the limit, writes are silently discarded and truncated is set to true.
