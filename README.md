@@ -2,7 +2,7 @@
 
 **FaaSBox** is a lightweight, self-hosted **Functions-as-a-Service** platform built on top of [PocketBase](https://pocketbase.io/) and [Bun](https://bun.sh/). 
 
-It allows you to write TypeScript/JavaScript functions, deploy them instantly, invoke them via HTTP with hashed API keys, or schedule them using a flexible cron system — all managed through a unified PocketBase admin UI and a dedicated built-in editor.
+It allows you to write TypeScript/JavaScript functions, deploy them instantly, invoke them via HTTP with hashed API keys, or schedule them using a flexible cron system. Code, dependencies, secrets, schedules and execution logs are all managed from the built-in editor, with the PocketBase admin UI underneath for direct access to the underlying collections.
 
 ---
 

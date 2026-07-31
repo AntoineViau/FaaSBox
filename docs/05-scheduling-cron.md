@@ -13,9 +13,22 @@ The easiest way to manage cron jobs is directly from the FaaSBox Editor:
 2. Switch to the **Triggers** tab.
 3. Click **Add trigger**.
 4. Configure the schedule (pick a preset or type a custom cron expression), payload, and active state.
-5. Changes are saved automatically.
+5. Open the **Advanced** fold if you need to cap concurrency — see **Max queue** below.
+6. Changes are saved automatically.
 
-You can toggle triggers on/off, edit their schedule and payload, or delete them — all from this panel. The scheduler picks up changes in real time, no restart needed.
+You can toggle triggers on/off, edit their schedule, payload and max queue, or delete them — all from this panel. The scheduler picks up changes in real time, no restart needed.
+
+### Max queue
+
+Every trigger carries a **Max queue** setting. It sits behind the **Advanced** fold, closed by default, because most schedules never need it.
+
+It caps how many executions of that trigger may exist at the same time — waiting plus running. Once the cap is reached, further triggers are skipped and a warning is written to the server log.
+
+This matters when a function can take longer to finish than the gap between two triggers. Without a cap, the runs pile up and eat the shared concurrency slots, starving your other functions. With a max queue of `1`, a run still going when the next one is due simply gives up its turn.
+
+Set it to `0` — the default — for no limit. Empty and negative values are read as `0`.
+
+A skipped run is not the same as a missed run: skipping is the behaviour you asked for, while a missed run means the trigger never fired at all because the server was down (see below).
 
 ## Creating a Scheduled Task (Admin UI)
 
@@ -29,7 +42,7 @@ Alternatively, you can manage cron jobs from the PocketBase Admin UI:
     - **FunctionName**: The name of the function to execute.
     - **Payload**: A JSON string to be passed as input to the function.
     - **Active**: Toggle this to `true` to enable the task.
-    - **MaxQueue** *(optional)*: Maximum number of simultaneous executions (waiting + running) allowed for this cron job. When the limit is reached, subsequent triggers are skipped with a warning in the logs. Set to `0` or leave empty for no limit (default).
+    - **MaxQueue** *(optional)*: Maximum number of simultaneous executions (waiting + running) allowed for this cron job. Same setting as **Max queue** in the Editor, described above. Set to `0` or leave empty for no limit (default).
 
 The collection also carries a **LastRunAt** field. It is written by the server after each run and used to detect missed runs (see below) — leave it alone.
 

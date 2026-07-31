@@ -90,6 +90,31 @@ const CRON_PRESETS: Record<string, string> = {
                     (change)="updatePayload(cron, $any($event.target).value)"
                   ></textarea>
                 </div>
+
+                <!-- Advanced (collapsed by default) -->
+                <details>
+                  <summary
+                    class="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Advanced
+                  </summary>
+                  <div class="mt-2">
+                    <label class="mb-1 block text-xs text-muted-foreground">Max queue</label>
+                    <input
+                      z-input
+                      type="number"
+                      min="0"
+                      step="1"
+                      class="h-8 w-28 text-sm"
+                      value="{{ cron.maxQueue }}"
+                      (change)="updateMaxQueue(cron, $any($event.target))"
+                    />
+                    <p class="mt-0.5 text-xs text-muted-foreground">
+                      Maximum simultaneous executions (waiting + running) for this trigger. Extra
+                      triggers are skipped with a warning in the server log. 0 means no limit.
+                    </p>
+                  </div>
+                </details>
               </div>
 
               <!-- Right actions -->
@@ -170,6 +195,7 @@ export class CronEditorComponent {
         functionName: fnName,
         payload: {},
         active: true,
+        maxQueue: 0,
       }),
     );
     this.crons.update((list) => [created, ...list]);
@@ -182,6 +208,19 @@ export class CronEditorComponent {
     if (field === 'active') {
       this.cronCountChange.emit();
     }
+  }
+
+  protected async updateMaxQueue(cron: FaasboxCronJob, input: HTMLInputElement): Promise<void> {
+    // The DOM yields a string; maxQueue is a PocketBase NumberField. Empty, invalid
+    // and negative inputs all collapse to 0, which means "no limit" server-side.
+    const parsed = Number.parseInt(input.value, 10);
+    const value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    // Re-sync the field when the typed text was normalized: rebinding alone would
+    // not repaint it if the stored value did not change (e.g. 0 -> "-5" -> 0).
+    if (input.value !== String(value)) {
+      input.value = String(value);
+    }
+    await this.updateField(cron, 'maxQueue', value);
   }
 
   protected async updatePayload(cron: FaasboxCronJob, text: string): Promise<void> {

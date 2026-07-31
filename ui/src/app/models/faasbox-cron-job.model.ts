@@ -5,6 +5,8 @@ export interface FaasboxCronJob {
   functionName: string;
   payload: unknown;
   active: boolean;
+  /** Max simultaneous executions (waiting + running). 0 means no limit. */
+  maxQueue: number;
   created: string;
   updated: string;
 }
