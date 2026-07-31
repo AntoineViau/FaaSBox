@@ -19,6 +19,10 @@ const (
 	apiKeyLen    = 44 // len(apiKeyPrefix) + 40 random chars
 
 	faasboxAPIKeysCollection = "faasbox_api_keys"
+
+	// apiKeyContextKey names the request-context slot where the middleware
+	// leaves the authenticated key record for downstream handlers.
+	apiKeyContextKey = "__faasboxApiKey"
 )
 
 // ensureAPIKeysCollection creates the faasbox_api_keys collection if it doesn't exist.
@@ -147,6 +151,30 @@ func readKeyScope(record *core.Record) ([]string, error) {
 	return allowed, nil
 }
 
+// requestKeyScope returns the function scope carried by the request.
+//
+// A superuser session short-circuits the middleware and leaves no key record
+// behind: it is unrestricted, exactly like a key that declares no scope. The
+// error case is the caller's to deny on, same as readKeyScope.
+func requestKeyScope(e *core.RequestEvent) ([]string, error) {
+	record, ok := e.Get(apiKeyContextKey).(*core.Record)
+	if !ok || record == nil {
+		return nil, nil
+	}
+	return readKeyScope(record)
+}
+
+// scopeAllows reports whether a scope authorizes a function name. An empty
+// scope carries no restriction, "*" is the wildcard.
+//
+// Invocation and enumeration ask this same question, and a rule spelled out
+// twice is a rule that gets fixed once.
+func scopeAllows(allowed []string, name string) bool {
+	return len(allowed) == 0 ||
+		slices.Contains(allowed, "*") ||
+		slices.Contains(allowed, name)
+}
+
 // requireAPIKey returns a middleware that validates the X-API-Key header.
 func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 	return &hook.Handler[*core.RequestEvent]{
@@ -207,15 +235,16 @@ func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 						"error": "API key scope cannot be read",
 					})
 				}
-				if len(allowed) > 0 && !slices.Contains(allowed, "*") && !slices.Contains(allowed, name) {
+				if !scopeAllows(allowed, name) {
 					return e.JSON(http.StatusForbidden, map[string]string{
 						"error": fmt.Sprintf("API key is not authorized to invoke function %q", name),
 					})
 				}
 			}
 
-			// 7. Store record for logging
-			e.Set("__faasboxApiKey", record)
+			// 7. Store record for logging and for handlers that enforce the
+			// scope themselves, the routes without a {name} path value.
+			e.Set(apiKeyContextKey, record)
 
 			return e.Next()
 		},

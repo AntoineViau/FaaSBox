@@ -176,7 +176,19 @@ func parseFunctionOutput(stdout string, truncated bool) (result any, usable bool
 	return result, true
 }
 
+// listFunctionsHandler answers GET /functions with the functions the presented
+// key may invoke, and nothing more. The route carries no {name} path value, so
+// the middleware cannot apply the scope for it — enforcing it here is what
+// keeps a restricted key from learning the full inventory of the instance.
 func listFunctionsHandler(e *core.RequestEvent, functionsDir string) error {
+	allowed, err := requestKeyScope(e)
+	if err != nil {
+		e.App.Logger().Error("faasbox: unreadable allowedFunctions, denying listing", "error", err)
+		return e.JSON(http.StatusForbidden, map[string]string{
+			"error": "API key scope cannot be read",
+		})
+	}
+
 	entries, err := os.ReadDir(functionsDir)
 	if err != nil {
 		return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -186,7 +198,7 @@ func listFunctionsHandler(e *core.RequestEvent, functionsDir string) error {
 
 	functions := make([]map[string]string, 0, len(entries))
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || !scopeAllows(allowed, entry.Name()) {
 			continue
 		}
 		indexPath := filepath.Join(functionsDir, entry.Name(), "index.ts")

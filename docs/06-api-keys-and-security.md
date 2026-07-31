@@ -22,7 +22,15 @@ The `allowedFunctions` field has three states, not two:
 | A list of names, e.g. `["echo"]` | Only those functions. `["*"]` means all of them. |
 | Anything else | **The key is denied**, on every invocation. |
 
-The third case matters if you ever edit a key by hand in the admin UI. A value that is valid JSON but is not a list of names — an object, a bare string, a list of numbers — cannot be interpreted as a scope. FaaSBox refuses the invocation with `403` rather than assuming the key is unrestricted, and logs the failure at `Error` level with the key's name so you can find it. A restriction that cannot be read is never treated as an absence of restriction.
+The third case matters if you ever edit a key by hand in the admin UI. A value that is valid JSON but is not a list of names — an object, a bare string, a list of numbers — cannot be interpreted as a scope. FaaSBox refuses the request with `403` rather than assuming the key is unrestricted, and logs the failure at `Error` level with the key's name so you can find it. A restriction that cannot be read is never treated as an absence of restriction.
+
+#### The Scope Also Filters the Listing
+
+`GET /functions` returns only the functions the presented key may invoke. A key scoped to `["echo"]` sees `echo` alone, and `count` reflects that filtered list. Without this, any valid key would learn the name and invocation URL of every function on the instance — the restriction would apply to calling them but not to discovering them.
+
+A superuser session is unrestricted and sees the full list.
+
+**What this does not do: hide that a function exists.** `POST /invoke/{name}` on a function outside your scope still answers `403` and names it, rather than pretending it is not there with a `404`. That is deliberate. Turning the refusal into a `404` would make a legitimate integration painful to debug — you could no longer tell a typo from a missing grant — and it would buy little, since a caller can probe names one at a time either way. FaaSBox treats the *inventory* as worth withholding and the *existence of one named function* as not a secret. If your threat model needs the stronger property, the scope filter is not enough on its own.
 
 ### Key Storage (Hashing)
 When a key is generated:

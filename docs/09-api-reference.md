@@ -55,7 +55,7 @@ Executes the function with the given name.
 ## 2. List Functions
 **Endpoint**: `GET /functions`
 
-Returns a list of all available functions on the server.
+Returns the functions **the presented key is allowed to invoke** — not necessarily every function on the server.
 
 - **Response**:
     ```json
@@ -67,6 +67,13 @@ Returns a list of all available functions on the server.
       "count": 2
     }
     ```
+- **Error Codes**:
+    - `401`: Missing or invalid API key.
+    - `403`: Key disabled, expired, or carrying a scope that cannot be read.
+
+The same `allowedFunctions` scope that governs `/invoke/{name}` governs this listing (see [06 - API Keys & Security](06-api-keys-and-security.md)). A key restricted to `["echo"]` sees `echo` and nothing else; `count` reflects the filtered list, not the real total. A superuser session sees everything.
+
+A key whose scope names only functions that do not exist gets `{"functions": [], "count": 0}` — an empty list, not an error.
 
 ---
 

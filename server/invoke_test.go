@@ -359,6 +359,148 @@ func TestListFunctionsHandler(t *testing.T) {
 	})
 }
 
+// TestListFunctionsHandler_Scope covers the enumeration side of the key scope.
+// /functions carries no {name} path value, so the middleware cannot apply the
+// restriction: without the filtering in the handler, any valid key learns the
+// full inventory of the instance.
+func TestListFunctionsHandler_Scope(t *testing.T) {
+	cases := []struct {
+		name               string
+		scope              any // allowedFunctions as stored on the record
+		expectedStatus     int
+		expectedContent    []string
+		notExpectedContent []string
+	}{
+		{
+			name:               "scoped key sees only its function",
+			scope:              []string{"func-a"},
+			expectedStatus:     200,
+			expectedContent:    []string{`"count":1`, `"func-a"`},
+			notExpectedContent: []string{`"func-b"`},
+		},
+		{
+			name:            "wildcard sees everything",
+			scope:           []string{"*"},
+			expectedStatus:  200,
+			expectedContent: []string{`"count":2`, `"func-a"`, `"func-b"`},
+		},
+		{
+			name:            "empty list sees everything",
+			scope:           []string{},
+			expectedStatus:  200,
+			expectedContent: []string{`"count":2`, `"func-a"`, `"func-b"`},
+		},
+		{
+			name:            "scope naming an unknown function sees nothing",
+			scope:           []string{"does-not-exist"},
+			expectedStatus:  200,
+			expectedContent: []string{`"count":0`, `"functions":[]`},
+		},
+		{
+			name:            "unreadable scope is denied",
+			scope:           `{"func-a":true}`,
+			expectedStatus:  403,
+			expectedContent: []string{`API key scope cannot be read`},
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			app, err := tests.NewTestApp()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer app.Cleanup()
+			setupFaaSCollections(t, app)
+
+			key := createTestAPIKey(t, app, "scoped-listing", []string{"*"})
+			setKeyScope(t, app, key, tt.scope)
+
+			functionsDir := setupTestFunctionsDir(t, map[string]string{
+				"func-a": "",
+				"func-b": "",
+			})
+
+			scenario := tests.ApiScenario{
+				Name:   tt.name,
+				Method: http.MethodGet,
+				URL:    "/functions",
+				Headers: map[string]string{
+					"X-API-Key": key,
+				},
+				TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+				DisableTestAppCleanup: true,
+				BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+					registerFaaSRoutes(app, e, functionsDir)
+				},
+				ExpectedStatus:     tt.expectedStatus,
+				ExpectedContent:    tt.expectedContent,
+				NotExpectedContent: tt.notExpectedContent,
+			}
+			scenario.Test(t)
+		})
+	}
+}
+
+// TestListFunctionsHandler_Superuser locks the superuser path: it leaves no key
+// record in the request context, and an absent record must read as "no scope",
+// not as an empty allow-list.
+func TestListFunctionsHandler_Superuser(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := setupTestFunctionsDir(t, map[string]string{
+		"func-a": "",
+		"func-b": "",
+	})
+
+	scenario := tests.ApiScenario{
+		Name:   "superuser lists every function",
+		Method: http.MethodGet,
+		URL:    "/functions",
+		Headers: map[string]string{
+			"Authorization": superuserToken,
+		},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"count":2`, `"func-a"`, `"func-b"`},
+	}
+	scenario.Test(t)
+}
+
+func TestScopeAllows(t *testing.T) {
+	cases := []struct {
+		name    string
+		allowed []string
+		target  string
+		want    bool
+	}{
+		{"Nil scope allows any", nil, "echo", true},
+		{"Empty scope allows any", []string{}, "echo", true},
+		{"Wildcard allows any", []string{"*"}, "echo", true},
+		{"Listed name allowed", []string{"echo", "ping"}, "ping", true},
+		{"Unlisted name denied", []string{"echo"}, "ping", false},
+		{"Wildcard among names allows any", []string{"echo", "*"}, "ping", true},
+		{"Match is exact", []string{"echo"}, "echo-2", false},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := scopeAllows(tt.allowed, tt.target); got != tt.want {
+				t.Errorf("scopeAllows(%v, %q) = %v, want %v", tt.allowed, tt.target, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	scenario := tests.ApiScenario{
 		Name:   "health check returns ok without auth",
