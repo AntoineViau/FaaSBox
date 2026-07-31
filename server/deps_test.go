@@ -8,6 +8,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tests"
 )
 
 // writeDepsMarker records hash as the dependency spec node_modules was built for.
@@ -22,13 +26,13 @@ func writeDepsMarker(t *testing.T, dir, hash string) {
 	}
 }
 
-// installCounter puts a fake "bun" on PATH and returns a function reporting how
-// many times it was invoked.
-func installCounter(t *testing.T) func() int {
+// fakeBun puts a stub "bun" running body on PATH, and returns a function
+// reporting how many times it was invoked.
+func fakeBun(t *testing.T, body string) func() int {
 	t.Helper()
 	binDir := t.TempDir()
 	countPath := filepath.Join(binDir, "runs")
-	script := "#!/bin/sh\necho x >> \"" + countPath + "\"\nexit 0\n"
+	script := "#!/bin/sh\necho x >> \"" + countPath + "\"\n" + body + "\n"
 	if err := os.WriteFile(filepath.Join(binDir, "bun"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +48,12 @@ func installCounter(t *testing.T) func() int {
 		}
 		return strings.Count(string(data), "\n")
 	}
+}
+
+// installCounter puts a fake "bun" that always succeeds on PATH.
+func installCounter(t *testing.T) func() int {
+	t.Helper()
+	return fakeBun(t, "exit 0")
 }
 
 func TestEnsureDeps_NoPackageJson(t *testing.T) {
@@ -296,6 +306,354 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	}
 	if strings.TrimSpace(string(args)) != "install --ignore-scripts --frozen-lockfile" {
 		t.Errorf("expected 'install --ignore-scripts --frozen-lockfile', got %q", string(args))
+	}
+}
+
+func TestEnsureDeps_ReinstallsAfterNodeModulesRemoved(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runs := fakeBun(t, "mkdir -p node_modules\nexit 0")
+
+	if err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	if got := runs(); got != 1 {
+		t.Fatalf("expected 1 install, got %d", got)
+	}
+
+	// A restart on a fresh filesystem — or a manual wipe — takes the marker with
+	// node_modules, so the safety net on the invocation path must reinstall.
+	if err := os.RemoveAll(filepath.Join(dir, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("reinstall: %v", err)
+	}
+	if got := runs(); got != 2 {
+		t.Errorf("expected a reinstall after node_modules was removed, got %d installs", got)
+	}
+}
+
+func TestEnsureDeps_ConcurrentCallsInstallOnce(t *testing.T) {
+	root := t.TempDir()
+	funcDir := filepath.Join(root, "svc")
+	if err := os.MkdirAll(funcDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(funcDir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A slow install, so the second caller necessarily arrives while the first
+	// still holds the lock.
+	runs := fakeBun(t, "sleep 0.4\nexit 0")
+	depsMu.Delete(funcDir)
+
+	// Two spellings of the same directory: the background install builds its path
+	// from the --functionsDir flag, which may be relative, while the invocation
+	// path resolves an absolute one. Both must take the same lock.
+	paths := []string{funcDir, root + "/./svc"}
+
+	var wg sync.WaitGroup
+	errs := make([]error, len(paths))
+	wg.Add(len(paths))
+	for i, p := range paths {
+		go func() {
+			defer wg.Done()
+			errs[i] = ensureDeps(context.Background(), p)
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("ensureDeps(%q) = %v, want nil", paths[i], err)
+		}
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected a single install for %d concurrent callers, got %d", len(paths), got)
+	}
+}
+
+func TestScheduleDepsInstall_ReadyWithoutBlockingTheSave(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := fakeBun(t, "sleep 0.4\nexit 0")
+	record := saveTestFunction(t, app, functionsDir, "with-deps",
+		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	start := time.Now()
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	elapsed := time.Since(start)
+
+	// The install takes 400 ms; the save must not carry any of it.
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("scheduleDepsInstall blocked for %s, want an immediate return", elapsed)
+	}
+
+	waitDepsStatus(t, app, record.Id, depsStatusInstalling)
+	done := waitDepsStatus(t, app, record.Id, depsStatusReady)
+
+	if got := done.GetString("depsError"); got != "" {
+		t.Errorf("depsError = %q, want empty on success", got)
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected 1 install, got %d", got)
+	}
+}
+
+func TestScheduleDepsInstall_ErrorCarriesInstallOutput(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	fakeBun(t, `echo "error: package nope@1.0.0 not found" >&2`+"\nexit 1")
+	record := saveTestFunction(t, app, functionsDir, "bad-deps",
+		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
+
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	failed := waitDepsStatus(t, app, record.Id, depsStatusError)
+
+	if got := failed.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+		t.Errorf("depsError = %q, want the bun install output", got)
+	}
+}
+
+func TestScheduleDepsInstall_BoundsPersistedError(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	// A failing install can print far more than the field accepts. Without the
+	// cap, the record would be unsaveable through the PocketBase API.
+	fakeBun(t, `head -c 200000 /dev/zero | tr "\0" "x" >&2`+"\nexit 1")
+	record := saveTestFunction(t, app, functionsDir, "verbose-failure",
+		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
+
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	failed := waitDepsStatus(t, app, record.Id, depsStatusError)
+
+	stored := failed.GetString("depsError")
+	if len(stored) > maxDepsError+logMarkerSlack {
+		t.Errorf("depsError is %d bytes, beyond the %d declared for the field",
+			len(stored), maxDepsError+logMarkerSlack)
+	}
+	if !strings.Contains(stored, "truncated") {
+		t.Errorf("depsError = %q, want a truncation marker", stored)
+	}
+
+	// The stored value must survive a round-trip through PocketBase validation.
+	failed.Set("script", "console.log('edited')")
+	if err := app.Save(failed); err != nil {
+		t.Errorf("saving a record carrying a truncated depsError failed: %v", err)
+	}
+}
+
+func TestScheduleDepsInstall_ShutdownLeavesInstallOwed(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	fakeBun(t, "sleep 5\nexit 0")
+	record := saveTestFunction(t, app, functionsDir, "interrupted",
+		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	scheduleDepsInstall(ctx, app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusInstalling)
+
+	cancel() // server shutdown
+
+	// The install was interrupted, not refused: the state must say it is still owed
+	// rather than accuse the dependencies of an error that never happened.
+	stored := waitDepsStatus(t, app, record.Id, depsStatusPending)
+	if got := stored.GetString("depsError"); got != "" {
+		t.Errorf("depsError = %q, want empty after an interrupted install", got)
+	}
+}
+
+func TestScheduleDepsInstall_NoPackageJson(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := installCounter(t)
+	record := saveTestFunction(t, app, functionsDir, "no-deps", "console.log('hi')", "")
+
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+
+	// Nothing is scheduled, so there is no state to wait for.
+	time.Sleep(100 * time.Millisecond)
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != "" {
+		t.Errorf("depsStatus = %q, want empty for a function without package.json", got)
+	}
+	if got := runs(); got != 0 {
+		t.Errorf("expected no install without a package.json, got %d", got)
+	}
+}
+
+func TestScheduleDepsInstall_ClearsStateWhenDepsRemoved(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	installCounter(t)
+	record := saveTestFunction(t, app, functionsDir, "dropped-deps",
+		"console.log('hi')", `{"dependencies":{}}`)
+
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusReady)
+
+	// The dependency spec is dropped: a leftover "ready" would outlive its subject.
+	record = saveTestFunction(t, app, functionsDir, "dropped-deps", "console.log('hi')", "")
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != "" {
+		t.Errorf("depsStatus = %q, want it cleared once package.json is gone", got)
+	}
+}
+
+func TestScheduleDepsInstall_ScriptOnlyChangeSkipsInstall(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := fakeBun(t, "mkdir -p node_modules\nexit 0")
+	const pkg = `{"dependencies":{"left-pad":"1.0.0"}}`
+
+	record := saveTestFunction(t, app, functionsDir, "stable-deps", "console.log('v1')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusReady)
+	if got := runs(); got != 1 {
+		t.Fatalf("expected 1 install on the first save, got %d", got)
+	}
+
+	// Same dependency spec, new script: the content fingerprint must hold.
+	record = saveTestFunction(t, app, functionsDir, "stable-deps", "console.log('v2')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusReady)
+	if got := runs(); got != 1 {
+		t.Errorf("expected no reinstall for a script-only change, got %d installs", got)
+	}
+
+	// And the invocation path must not repay the cost either.
+	if err := ensureDeps(context.Background(), filepath.Join(functionsDir, "stable-deps")); err != nil {
+		t.Fatalf("safety net on the invocation path: %v", err)
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected the invocation to exit on the hash check, got %d installs", got)
+	}
+}
+
+func TestEnsureFunctionsCollection_AddsDepsFieldsToExistingCollection(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	// A collection predating the dependency state fields.
+	col := core.NewBaseCollection(faasboxFunctionsCollection)
+	col.Fields.Add(
+		&core.TextField{Name: "name", Required: true},
+		&core.TextField{Name: "env", Hidden: true},
+		&core.JSONField{Name: "plainEnv"},
+		&core.TextField{Name: "script"},
+		&core.TextField{Name: "packageJson"},
+		&core.AutodateField{Name: "created", OnCreate: true},
+		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
+	)
+	if err := app.Save(col); err != nil {
+		t.Fatal(err)
+	}
+
+	existing := core.NewRecord(col)
+	existing.Set("name", "legacy")
+	existing.Set("script", "console.log('legacy')")
+	if err := app.Save(existing); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ensureFunctionsCollection(app); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	migrated, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	status, ok := migrated.Fields.GetByName("depsStatus").(*core.SelectField)
+	if !ok {
+		t.Fatal("depsStatus is missing or is not a SelectField")
+	}
+	want := []string{depsStatusPending, depsStatusInstalling, depsStatusReady, depsStatusError}
+	if len(status.Values) != len(want) {
+		t.Fatalf("depsStatus values = %v, want %v", status.Values, want)
+	}
+	for i, v := range want {
+		if status.Values[i] != v {
+			t.Fatalf("depsStatus values = %v, want %v", status.Values, want)
+		}
+	}
+	if status.IsMultiple() {
+		t.Error("depsStatus must hold a single value")
+	}
+
+	errField, ok := migrated.Fields.GetByName("depsError").(*core.TextField)
+	if !ok {
+		t.Fatal("depsError is missing or is not a TextField")
+	}
+	if errField.Max < maxDepsError {
+		t.Errorf("depsError Max = %d, want at least %d", errField.Max, maxDepsError)
+	}
+
+	// The existing record must come through the migration intact.
+	kept, err := app.FindRecordById(faasboxFunctionsCollection, existing.Id)
+	if err != nil {
+		t.Fatalf("the record saved before the migration is gone: %v", err)
+	}
+	if got := kept.GetString("script"); got != "console.log('legacy')" {
+		t.Errorf("script = %q, want it preserved by the migration", got)
+	}
+	if got := kept.GetString("depsStatus"); got != "" {
+		t.Errorf("depsStatus = %q, want empty on a record that predates the field", got)
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,7 +14,7 @@ import (
 const faasboxFunctionsCollection = "faasbox_functions"
 
 // ensureFunctionsCollection creates the faasbox_functions collection if it doesn't exist,
-// or migrates it by adding missing fields (script, packageJson).
+// or migrates it by adding missing fields (script, packageJson, depsStatus, depsError).
 func ensureFunctionsCollection(app core.App) error {
 	col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
 	if err != nil {
@@ -25,6 +26,8 @@ func ensureFunctionsCollection(app core.App) error {
 			&core.JSONField{Name: "plainEnv"},
 			&core.TextField{Name: "script"},
 			&core.TextField{Name: "packageJson"},
+			newDepsStatusField(),
+			newDepsErrorField(),
 			&core.AutodateField{Name: "created", OnCreate: true},
 			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 		)
@@ -40,6 +43,14 @@ func ensureFunctionsCollection(app core.App) error {
 	}
 	if col.Fields.GetByName("packageJson") == nil {
 		col.Fields.Add(&core.TextField{Name: "packageJson"})
+		needsSave = true
+	}
+	if col.Fields.GetByName("depsStatus") == nil {
+		col.Fields.Add(newDepsStatusField())
+		needsSave = true
+	}
+	if col.Fields.GetByName("depsError") == nil {
+		col.Fields.Add(newDepsErrorField())
 		needsSave = true
 	}
 	if field := col.Fields.GetByName("env"); field != nil {
@@ -158,6 +169,22 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	}
 
 	return nil
+}
+
+// syncFunctionRecordHook returns the record hook shared by create and update:
+// mirror the saved record to disk, then install its dependencies in the
+// background. A disk sync failure skips the install — the spec on disk is then
+// unknown, and installing against it would be guesswork.
+func syncFunctionRecordHook(ctx context.Context, functionsDir string) func(*core.RecordEvent) error {
+	return func(e *core.RecordEvent) error {
+		if err := syncRecordToDisk(e.Record, functionsDir); err != nil {
+			e.App.Logger().Error("faasbox: failed to sync function to disk",
+				"function", e.Record.GetString("name"), "error", err)
+			return e.Next()
+		}
+		scheduleDepsInstall(ctx, e.App, e.Record, functionsDir)
+		return e.Next()
+	}
 }
 
 // writeIfChanged writes data only when the content differs. Rewriting an identical

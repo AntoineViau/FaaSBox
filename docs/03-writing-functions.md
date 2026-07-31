@@ -85,10 +85,25 @@ console.log(JSON.stringify({
 
 ### How Dependency Installation Works
 - FaaSBox automatically detects the `package.json`.
-- On the **first invocation**, it runs `bun install` in that directory.
-- It uses a **mutex** to ensure multiple concurrent calls don't trigger multiple installs.
-- It caches the `node_modules`. It only re-installs if `package.json` has a newer modification time than `node_modules`.
+- **Saving** your function runs `bun install` in its directory, in the background. The save returns immediately — you do not wait for the install.
+- It caches the `node_modules` and only re-installs when `package.json` or `bun.lock` changed. Editing your script alone never triggers an install.
+- If an invocation arrives before the install is done, it waits for it rather than failing.
+- An invocation still installs on its own when needed — after a restart on a fresh filesystem, for instance. In that case, and only then, the caller waits for the install.
 - **Timeout**: The installation process has a 60-second timeout.
+
+### Following the Installation
+
+Two fields on your function record report where the install stands:
+
+| `depsStatus` | Meaning |
+|---|---|
+| *(empty)* | The function declares no `package.json`. |
+| `pending` | The install has been requested, or was interrupted by a server restart and is still owed. |
+| `installing` | `bun install` is running. |
+| `ready` | `node_modules` matches the current dependencies. |
+| `error` | The last install failed — `depsError` carries the `bun install` output. |
+
+The editor does not display these yet: read them from the PocketBase admin UI, in the `faasbox_functions` collection.
 
 ## Testing in the Editor
 

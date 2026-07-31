@@ -33,13 +33,14 @@ func main() {
 		return filepath.Join(filepath.Dir(app.DataDir()), "pb_public")
 	}
 
-	// Context cancelled on server shutdown — used to stop in-flight cron functions.
-	cronCtx, cronCancel := context.WithCancel(context.Background())
+	// Context cancelled on server shutdown — stops in-flight cron functions and
+	// background dependency installs instead of leaving them orphaned.
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 
 	app.OnTerminate().Bind(&hook.Handler[*core.TerminateEvent]{
-		Id: "faasboxCancelCronCtx",
+		Id: "faasboxCancelLifecycleCtx",
 		Func: func(e *core.TerminateEvent) error {
-			cronCancel()
+			lifecycleCancel()
 			return e.Next()
 		},
 	})
@@ -64,7 +65,7 @@ func main() {
 			syncDiskFromDB(e.App, functionsDir)
 
 			// Load existing cron jobs
-			syncAllCronJobs(e.App, functionsDir, cronCtx)
+			syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 
 			// Report the triggers that were due while the server was down
 			reportMissedCronRuns(e.App, time.Now())
@@ -139,33 +140,21 @@ func main() {
 
 	// Live-sync cron jobs when records change
 	app.OnRecordAfterCreateSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
-		syncAllCronJobs(e.App, functionsDir, cronCtx)
+		syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 		return e.Next()
 	})
 	app.OnRecordAfterUpdateSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
-		syncAllCronJobs(e.App, functionsDir, cronCtx)
+		syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 		return e.Next()
 	})
 	app.OnRecordAfterDeleteSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
-		syncAllCronJobs(e.App, functionsDir, cronCtx)
+		syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 		return e.Next()
 	})
 
-	// Live-sync function code to disk when records change
-	app.OnRecordAfterCreateSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
-		if err := syncRecordToDisk(e.Record, functionsDir); err != nil {
-			e.App.Logger().Error("faasbox: failed to sync function to disk",
-				"function", e.Record.GetString("name"), "error", err)
-		}
-		return e.Next()
-	})
-	app.OnRecordAfterUpdateSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
-		if err := syncRecordToDisk(e.Record, functionsDir); err != nil {
-			e.App.Logger().Error("faasbox: failed to sync function to disk",
-				"function", e.Record.GetString("name"), "error", err)
-		}
-		return e.Next()
-	})
+	// Live-sync function code to disk and install its dependencies when records change
+	app.OnRecordAfterCreateSuccess(faasboxFunctionsCollection).BindFunc(syncFunctionRecordHook(lifecycleCtx, functionsDir))
+	app.OnRecordAfterUpdateSuccess(faasboxFunctionsCollection).BindFunc(syncFunctionRecordHook(lifecycleCtx, functionsDir))
 	app.OnRecordAfterDeleteSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
 		if err := deleteRecordFromDisk(e.Record, functionsDir); err != nil {
 			e.App.Logger().Error("faasbox: failed to delete function from disk",

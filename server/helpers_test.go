@@ -82,6 +82,56 @@ func setupTestFunctionsDir(t testing.TB, funcs map[string]string) string {
 	return dir
 }
 
+// saveTestFunction stores a faasbox_functions record and mirrors it to disk,
+// reproducing what the create/update hooks do before the dependency install is
+// scheduled. An empty pkg means the function declares no dependencies.
+func saveTestFunction(t testing.TB, app core.App, functionsDir, name, script, pkg string) *core.Record {
+	t.Helper()
+	if err := ensureFunctionsCollection(app); err != nil {
+		t.Fatalf("failed to create functions collection: %v", err)
+	}
+	col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
+	if err != nil {
+		record = core.NewRecord(col)
+		record.Set("name", name)
+	}
+	record.Set("script", script)
+	record.Set("packageJson", pkg)
+	if err := app.Save(record); err != nil {
+		t.Fatalf("failed to save function %q: %v", name, err)
+	}
+
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatalf("failed to sync function %q to disk: %v", name, err)
+	}
+	return record
+}
+
+// waitDepsStatus polls the record until depsStatus reaches want, and returns the
+// record in that state.
+func waitDepsStatus(t testing.TB, app core.App, recordId, want string) *core.Record {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	got := ""
+	for time.Now().Before(deadline) {
+		record, err := app.FindRecordById(faasboxFunctionsCollection, recordId)
+		if err == nil {
+			got = record.GetString("depsStatus")
+			if got == want {
+				return record
+			}
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("depsStatus = %q, want %q", got, want)
+	return nil
+}
+
 // registerFaaSRoutes registers the FaaS HTTP routes on the test server's router.
 func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir string) {
 	// Health check (public)

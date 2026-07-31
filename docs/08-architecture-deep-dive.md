@@ -23,7 +23,7 @@ The Go binary is the orchestrator. It extends PocketBase with custom routes and 
 When `/invoke/{name}` is called:
 1.  **Auth**: Middleware checks the API key.
 2.  **Lookup**: Server verifies that `functions/{name}/index.ts` exists.
-3.  **Dependencies**: `deps.go` checks if `bun install` is needed.
+3.  **Dependencies**: `deps.go` checks whether `node_modules` matches the current spec. It normally does — the install already ran when the function was saved — so this is a fingerprint comparison and nothing more.
 4.  **Secrets**: Decrypts any secrets configured for this function.
 5.  **Spawn**: Starts `bun run functions/{name}/index.ts`.
 6.  **Pipe**: Writes the HTTP request body to the subprocess's `stdin`.
@@ -31,8 +31,10 @@ When `/invoke/{name}` is called:
 8.  **Record**: Saves the result, duration, and logs to `faasbox_logs`.
 9.  **Respond**: Returns the JSON result to the client.
 
-### 3. The Dependency Mutex
-To prevent race conditions where multiple requests try to run `bun install` at the same time, we use a global Go `sync.Map` of mutexes. One mutex per function.
+### 3. Dependency Installation
+Installing happens when a function is **saved**, in the background: the save returns straight away, and the `depsStatus` field on the record reports where the install stands. The invocation path keeps its own check as a safety net, for what a save cannot see — a restart on a fresh filesystem, or a `node_modules` removed by hand.
+
+To prevent race conditions where a background install and an invocation try to run `bun install` at the same time, we use a global Go `sync.Map` of mutexes. One mutex per function directory: the second caller waits for the first, then finds the work already done.
 
 ### 4. Output Truncation
 Truncation happens twice, for two different reasons.
