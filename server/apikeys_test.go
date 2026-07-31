@@ -446,3 +446,173 @@ func TestRequireAPIKey_EmptyAllowedFunctions(t *testing.T) {
 	}
 	scenario.Test(t)
 }
+
+// --- Function scope reading ---
+
+// setKeyScope overwrites allowedFunctions on an existing key record, the way a
+// manual edit in the PocketBase admin would.
+func setKeyScope(t testing.TB, app core.App, rawKey string, scope any) {
+	t.Helper()
+	record, err := app.FindFirstRecordByData(faasboxAPIKeysCollection, "keyHash", hashAPIKey(rawKey))
+	if err != nil {
+		t.Fatalf("failed to find API key record: %v", err)
+	}
+	record.Set("allowedFunctions", scope)
+	if err := app.Save(record); err != nil {
+		t.Fatalf("failed to set allowedFunctions to %v: %v", scope, err)
+	}
+}
+
+func TestReadKeyScope(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	cases := []struct {
+		name        string
+		scope       any
+		wantAllowed []string
+		wantErr     bool
+	}{
+		{"Absent", nil, nil, false},
+		{"JSON null", "null", nil, false},
+		{"Empty list", []string{}, nil, false},
+		{"Explicit list", []string{"a", "b"}, []string{"a", "b"}, false},
+		{"Wildcard", []string{"*"}, []string{"*"}, false},
+		// Valid JSON that is not a list of names: what a manual admin edit produces.
+		{"JSON object", `{"echo":true}`, nil, true},
+		{"JSON string", `"echo"`, nil, true},
+		{"JSON number", "42", nil, true},
+		{"List of numbers", `[1,2]`, nil, true},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			rawKey := createTestAPIKey(t, app, "scope-"+tt.name, nil)
+			if tt.scope != nil {
+				setKeyScope(t, app, rawKey, tt.scope)
+			}
+			record, err := app.FindFirstRecordByData(faasboxAPIKeysCollection, "keyHash", hashAPIKey(rawKey))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			allowed, err := readKeyScope(record)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("readKeyScope() = %v, want an error", allowed)
+				}
+				if allowed != nil {
+					t.Errorf("readKeyScope() returned %v alongside its error, want nil", allowed)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("readKeyScope() unexpected error: %v", err)
+			}
+			if len(allowed) != len(tt.wantAllowed) {
+				t.Fatalf("readKeyScope() = %v, want %v", allowed, tt.wantAllowed)
+			}
+			for i := range allowed {
+				if allowed[i] != tt.wantAllowed[i] {
+					t.Errorf("readKeyScope()[%d] = %q, want %q", i, allowed[i], tt.wantAllowed[i])
+				}
+			}
+		})
+	}
+}
+
+// TestRequireAPIKey_UnreadableScope locks the fail-closed behaviour: a scope
+// that cannot be read must deny, not grant access to everything.
+func TestRequireAPIKey_UnreadableScope(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	key := createTestAPIKey(t, app, "broken-scope", []string{"echo"})
+	setKeyScope(t, app, key, `{"echo":true}`)
+
+	functionsDir := setupTestFunctionsDir(t, map[string]string{"echo": ""})
+	scenario := tests.ApiScenario{
+		Name:   "unreadable scope denies invocation",
+		Method: http.MethodPost,
+		URL:    "/invoke/echo",
+		Headers: map[string]string{
+			"X-API-Key": key,
+		},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus:  403,
+		ExpectedContent: []string{`API key scope cannot be read`},
+	}
+	scenario.Test(t)
+}
+
+// TestRequireAPIKey_ScopedKeyAllowsItsOwnFunction is the positive half of the
+// scope check; the rejection half is covered above.
+func TestRequireAPIKey_ScopedKeyAllowsItsOwnFunction(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	key := createTestAPIKey(t, app, "scoped-echo", []string{"echo"})
+	functionsDir := setupTestFunctionsDir(t, map[string]string{"echo": ""})
+	scenario := tests.ApiScenario{
+		Name:   "scoped key invokes its authorized function",
+		Method: http.MethodPost,
+		URL:    "/invoke/echo",
+		Headers: map[string]string{
+			"X-API-Key": key,
+		},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus:     200,
+		NotExpectedContent: []string{`not authorized`, `scope cannot be read`},
+	}
+	scenario.Test(t)
+}
+
+// TestRequireAPIKey_EmptyListAllowsAny covers the explicit empty list, distinct
+// from the absent field already covered by TestRequireAPIKey_EmptyAllowedFunctions.
+func TestRequireAPIKey_EmptyListAllowsAny(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	key := createTestAPIKey(t, app, "empty-list", []string{})
+	functionsDir := setupTestFunctionsDir(t, map[string]string{"echo": ""})
+	scenario := tests.ApiScenario{
+		Name:   "empty list grants access to any function",
+		Method: http.MethodPost,
+		URL:    "/invoke/echo",
+		Headers: map[string]string{
+			"X-API-Key": key,
+		},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus:     200,
+		NotExpectedContent: []string{`not authorized`, `scope cannot be read`},
+	}
+	scenario.Test(t)
+}

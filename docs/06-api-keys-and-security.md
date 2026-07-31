@@ -12,6 +12,18 @@ Access to all FaaS endpoints (except `/health`) is restricted by API keys.
 3.  (Optional) Specify **Allowed Functions**. If empty or `["*"]`, the key can invoke any function.
 4.  (Optional) Set an **Expiration Date**.
 
+### Function Scope
+
+The `allowedFunctions` field has three states, not two:
+
+| Field | Meaning |
+|-------|---------|
+| Absent, `null`, or `[]` | No restriction — the key invokes any function. |
+| A list of names, e.g. `["echo"]` | Only those functions. `["*"]` means all of them. |
+| Anything else | **The key is denied**, on every invocation. |
+
+The third case matters if you ever edit a key by hand in the admin UI. A value that is valid JSON but is not a list of names — an object, a bare string, a list of numbers — cannot be interpreted as a scope. FaaSBox refuses the invocation with `403` rather than assuming the key is unrestricted, and logs the failure at `Error` level with the key's name so you can find it. A restriction that cannot be read is never treated as an absence of restriction.
+
 ### Key Storage (Hashing)
 When a key is generated:
 - A random 40-character string is created (prefixed with `fbx_`).

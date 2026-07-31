@@ -30,7 +30,7 @@ Executes the function with the given name.
 - **Error Codes**:
     - `400`: Invalid function name.
     - `401`: Missing or invalid API key.
-    - `403`: Key disabled, expired, or not authorized for this function.
+    - `403`: Key disabled, expired, not authorized for this function, or carrying a scope that cannot be read (see [06 - API Keys & Security](06-api-keys-and-security.md)).
     - `404`: Function not found.
     - `413`: Request body too large (> 1 MB).
     - `429`: Too many concurrent invocations (default 4, configurable via `FAASBOX_MAX_CONCURRENCY`).
