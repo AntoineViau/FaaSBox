@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"unicode/utf8"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -12,6 +14,22 @@ import (
 const (
 	faasboxLogsCollection  = "faasbox_logs"
 	defaultMaxLogRetention = 1000
+)
+
+// Persisted log entries are bounded far below the execution capture limits
+// (10 MB per stream, 1 MB per request body): the full output stays in the
+// immediate HTTP response, only the stored copy is capped.
+const (
+	maxLoggedOutput  = 8 << 10 // 8 KB per captured stream
+	maxLoggedPayload = 4 << 10 // 4 KB for the request payload
+
+	// logMarkerSlack covers the truncation marker appended past the cap.
+	// A TextField with no explicit Max defaults to 5000 runes and rejects
+	// the whole record beyond it, so the declared field size must leave
+	// room for the marker. The caps above are counted in bytes while Max
+	// is counted in runes: the mismatch is safe, a byte count always
+	// overshoots the rune count it stands for.
+	logMarkerSlack = 128
 )
 
 // maxLogRetention is the maximum number of logs to keep.
@@ -42,8 +60,8 @@ func ensureLogsCollection(app core.App) error {
 		&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron"}},
 		&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout"}},
 		&core.NumberField{Name: "duration"},
-		&core.TextField{Name: "stdout"},
-		&core.TextField{Name: "stderr"},
+		&core.TextField{Name: "stdout", Max: maxLoggedOutput + logMarkerSlack},
+		&core.TextField{Name: "stderr", Max: maxLoggedOutput + logMarkerSlack},
 		&core.JSONField{Name: "requestPayload"},
 		&core.NumberField{Name: "exitCode"},
 		&core.AutodateField{Name: "created", OnCreate: true},
@@ -64,6 +82,22 @@ type logEntry struct {
 	ExitCode       int
 }
 
+// truncateForLog caps s at max bytes and appends a marker stating the original
+// size. The cut is moved back to a rune boundary so the stored value stays valid
+// UTF-8. Returns the value and whether it was truncated.
+func truncateForLog(s string, max int) (string, bool) {
+	if len(s) <= max {
+		return s, false
+	}
+
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+
+	return s[:cut] + fmt.Sprintf("\n...[truncated, %d bytes total]", len(s)), true
+}
+
 // recordExecution persists a function execution log to the faasbox_logs collection.
 func recordExecution(app core.App, entry logEntry) {
 	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
@@ -72,15 +106,19 @@ func recordExecution(app core.App, entry logEntry) {
 		return
 	}
 
+	stdout, _ := truncateForLog(entry.Stdout, maxLoggedOutput)
+	stderr, _ := truncateForLog(entry.Stderr, maxLoggedOutput)
+
 	record := core.NewRecord(col)
 	record.Set("functionName", entry.FunctionName)
 	record.Set("trigger", entry.Trigger)
 	record.Set("status", entry.Status)
 	record.Set("duration", entry.DurationMs)
-	record.Set("stdout", entry.Stdout)
-	record.Set("stderr", entry.Stderr)
+	record.Set("stdout", stdout)
+	record.Set("stderr", stderr)
 	if entry.RequestPayload != "" {
-		record.Set("requestPayload", entry.RequestPayload)
+		payload, _ := truncateForLog(entry.RequestPayload, maxLoggedPayload)
+		record.Set("requestPayload", payload)
 	}
 	record.Set("exitCode", entry.ExitCode)
 

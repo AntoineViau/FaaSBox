@@ -12,10 +12,24 @@ Each log entry contains comprehensive details about a function run:
 | `trigger` | `http` (API call) or `cron` (scheduled task). |
 | `status` | `success`, `error`, or `timeout`. |
 | `duration` | Total execution time in milliseconds. |
-| `stdout` | The full output of the function (captured from stdout). |
-| `stderr` | Debug logs or error messages (captured from stderr). |
-| `requestPayload` | The JSON input sent to the function. |
+| `stdout` | The output of the function (captured from stdout), truncated to 8 KB. |
+| `stderr` | Debug logs or error messages (captured from stderr), truncated to 8 KB. |
+| `requestPayload` | The JSON input sent to the function, truncated to 4 KB. |
 | `exitCode` | The process exit code (0 usually means success). |
+
+## Output Truncation
+
+Stored logs are capped: **8 KB** per output stream and **4 KB** for the request payload. Beyond the cap, the value is cut and a marker stating the original size is appended:
+
+```
+...[truncated, 5242880 bytes total]
+```
+
+The cut always falls on a character boundary, so the stored value stays valid UTF-8.
+
+One consequence to know if you read logs programmatically: a truncated `requestPayload` is no longer valid JSON, so it is stored as an escaped **string** instead of an object. A payload under 4 KB keeps its original shape. Code consuming `faasbox_logs` through the [PocketBase Records API](09-api-reference.md) should handle both.
+
+Truncation applies **only to the persisted copy**. The HTTP response of `POST /invoke/{name}` still carries the full captured output — that is where you read it while debugging. Once the response is gone, the trimmed part is lost, which matters most for cron functions whose response nobody reads: keep diagnostic output short enough to survive in the logs.
 
 ## Integrated Log Viewer
 

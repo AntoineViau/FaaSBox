@@ -122,4 +122,8 @@ This is the fastest way to iterate on a function. You can also use `curl` for au
 | Max Request Body | 1 MB |
 | Max Stdout Capture | 10 MB |
 | Max Stderr Capture | 10 MB |
+| Max Stdout/Stderr Stored in Logs | 8 KB each |
+| Max Request Payload Stored in Logs | 4 KB |
 | Max Concurrent Executions | 4 (global) |
+
+Capture limits and log limits are separate: the HTTP response carries the full captured output, while the copy written to `faasbox_logs` is trimmed. See [07 - Execution Logs](07-execution-logs.md).

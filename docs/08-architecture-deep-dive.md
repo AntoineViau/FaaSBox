@@ -35,7 +35,12 @@ When `/invoke/{name}` is called:
 To prevent race conditions where multiple requests try to run `bun install` at the same time, we use a global Go `sync.Map` of mutexes. One mutex per function.
 
 ### 4. Output Truncation
-To protect the server's memory and the database, we use a `LimitedWriter` to capture only the first 10 MB of `stdout` and `stderr`. If a function outputs more, it is truncated.
+Truncation happens twice, for two different reasons.
+
+- **To protect the server's memory**, a `LimitedWriter` captures only the first 10 MB of `stdout` and `stderr`. Writes past that point are discarded and the response carries a `truncated` flag.
+- **To protect the database**, the copy written to `faasbox_logs` is cut much lower — 8 KB per stream and 4 KB for the request payload — with a marker stating the original size. Without this second cap, a single log row could weigh 21 MB, and SQLite never gives disk back once the file has grown.
+
+The HTTP response is built from the captured output, not from the log record, so it always carries the full 10 MB capture.
 
 ### 5. The Built-in Editor
 The editor is a standalone Angular Single Page Application (SPA).
