@@ -2,6 +2,14 @@
 
 FaaSBox is designed with security as a top priority. This guide explains how to manage access and how the underlying security model works.
 
+## The Trust Boundary
+
+Everything below assumes one thing: **the person running the instance is the person who writes its functions.** Their code is trusted by construction — FaaSBox exists to execute it. The boundary the platform defends is the *external caller*, not the function.
+
+That is why the protections here are about who may invoke a function and what leaves the process, not about what the function itself is allowed to do. A function can read files, open outbound connections, and burn CPU; that is the product, not a hole in it.
+
+Found a hole on the other side of that boundary? **Do not open a public issue.** [SECURITY.md](../SECURITY.md) has the private reporting channel, the expected response time, and the full in-scope / out-of-scope list.
+
 ## API Key Management
 
 Access to all FaaS endpoints (except `/health`) is restricted by API keys.

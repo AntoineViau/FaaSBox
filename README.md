@@ -108,6 +108,8 @@ curl -X POST http://localhost:8080/invoke/echo \
 - **Isolated Runtimes**: Functions run in ephemeral subprocesses with minimal environments.
 - **Non-Root Execution**: The Docker container runs as a dedicated `faas` user.
 
+Found a vulnerability? **Do not open a public issue.** Report it privately — see [SECURITY.md](SECURITY.md) for the channel, the expected response time, and what is in or out of scope.
+
 ---
 
 ## 📑 Full Documentation
