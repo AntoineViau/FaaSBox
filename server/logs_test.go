@@ -169,6 +169,141 @@ func TestRecordExecution_ShortOutputUntouched(t *testing.T) {
 	}
 }
 
+// TestRecordExecution_TruncatedFlag covers the persisted flag: it is true as
+// soon as any one of the three stored fields was cut, false otherwise. It
+// reports a cut made at storage time, which is not the same event as the
+// capture cap reached during the run.
+func TestRecordExecution_TruncatedFlag(t *testing.T) {
+	over := strings.Repeat("x", maxLoggedOutput+1)
+	overPayload := `{"data":"` + strings.Repeat("p", maxLoggedPayload) + `"}`
+
+	cases := []struct {
+		name  string
+		entry logEntry
+		want  bool
+	}{
+		{
+			name:  "stdout cut",
+			entry: logEntry{FunctionName: "f", Trigger: "http", Status: "success", Stdout: over},
+			want:  true,
+		},
+		{
+			name:  "stderr cut",
+			entry: logEntry{FunctionName: "f", Trigger: "http", Status: "success", Stderr: over},
+			want:  true,
+		},
+		{
+			name:  "payload cut",
+			entry: logEntry{FunctionName: "f", Trigger: "http", Status: "success", RequestPayload: overPayload},
+			want:  true,
+		},
+		{
+			name: "nothing cut",
+			entry: logEntry{
+				FunctionName:   "f",
+				Trigger:        "http",
+				Status:         "success",
+				Stdout:         `{"ok":true}`,
+				Stderr:         "debug line",
+				RequestPayload: `{"id":1}`,
+			},
+			want: false,
+		},
+		{
+			name:  "empty entry",
+			entry: logEntry{FunctionName: "f", Trigger: "cron", Status: "success"},
+			want:  false,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			app, err := tests.NewTestApp()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer app.Cleanup()
+
+			if err := ensureLogsCollection(app); err != nil {
+				t.Fatalf("failed to create logs collection: %v", err)
+			}
+
+			recordExecution(app, tt.entry)
+
+			records, err := app.FindAllRecords(faasboxLogsCollection)
+			if err != nil {
+				t.Fatalf("failed to read back logs: %v", err)
+			}
+			if len(records) != 1 {
+				t.Fatalf("got %d log records, want 1", len(records))
+			}
+			if got := records[0].GetBool("truncated"); got != tt.want {
+				t.Errorf("truncated = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestRecordExecution_TruncatedIsFilterable locks what the flag is for: picking
+// the incomplete records out of the collection. A marker buried in the text of
+// a field cannot do that.
+func TestRecordExecution_TruncatedIsFilterable(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	if err := ensureLogsCollection(app); err != nil {
+		t.Fatalf("failed to create logs collection: %v", err)
+	}
+
+	recordExecution(app, logEntry{
+		FunctionName: "chatty",
+		Trigger:      "http",
+		Status:       "success",
+		Stdout:       strings.Repeat("x", maxLoggedOutput+1),
+	})
+	recordExecution(app, logEntry{
+		FunctionName: "quiet",
+		Trigger:      "http",
+		Status:       "success",
+		Stdout:       `{"ok":true}`,
+	})
+
+	records, err := app.FindRecordsByFilter(faasboxLogsCollection, "truncated = true", "", 0, 0)
+	if err != nil {
+		t.Fatalf("failed to filter on truncated: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d records matching truncated = true, want 1", len(records))
+	}
+	if got := records[0].GetString("functionName"); got != "chatty" {
+		t.Errorf("filtered record is %q, want %q", got, "chatty")
+	}
+}
+
+func TestEnsureLogsCollection_TruncatedField(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	if err := ensureLogsCollection(app); err != nil {
+		t.Fatal(err)
+	}
+
+	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := col.Fields.GetByName("truncated").(*core.BoolField); !ok {
+		t.Fatal("truncated field is missing or is not a BoolField")
+	}
+}
+
 func TestEnsureLogsCollection_StatusValues(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {

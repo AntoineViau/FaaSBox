@@ -63,6 +63,7 @@ func ensureLogsCollection(app core.App) error {
 		&core.TextField{Name: "stderr", Max: maxLoggedOutput + logMarkerSlack},
 		&core.JSONField{Name: "requestPayload"},
 		&core.NumberField{Name: "exitCode"},
+		&core.BoolField{Name: "truncated"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
@@ -105,8 +106,9 @@ func recordExecution(app core.App, entry logEntry) {
 		return
 	}
 
-	stdout, _ := truncateForLog(entry.Stdout, maxLoggedOutput)
-	stderr, _ := truncateForLog(entry.Stderr, maxLoggedOutput)
+	stdout, stdoutCut := truncateForLog(entry.Stdout, maxLoggedOutput)
+	stderr, stderrCut := truncateForLog(entry.Stderr, maxLoggedOutput)
+	truncated := stdoutCut || stderrCut
 
 	record := core.NewRecord(col)
 	record.Set("functionName", entry.FunctionName)
@@ -116,10 +118,15 @@ func recordExecution(app core.App, entry logEntry) {
 	record.Set("stdout", stdout)
 	record.Set("stderr", stderr)
 	if entry.RequestPayload != "" {
-		payload, _ := truncateForLog(entry.RequestPayload, maxLoggedPayload)
+		payload, payloadCut := truncateForLog(entry.RequestPayload, maxLoggedPayload)
 		record.Set("requestPayload", payload)
+		truncated = truncated || payloadCut
 	}
 	record.Set("exitCode", entry.ExitCode)
+	// Reports a cut made when writing this record, not one made while capturing
+	// the run. The two are distinct: an output can survive the capture cap whole
+	// and still be trimmed here.
+	record.Set("truncated", truncated)
 
 	if err := app.Save(record); err != nil {
 		app.Logger().Error("faasbox: failed to save execution log", "error", err)
