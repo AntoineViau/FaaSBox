@@ -34,7 +34,21 @@ Executes the function with the given name.
     - `404`: Function not found.
     - `413`: Request body too large (> 1 MB).
     - `429`: Too many concurrent invocations (default 4, configurable via `FAASBOX_MAX_CONCURRENCY`).
+    - `502`: The function ran, but its output was cut at the capture limit and what remains is not valid JSON. The result is incomplete and is not returned. The error message carries the effective limit and names `FAASBOX_MAX_OUTPUT_SIZE`, the variable that raises it.
     - `504`: Function timed out (> 30s).
+
+    A `502` body looks like this:
+    ```json
+    {
+      "function": "export-report",
+      "error": "function output exceeded the 10485760 bytes capture limit and the truncated result is not valid JSON; raise FAASBOX_MAX_OUTPUT_SIZE or return less data",
+      "truncated": true,
+      "stderr": "...",
+      "duration_ms": 128
+    }
+    ```
+
+    Truncation alone is not an error: an output cut below the limit that still parses as JSON, or that was free text to begin with, is returned normally with `"truncated": true`. The refusal only fires when the truncation is what broke the parsing.
 
 ---
 

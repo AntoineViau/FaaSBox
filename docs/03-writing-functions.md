@@ -53,6 +53,14 @@ console.log(JSON.stringify(result));
 - **Output**: Anything written to `stdout` is captured and returned as the `result` field in the API response. We highly recommend returning a JSON string.
 - **Logs**: Anything written to `stderr` (e.g., `console.error()`) is captured in the `stderr` field of the response and saved to the execution logs.
 
+### When the Output Is Too Big
+
+Each stream is captured up to a limit (see [Technical Limits](#technical-limits)). Past it, the rest is dropped and the response carries `"truncated": true`.
+
+If your function writes JSON and the cut lands mid-document, the result is unusable: FaaSBox refuses it with a `502` instead of handing back the surviving fragment as a plain string. The error message states the effective limit and names the variable that raises it, `FAASBOX_MAX_OUTPUT_SIZE` — set it on the server and restart. Returning less data works too, and is usually the better fix.
+
+Free-text output is not affected as long as it fits under the limit: it comes back as a raw string, exactly as before.
+
 ## Handling Dependencies
 
 To use npm packages, add a `package.json` file in your function's folder.
@@ -135,8 +143,8 @@ This is the fastest way to iterate on a function. You can also use `curl` for au
 | Execution Timeout | 30 seconds |
 | Install Timeout | 60 seconds |
 | Max Request Body | 1 MB |
-| Max Stdout Capture | 10 MB |
-| Max Stderr Capture | 10 MB |
+| Max Stdout Capture | 10 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
+| Max Stderr Capture | 10 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
 | Max Stdout/Stderr Stored in Logs | 8 KB each |
 | Max Request Payload Stored in Logs | 4 KB |
 | Max Concurrent Executions | 4 (global) |

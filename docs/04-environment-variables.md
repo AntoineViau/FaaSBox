@@ -71,3 +71,4 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key for secrets encryption | *(disabled)* |
 | `FAASBOX_MAX_CONCURRENCY` | Max concurrent function executions | `4` |
 | `FAASBOX_MAX_LOG_RETENTION` | Max number of execution logs to keep | `1000` |
+| `FAASBOX_MAX_OUTPUT_SIZE` | Bytes captured per output stream, `stdout` and `stderr` alike | `10485760` |

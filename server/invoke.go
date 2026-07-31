@@ -81,14 +81,22 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 	env := lookupFunctionEnv(e.App, name)
 	res := executeFunction(e.Request.Context(), functionsDir, name, string(body), env)
 
-	// 5. Log execution to faasbox_logs (skip setup errors like not-found)
+	// 5. Decode stdout before logging: an execution whose output did not survive
+	// the capture cap is a failure, and the log has to say so.
+	var result any
+	outputUsable := true
+	if res.Err == nil {
+		result, outputUsable = parseFunctionOutput(res.Stdout, res.StdoutTruncated)
+	}
+
+	// 6. Log execution to faasbox_logs (skip setup errors like not-found)
 	var notFound *errNotFound
 	var depsFailed *errDepsFailed
 	if !errors.As(res.Err, &notFound) && !errors.As(res.Err, &depsFailed) {
 		status := "success"
 		if res.TimedOut {
 			status = "timeout"
-		} else if res.Err != nil {
+		} else if res.Err != nil || !outputUsable {
 			status = "error"
 		}
 		recordExecution(e.App, logEntry{
@@ -103,7 +111,7 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 		})
 	}
 
-	// 6. Format HTTP response
+	// 7. Format HTTP response
 	if res.Err != nil {
 		if errors.As(res.Err, &notFound) {
 			return e.JSON(http.StatusNotFound, map[string]string{
@@ -129,9 +137,20 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 		return e.JSON(status, errResp)
 	}
 
-	var result any
-	if err := json.Unmarshal([]byte(res.Stdout), &result); err != nil {
-		result = res.Stdout
+	if !outputUsable {
+		// The function ran to completion, but what came back is a fragment.
+		// 502 treats the execution engine as a failing upstream rather than
+		// blaming the caller's request or the server itself.
+		return e.JSON(http.StatusBadGateway, map[string]any{
+			"function": name,
+			"error": fmt.Sprintf(
+				"function output exceeded the %d bytes capture limit and the truncated result is not valid JSON; raise FAASBOX_MAX_OUTPUT_SIZE or return less data",
+				maxOutputSize,
+			),
+			"truncated":   true,
+			"stderr":      res.Stderr,
+			"duration_ms": res.Duration.Milliseconds(),
+		})
 	}
 
 	resp := map[string]any{
@@ -147,6 +166,23 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 	}
 
 	return e.JSON(http.StatusOK, resp)
+}
+
+// parseFunctionOutput decodes a function's stdout into the value returned as
+// "result". Non-JSON output is handed back verbatim — writing free text is a
+// legitimate way to answer. That fallback is refused when the capture was
+// truncated: the function may well have produced valid JSON, and returning the
+// surviving fragment as a plain string would pass a mutilated answer off as a
+// good one. A truncation that happens to leave valid JSON behind is
+// undetectable, and the "truncated" flag remains its only signal.
+func parseFunctionOutput(stdout string, truncated bool) (result any, usable bool) {
+	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
+		if truncated {
+			return nil, false
+		}
+		return stdout, true
+	}
+	return result, true
 }
 
 func listFunctionsHandler(e *core.RequestEvent, functionsDir string) error {

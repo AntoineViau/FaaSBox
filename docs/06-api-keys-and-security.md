@@ -50,7 +50,7 @@ Every function call spawns a new **Bun subprocess**. This ensures:
 - **No Shared Memory**: One function cannot access another function's variables or memory.
 - **Crash Protection**: If a function crashes or enters an infinite loop, it doesn't affect the main PocketBase server.
 - **Process Group Cleanup**: Each subprocess runs in its own process group. On timeout or cancellation, the entire group is killed, preventing zombie child processes.
-- **Resource Limits**: We capture and limit the size of `stdout` and `stderr` (10 MB each), and store only the first 8 KB of each in the execution logs.
+- **Resource Limits**: We capture and limit the size of `stdout` and `stderr` (10 MB each by default, `FAASBOX_MAX_OUTPUT_SIZE`), and store only the first 8 KB of each in the execution logs.
 
 ### 3. Environment Sanitization
 When a subprocess is spawned, it does **not** inherit the environment variables of the host system. We provide a minimal, sanitized environment:

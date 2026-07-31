@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -74,7 +75,128 @@ func TestValidName_MaxLength(t *testing.T) {
 	}
 }
 
+// TestParseFunctionOutput covers truncation crossed with JSON validity. Only a
+// truncated stdout that no longer parses is refused; every other combination
+// must keep answering as it always did.
+func TestParseFunctionOutput(t *testing.T) {
+	cases := []struct {
+		name       string
+		stdout     string
+		truncated  bool
+		wantUsable bool
+		wantResult any
+	}{
+		{"valid json, complete", `{"ok":true}`, false, true, map[string]any{"ok": true}},
+		{"free text, complete", "hello world", false, true, "hello world"},
+		{"valid json, truncated", `{"ok":true}`, true, true, map[string]any{"ok": true}},
+		{"broken json, truncated", `{"ok":tr`, true, false, nil},
+		{"free text, truncated", "hello wor", true, false, nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, usable := parseFunctionOutput(tc.stdout, tc.truncated)
+			if usable != tc.wantUsable {
+				t.Fatalf("usable = %v, want %v", usable, tc.wantUsable)
+			}
+			if !usable {
+				return
+			}
+			if got, want := fmt.Sprintf("%v", result), fmt.Sprintf("%v", tc.wantResult); got != want {
+				t.Errorf("result = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
 // --- ApiScenario-based tests ---
+
+// TestInvokeHandler_TruncatedOutputRejected locks the new refusal: a function
+// whose JSON was cut at the capture cap must not have its fragment returned as
+// a plain string, and the execution must be logged as an error.
+func TestInvokeHandler_TruncatedOutputRejected(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	// Lower the capture cap so a small function can overflow it.
+	original := maxOutputSize
+	maxOutputSize = 64
+	t.Cleanup(func() { maxOutputSize = original })
+
+	key := createTestAPIKey(t, app, "test", []string{"*"})
+	functionsDir := setupTestFunctionsDir(t, map[string]string{
+		"big": `console.log(JSON.stringify({ big: "x".repeat(500) }));`,
+	})
+
+	scenario := tests.ApiScenario{
+		Name:   "truncated json output is refused",
+		Method: http.MethodPost,
+		URL:    "/invoke/big",
+		Headers: map[string]string{
+			"X-API-Key": key,
+		},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus: 502,
+		ExpectedContent: []string{
+			`64 bytes capture limit`,
+			`FAASBOX_MAX_OUTPUT_SIZE`,
+			`"truncated":true`,
+		},
+		NotExpectedContent: []string{`"result"`},
+		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			record, err := app.FindFirstRecordByFilter(faasboxLogsCollection, "functionName = 'big'")
+			if err != nil {
+				t.Fatalf("no log recorded: %v", err)
+			}
+			if got := record.GetString("status"); got != "error" {
+				t.Errorf("log status = %q, want %q", got, "error")
+			}
+		},
+	}
+	scenario.Test(t)
+}
+
+// TestInvokeHandler_FreeTextOutputAccepted is the counterpart: an output that
+// fits under the cap and is not JSON still comes back as a raw string.
+func TestInvokeHandler_FreeTextOutputAccepted(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	key := createTestAPIKey(t, app, "test", []string{"*"})
+	functionsDir := setupTestFunctionsDir(t, map[string]string{
+		"text": `console.log("plain answer");`,
+	})
+
+	scenario := tests.ApiScenario{
+		Name:   "free text output stays a raw string",
+		Method: http.MethodPost,
+		URL:    "/invoke/text",
+		Headers: map[string]string{
+			"X-API-Key": key,
+		},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus:     200,
+		ExpectedContent:    []string{`"result":"plain answer`},
+		NotExpectedContent: []string{`capture limit`},
+	}
+	scenario.Test(t)
+}
 
 func TestInvokeHandler_InvalidName(t *testing.T) {
 	app, err := tests.NewTestApp()

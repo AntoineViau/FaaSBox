@@ -32,13 +32,17 @@ func (e *errDepsFailed) Error() string {
 func (e *errDepsFailed) Unwrap() error { return e.Cause }
 
 type execResult struct {
-	Stdout    string
-	Stderr    string
-	Duration  time.Duration
-	Err       error
-	TimedOut  bool
-	Truncated bool
-	ExitCode  int
+	Stdout   string
+	Stderr   string
+	Duration time.Duration
+	Err      error
+	TimedOut bool
+	// Truncated reports that either stream hit the capture cap; it is the flag
+	// surfaced to callers. StdoutTruncated isolates the stream carrying the
+	// result, the only one whose loss makes the output unusable.
+	Truncated       bool
+	StdoutTruncated bool
+	ExitCode        int
 }
 
 // executeFunction validates, installs deps, and runs a function in a Bun subprocess.
@@ -105,10 +109,11 @@ func executeFunction(ctx context.Context, functionsDir, name, payload string, ex
 	duration := time.Since(start)
 
 	res := execResult{
-		Stdout:    stdout.String(),
-		Stderr:    stderr.String(),
-		Duration:  duration,
-		Truncated: stdout.truncated || stderr.truncated,
+		Stdout:          stdout.String(),
+		Stderr:          stderr.String(),
+		Duration:        duration,
+		Truncated:       stdout.truncated || stderr.truncated,
+		StdoutTruncated: stdout.truncated,
 	}
 
 	if err != nil {

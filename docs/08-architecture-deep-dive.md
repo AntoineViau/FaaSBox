@@ -39,10 +39,12 @@ To prevent race conditions where a background install and an invocation try to r
 ### 4. Output Truncation
 Truncation happens twice, for two different reasons.
 
-- **To protect the server's memory**, a `LimitedWriter` captures only the first 10 MB of `stdout` and `stderr`. Writes past that point are discarded and the response carries a `truncated` flag.
+- **To protect the server's memory**, a `LimitedWriter` captures only the first 10 MB of `stdout` and `stderr` — per stream, and adjustable via `FAASBOX_MAX_OUTPUT_SIZE`. Writes past that point are discarded and the response carries a `truncated` flag.
 - **To protect the database**, the copy written to `faasbox_logs` is cut much lower — 8 KB per stream and 4 KB for the request payload — with a marker stating the original size. Without this second cap, a single log row could weigh 21 MB, and SQLite never gives disk back once the file has grown.
 
-The HTTP response is built from the captured output, not from the log record, so it always carries the full 10 MB capture.
+The HTTP response is built from the captured output, not from the log record, so it always carries the full capture.
+
+The first cap has a consequence the flag alone does not convey: when the cut lands mid-JSON, the surviving fragment is not a result. The invocation path tracks `stdout` truncation separately from the combined flag and refuses that case with a `502` rather than returning the fragment as a plain string. The cron path does not parse output at all, so it keeps recording whatever it captured.
 
 ### 5. The Built-in Editor
 The editor is a standalone Angular Single Page Application (SPA).
