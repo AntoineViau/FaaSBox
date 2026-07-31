@@ -27,7 +27,7 @@ func TestEnsureCronJobsCollection(t *testing.T) {
 	}
 
 	// Verify expected fields exist
-	expectedFields := []string{"name", "schedule", "functionName", "payload", "active", "maxQueue"}
+	expectedFields := []string{"name", "schedule", "functionName", "payload", "active", "maxQueue", "lastRunAt"}
 	for _, fieldName := range expectedFields {
 		if col.Fields.GetByName(fieldName) == nil {
 			t.Errorf("field %q not found in collection", fieldName)
@@ -80,14 +80,16 @@ func TestEnsureCronJobsCollection_Migration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// ensureCronJobsCollection should add the missing maxQueue field
+	// ensureCronJobsCollection should add every missing field in one pass
 	if err := ensureCronJobsCollection(app); err != nil {
 		t.Fatalf("migration failed: %v", err)
 	}
 
 	col, _ = app.FindCollectionByNameOrId(faasboxCronJobsCollection)
-	if col.Fields.GetByName("maxQueue") == nil {
-		t.Error("maxQueue field not added during migration")
+	for _, fieldName := range []string{"maxQueue", "lastRunAt"} {
+		if col.Fields.GetByName(fieldName) == nil {
+			t.Errorf("%s field not added during migration", fieldName)
+		}
 	}
 }
 
@@ -116,7 +118,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 		before := counter.Load()
 		// Call with a non-existent function — it will fail at execution but
 		// should pass the queue check.
-		runFunction(context.Background(), app, t.TempDir(), "unlimited-func", "{}", 0)
+		runFunction(context.Background(), app, t.TempDir(), "unlimited-func", "{}", 0, "")
 		after := counter.Load()
 
 		if before != after {
@@ -132,7 +134,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 
 		// With maxQueue=2 and depth already at 2, a new call should be skipped.
 		// The counter will be incremented to 3 then checked > 2, so it returns early.
-		runFunction(context.Background(), app, t.TempDir(), "limited-func", "{}", 2)
+		runFunction(context.Background(), app, t.TempDir(), "limited-func", "{}", 2, "")
 
 		// Counter should be back to 2 (incremented to 3, then decremented by defer)
 		if got := counter.Load(); got != 2 {
@@ -204,19 +206,7 @@ func TestSyncAllCronJobs_SkipsInactive(t *testing.T) {
 	defer app.Cleanup()
 	setupFaaSCollections(t, app)
 
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	record := core.NewRecord(col)
-	record.Set("name", "inactive-cron")
-	record.Set("schedule", "*/5 * * * *")
-	record.Set("functionName", "echo")
-	record.Set("active", false)
-	if err := app.Save(record); err != nil {
-		t.Fatal(err)
-	}
+	record := createTestCronJob(t, app, "inactive-cron", "*/5 * * * *", "echo", false)
 
 	syncAllCronJobs(app, t.TempDir(), context.Background())
 
@@ -226,5 +216,28 @@ func TestSyncAllCronJobs_SkipsInactive(t *testing.T) {
 		if job.Id() == jobId {
 			t.Errorf("inactive cron job %q should not be registered", jobId)
 		}
+	}
+}
+
+func TestRunFunction_StampsLastRunAt(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	record := createTestCronJob(t, app, "stamped-cron", "* * * * *", "missing-func", true)
+
+	// The function does not exist: the execution fails, and the stamp must still
+	// be written — what it records is that the trigger fired.
+	runFunction(context.Background(), app, t.TempDir(), "missing-func", "{}", 0, record.Id)
+
+	updated, err := app.FindRecordById(faasboxCronJobsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.GetDateTime("lastRunAt").IsZero() {
+		t.Error("lastRunAt was not stamped after a failed cron execution")
 	}
 }

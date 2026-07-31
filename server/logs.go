@@ -58,7 +58,7 @@ func ensureLogsCollection(app core.App) error {
 	col.Fields.Add(
 		&core.TextField{Name: "functionName", Required: true},
 		&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron"}},
-		&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout"}},
+		&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
 		&core.NumberField{Name: "duration"},
 		&core.TextField{Name: "stdout", Max: maxLoggedOutput + logMarkerSlack},
 		&core.TextField{Name: "stderr", Max: maxLoggedOutput + logMarkerSlack},
@@ -74,7 +74,7 @@ func ensureLogsCollection(app core.App) error {
 type logEntry struct {
 	FunctionName   string
 	Trigger        string // "http" or "cron"
-	Status         string // "success", "error", "timeout"
+	Status         string // "success", "error", "timeout", "missed"
 	DurationMs     int64
 	Stdout         string
 	Stderr         string

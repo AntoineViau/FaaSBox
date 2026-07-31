@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/cron"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // cronQueueDepth tracks the number of in-flight (waiting + running) cron executions per function.
@@ -19,7 +22,7 @@ const (
 )
 
 // ensureCronJobsCollection creates the faasbox_cron_jobs collection if it doesn't exist,
-// or migrates it by adding missing fields (maxQueue).
+// or migrates it by adding missing fields (maxQueue, lastRunAt).
 func ensureCronJobsCollection(app core.App) error {
 	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
 	if err != nil {
@@ -32,15 +35,24 @@ func ensureCronJobsCollection(app core.App) error {
 			&core.JSONField{Name: "payload"},
 			&core.BoolField{Name: "active"},
 			&core.NumberField{Name: "maxQueue"},
+			&core.DateField{Name: "lastRunAt"},
 			&core.AutodateField{Name: "created", OnCreate: true},
 			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 		)
 		return app.Save(col)
 	}
 
-	// Collection exists — add missing fields if needed
+	// Collection exists — add every missing field in a single save
+	missing := false
 	if col.Fields.GetByName("maxQueue") == nil {
 		col.Fields.Add(&core.NumberField{Name: "maxQueue"})
+		missing = true
+	}
+	if col.Fields.GetByName("lastRunAt") == nil {
+		col.Fields.Add(&core.DateField{Name: "lastRunAt"})
+		missing = true
+	}
+	if missing {
 		return app.Save(col)
 	}
 	return nil
@@ -96,8 +108,9 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 		}
 
 		jobId := cronJobPrefix + record.Id
+		recordId := record.Id
 		err := app.Cron().Add(jobId, schedule, func() {
-			runFunction(ctx, app, functionsDir, name, payload, maxQueue)
+			runFunction(ctx, app, functionsDir, name, payload, maxQueue, recordId)
 		})
 		if err != nil {
 			app.Logger().Error("faasbox: failed to register cron",
@@ -108,8 +121,10 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 
 // runFunction executes a function outside of an HTTP context (for cron jobs).
 // maxQueue limits how many executions (waiting + running) can exist simultaneously
-// for this function. 0 means no limit.
-func runFunction(ctx context.Context, app core.App, functionsDir, name, payload string, maxQueue int) {
+// for this function. 0 means no limit. recordId identifies the faasbox_cron_jobs
+// record whose lastRunAt is stamped once the execution is over; an empty value
+// skips the stamping.
+func runFunction(ctx context.Context, app core.App, functionsDir, name, payload string, maxQueue int, recordId string) {
 	// Check queue depth before blocking on the semaphore
 	if maxQueue > 0 {
 		val, _ := cronQueueDepth.LoadOrStore(name, &atomic.Int32{})
@@ -134,6 +149,10 @@ func runFunction(ctx context.Context, app core.App, functionsDir, name, payload 
 
 	env := lookupFunctionEnv(app, name)
 	res := executeFunction(ctx, functionsDir, name, payload, env)
+
+	// Stamp the trigger time whatever the outcome: what is recorded is that the
+	// job fired, not that it succeeded. Missed-run detection reads it back.
+	markCronJobRun(app, recordId, time.Now())
 
 	// Log to faasbox_logs collection
 	status := "success"
@@ -162,4 +181,25 @@ func runFunction(ctx context.Context, app core.App, functionsDir, name, payload 
 
 	app.Logger().Info("faasbox cron: executed",
 		"function", name, "stdout", res.Stdout, "stderr", res.Stderr, "truncated", res.Truncated)
+}
+
+// markCronJobRun stamps lastRunAt on a cron job record. The write goes through a
+// direct SQL update on purpose: app.Save would fire OnRecordAfterUpdateSuccess,
+// which resyncs the whole scheduler — a minutely job would rebuild the job list
+// every minute for nothing.
+func markCronJobRun(app core.App, recordId string, at time.Time) {
+	if recordId == "" {
+		return
+	}
+
+	_, err := app.DB().NewQuery(
+		"UPDATE " + faasboxCronJobsCollection + " SET lastRunAt = {:at} WHERE id = {:id}",
+	).Bind(dbx.Params{
+		"at": at.UTC().Format(types.DefaultDateLayout),
+		"id": recordId,
+	}).Execute()
+	if err != nil {
+		app.Logger().Error("faasbox cron: failed to stamp lastRunAt",
+			"recordId", recordId, "error", err)
+	}
 }

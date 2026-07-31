@@ -53,6 +53,9 @@ import { ZardIconComponent } from '@shared/components/icon';
                   @case ('timeout') {
                     <z-icon zType="circle-alert" class="h-3.5 w-3.5 shrink-0 text-orange-500" />
                   }
+                  @case ('missed') {
+                    <z-icon zType="clock" class="h-3.5 w-3.5 shrink-0 text-yellow-500" />
+                  }
                 }
                 <span class="rounded bg-muted px-1 py-0.5 text-[10px] font-medium uppercase">
                   {{ log.trigger }}

@@ -2,7 +2,7 @@ export interface FaasboxLog {
   id: string;
   functionName: string;
   trigger: 'http' | 'cron';
-  status: 'success' | 'error' | 'timeout';
+  status: 'success' | 'error' | 'timeout' | 'missed';
   duration: number;
   stdout: string;
   stderr: string;

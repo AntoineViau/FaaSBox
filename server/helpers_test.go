@@ -7,9 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // Pre-signed superuser JWT from PocketBase's default test data.
@@ -101,4 +103,38 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
 		return createKeyHandler(re)
 	}).Bind(apis.RequireSuperuserAuth())
+}
+
+// setCronJobDate overwrites a date column PocketBase manages itself (created) or
+// that is only ever written by direct SQL (lastRunAt).
+func setCronJobDate(t testing.TB, app core.App, recordId, column string, at time.Time) {
+	t.Helper()
+	_, err := app.DB().NewQuery(
+		"UPDATE " + faasboxCronJobsCollection + " SET " + column + " = {:at} WHERE id = {:id}",
+	).Bind(dbx.Params{
+		"at": at.UTC().Format(types.DefaultDateLayout),
+		"id": recordId,
+	}).Execute()
+	if err != nil {
+		t.Fatalf("failed to set %s on %s: %v", column, recordId, err)
+	}
+}
+
+// createTestCronJob saves a cron job record and returns it.
+func createTestCronJob(t testing.TB, app core.App, name, schedule, functionName string, active bool) *core.Record {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	record := core.NewRecord(col)
+	record.Set("name", name)
+	record.Set("schedule", schedule)
+	record.Set("functionName", functionName)
+	record.Set("active", active)
+	if err := app.Save(record); err != nil {
+		t.Fatalf("failed to create cron record %q: %v", name, err)
+	}
+	return record
 }

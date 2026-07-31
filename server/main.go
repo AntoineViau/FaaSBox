@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/apis"
@@ -64,6 +65,9 @@ func main() {
 
 			// Load existing cron jobs
 			syncAllCronJobs(e.App, functionsDir, cronCtx)
+
+			// Report the triggers that were due while the server was down
+			reportMissedCronRuns(e.App, time.Now())
 
 			// Internal cron to prune old logs every hour
 			e.App.Cron().Add("__faasboxLogPrune", "0 * * * *", func() {

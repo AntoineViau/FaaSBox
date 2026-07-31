@@ -5,6 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
 
@@ -165,5 +166,38 @@ func TestRecordExecution_ShortOutputUntouched(t *testing.T) {
 	}
 	if got := records[0].GetString("stderr"); got != "debug line" {
 		t.Errorf("stderr = %q, want it stored verbatim", got)
+	}
+}
+
+func TestEnsureLogsCollection_StatusValues(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	if err := ensureLogsCollection(app); err != nil {
+		t.Fatal(err)
+	}
+
+	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	field, ok := col.Fields.GetByName("status").(*core.SelectField)
+	if !ok {
+		t.Fatal("status field is not a SelectField")
+	}
+
+	want := []string{"success", "error", "timeout", "missed"}
+	if len(field.Values) != len(want) {
+		t.Fatalf("status values = %v, want %v", field.Values, want)
+	}
+	for i, v := range want {
+		if field.Values[i] != v {
+			t.Errorf("status values = %v, want %v", field.Values, want)
+			break
+		}
 	}
 }
