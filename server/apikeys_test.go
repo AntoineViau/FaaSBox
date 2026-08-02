@@ -10,6 +10,7 @@ import (
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // --- Pure function tests (no PocketBase) ---
@@ -104,7 +105,7 @@ func TestGenerateAPIKey(t *testing.T) {
 	defer app.Cleanup()
 	setupFaaSCollections(t, app)
 
-	rawKey, err := generateAPIKey(app, "test-key", []string{"echo"})
+	rawKey, err := generateAPIKey(app, "test-key", []string{"echo"}, types.DateTime{})
 	if err != nil {
 		t.Fatalf("generateAPIKey failed: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestGenerateAPIKey(t *testing.T) {
 	}
 
 	// Two generated keys should be different
-	rawKey2, err := generateAPIKey(app, "test-key-2", nil)
+	rawKey2, err := generateAPIKey(app, "test-key-2", nil, types.DateTime{})
 	if err != nil {
 		t.Fatalf("second generateAPIKey failed: %v", err)
 	}
@@ -208,6 +209,59 @@ func TestCreateKeyHandler(t *testing.T) {
 			},
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`"error"`},
+		},
+		{
+			Name:   "success with a valid expiresAt",
+			Method: http.MethodPost,
+			URL:    "/api/faasbox/keys",
+			Body:   strings.NewReader(`{"name":"expiring-key","expiresAt":"2030-01-02T03:04:05Z"}`),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				registerFaaSRoutes(app, e, t.TempDir())
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"key":"fbx_`,
+				`"name":"expiring-key"`,
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				record, err := app.FindFirstRecordByData(faasboxAPIKeysCollection, "name", "expiring-key")
+				if err != nil {
+					t.Fatalf("key record not found: %v", err)
+				}
+				got := record.GetDateTime("expiresAt")
+				if got.IsZero() {
+					t.Fatal("expiresAt was not persisted")
+				}
+				want := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+				if !got.Time().Equal(want) {
+					t.Errorf("expiresAt = %v, want %v", got.Time(), want)
+				}
+			},
+		},
+		{
+			Name:   "bad request with an unparsable expiresAt",
+			Method: http.MethodPost,
+			URL:    "/api/faasbox/keys",
+			Body:   strings.NewReader(`{"name":"bad-expiry","expiresAt":"not-a-date"}`),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				registerFaaSRoutes(app, e, t.TempDir())
+			},
+			ExpectedStatus:  400,
+			ExpectedContent: []string{`expiresAt`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				// A rejected expiry must not leave a perpetual key behind.
+				if _, err := app.FindFirstRecordByData(faasboxAPIKeysCollection, "name", "bad-expiry"); err == nil {
+					t.Error("key record was created despite the rejected expiresAt")
+				}
+			},
 		},
 	}
 

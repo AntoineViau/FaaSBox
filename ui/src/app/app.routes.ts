@@ -16,6 +16,13 @@ export const routes: Routes = [
     title: 'FaaSBox',
   },
   {
+    path: 'keys',
+    loadComponent: () =>
+      import('@/api-keys/api-keys.component').then((m) => m.ApiKeysComponent),
+    canActivate: [authGuard],
+    title: 'FaaSBox - API keys',
+  },
+  {
     path: '',
     redirectTo: '/functions',
     pathMatch: 'full',

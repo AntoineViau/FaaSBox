@@ -12,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 const (
@@ -56,7 +57,10 @@ func hashAPIKey(rawKey string) string {
 }
 
 // generateAPIKey creates a new API key record and returns the raw key.
-func generateAPIKey(app core.App, name string, allowedFunctions []string) (string, error) {
+//
+// A zero expiresAt leaves the field empty, which the middleware reads as "never
+// expires".
+func generateAPIKey(app core.App, name string, allowedFunctions []string, expiresAt types.DateTime) (string, error) {
 	rawKey := apiKeyPrefix + security.RandomString(apiKeyLen-len(apiKeyPrefix))
 	keyHash := hashAPIKey(rawKey)
 
@@ -71,6 +75,9 @@ func generateAPIKey(app core.App, name string, allowedFunctions []string) (strin
 	record.Set("keyPrefix", rawKey[:16])
 	record.Set("allowedFunctions", allowedFunctions)
 	record.Set("active", true)
+	if !expiresAt.IsZero() {
+		record.Set("expiresAt", expiresAt)
+	}
 
 	if err := app.Save(record); err != nil {
 		return "", fmt.Errorf("failed to save API key: %w", err)
@@ -84,6 +91,7 @@ func createKeyHandler(e *core.RequestEvent) error {
 	var body struct {
 		Name             string   `json:"name"`
 		AllowedFunctions []string `json:"allowedFunctions"`
+		ExpiresAt        string   `json:"expiresAt"` // RFC3339, optional
 	}
 	if err := json.NewDecoder(e.Request.Body).Decode(&body); err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{
@@ -96,7 +104,22 @@ func createKeyHandler(e *core.RequestEvent) error {
 		})
 	}
 
-	rawKey, err := generateAPIKey(e.App, body.Name, body.AllowedFunctions)
+	// An absent expiry means the key never expires. A value that is present but
+	// unparsable is rejected rather than dropped: types.ParseDateTime falls back
+	// to the zero date instead of reporting the failure, and silently turning a
+	// bounded key into a perpetual one would widen access, not narrow it.
+	var expiresAt types.DateTime
+	if body.ExpiresAt != "" {
+		parsed, err := types.ParseDateTime(body.ExpiresAt)
+		if err != nil || parsed.IsZero() {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"error": "\"expiresAt\" must be an RFC3339 date",
+			})
+		}
+		expiresAt = parsed
+	}
+
+	rawKey, err := generateAPIKey(e.App, body.Name, body.AllowedFunctions, expiresAt)
 	if err != nil {
 		e.App.Logger().Error("faasbox: failed to generate API key", "error", err)
 		return e.JSON(http.StatusInternalServerError, map[string]string{

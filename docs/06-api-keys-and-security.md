@@ -15,10 +15,29 @@ Found a hole on the other side of that boundary? **Do not open a public issue.**
 Access to all FaaS endpoints (except `/health`) is restricted by API keys.
 
 ### Creating a Key
-1.  Use the `POST /api/faasbox/keys` endpoint (superuser auth required). This is the only way to generate a key and see the raw value.
-2.  Provide a **Name** (for your reference).
-3.  (Optional) Specify **Allowed Functions**. If empty or `["*"]`, the key can invoke any function.
-4.  (Optional) Set an **Expiration Date**.
+
+Two paths, one result. Both go through the same endpoint — the editor simply calls it for you — and both reveal the raw value exactly once.
+
+**From the editor.** Sign in, click **API keys** in the header, then fill the creation form:
+
+1.  A **Name**, for your own reference. Required.
+2.  A **Scope**: either *All functions*, or a selection among the functions that exist on the instance.
+3.  An optional **Expiration** date. The key stays valid through the end of that day (UTC).
+
+The key is then revealed once, with a copy button and a warning. Dismiss the panel or leave the page and the value is gone for good.
+
+The form always writes a well-formed list of names — `["*"]` when you pick *All functions* — so it cannot produce the malformed scope described in the next section. Typing the field by hand in the admin UI can.
+
+**From the API.** `POST /api/faasbox/keys`, superuser auth required:
+
+```bash
+curl -X POST http://localhost:8080/api/faasbox/keys \
+  -H "Authorization: $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"my-app","allowedFunctions":["echo"],"expiresAt":"2026-12-31T23:59:59Z"}'
+```
+
+`allowedFunctions` and `expiresAt` are both optional. An empty or absent `allowedFunctions` means the key can invoke any function; an absent `expiresAt` means it never expires. `expiresAt` is a date string — RFC3339 (`2026-12-31T23:59:59Z`) or a plain `2026-12-31`, which lands at midnight UTC. A value that cannot be parsed is rejected with `400`: it is never silently dropped, since that would turn a key you meant to bound into a perpetual one.
 
 ### Function Scope
 
@@ -50,7 +69,10 @@ When a key is generated:
 > 🔒 **Security Note**: This means that even if someone gets access to your database, they cannot use the stored hashes to invoke your functions. They would need the original raw key.
 
 ### Revocation
-To revoke a key, simply delete the record or set `active = false` in the `faasbox_api_keys` collection. The change takes effect immediately.
+
+From the editor's **API keys** page, each key carries an **Active** checkbox and a delete button — unchecking one disables the key, deleting one removes it. The same two operations are available by hand in the `faasbox_api_keys` collection (`active = false`, or delete the record). Either way, the change takes effect on the next request: nothing is cached.
+
+The page also lets you narrow or widen the scope of a key that already exists, which is the cheap way to apply least privilege after the fact.
 
 ---
 

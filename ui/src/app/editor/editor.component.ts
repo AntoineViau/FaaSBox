@@ -8,6 +8,7 @@ import {
   type OnInit,
   signal,
 } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from '@/auth/auth.service';
@@ -27,6 +28,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
   selector: 'app-editor',
   standalone: true,
   imports: [
+    RouterLink,
     ZardButtonComponent,
     ZardIconComponent,
     ZardInputDirective,
@@ -77,6 +79,10 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
             <z-icon zType="scroll-text" class="mr-1.5 h-4 w-4" />
             Logs
           </button>
+          <a z-button zType="outline" zSize="sm" routerLink="/keys">
+            <z-icon zType="shield" class="mr-1.5 h-4 w-4" />
+            API keys
+          </a>
           <button z-button zType="outline" zSize="sm" (click)="logout()">
             <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
             Sign out

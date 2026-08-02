@@ -78,6 +78,9 @@ Then open `http://localhost:8080/_/` to create your superuser account on first l
 - **Editor UI**: `http://localhost:8080/` (to write and test functions).
 
 ### 4. Create an API Key
+
+The editor has an **API keys** page (button in the header) that creates, scopes, disables and deletes keys, and reveals the raw value once. To do it from the shell instead:
+
 ```bash
 # 1. Get a token
 TOKEN=$(curl -s -X POST http://localhost:8080/api/collections/_superusers/auth-with-password \

@@ -34,7 +34,7 @@ func setupFaaSCollections(t testing.TB, app core.App) {
 // createTestAPIKey creates an API key record and returns the raw key string.
 func createTestAPIKey(t testing.TB, app core.App, name string, allowedFunctions []string) string {
 	t.Helper()
-	rawKey, err := generateAPIKey(app, name, allowedFunctions)
+	rawKey, err := generateAPIKey(app, name, allowedFunctions, types.DateTime{})
 	if err != nil {
 		t.Fatalf("failed to generate API key %q: %v", name, err)
 	}
