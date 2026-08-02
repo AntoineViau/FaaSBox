@@ -96,6 +96,7 @@ console.log(JSON.stringify({
 ### How Dependency Installation Works
 - FaaSBox automatically detects the `package.json`.
 - **Saving** your function runs `bun install` in its directory, in the background. The save returns immediately — you do not wait for the install.
+- The corollary matters: an edited `package.json` that has not been saved installs **nothing**. The dependency is on your screen and nowhere else, which is why the editor shows a banner until you save.
 - It caches the `node_modules` and only re-installs when `package.json` or `bun.lock` changed. Editing your script alone never triggers an install.
 - If an invocation arrives before the install is done, it waits for it rather than failing.
 - An invocation still installs on its own when needed — after a restart on a fresh filesystem, for instance. In that case, and only then, the caller waits for the install.
@@ -128,6 +129,8 @@ The result appears in the right pane with:
 - **Status** (success or error) and execution time.
 - **Result**: the parsed stdout output.
 - **stdout / stderr**: raw output streams, displayed separately.
+
+**The Runner executes the last saved version**, not what is on your screen — it calls the same `/invoke/{name}` endpoint as any other caller, and that runs the file on disk. While you have unsaved changes, the Runner toolbar says so and **Run** asks for confirmation before executing. Confirming runs the saved version anyway; declining sends no request at all. Save first if you meant to test what you just typed.
 
 This is the fastest way to iterate on a function. You can also use `curl` for automated testing (see [06 - API Keys and Security](06-api-keys-and-security.md)).
 

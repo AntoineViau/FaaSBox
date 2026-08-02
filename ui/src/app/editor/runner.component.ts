@@ -22,6 +22,12 @@ import { ZardIconComponent } from '@shared/components/icon';
       <!-- Toolbar -->
       <div class="flex items-center gap-2 border-b border-border px-3 py-1.5">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Runner</span>
+        @if (unsaved()) {
+          <span class="flex items-center gap-1.5 text-xs text-yellow-500">
+            <z-icon zType="triangle-alert" class="h-3.5 w-3.5" />
+            Unsaved changes — runs the last saved version.
+          </span>
+        }
         <div class="flex-1"></div>
         <button
           z-button
@@ -118,6 +124,8 @@ export class RunnerComponent {
   private readonly functionsService = inject(FunctionsService);
 
   readonly functionName = input.required<string>();
+  /** Editor buffer differs from what was saved, so /invoke runs older code. */
+  readonly unsaved = input(false);
 
   protected readonly payload = signal('{}');
   protected readonly isExecuting = signal(false);
@@ -126,6 +134,15 @@ export class RunnerComponent {
   protected async execute(): Promise<void> {
     const name = this.functionName();
     if (!name) return;
+
+    // /invoke runs the file on disk, so an unsaved buffer would be diagnosed
+    // against code the user is not looking at.
+    if (
+      this.unsaved() &&
+      !confirm('This function has unsaved changes. Running executes the last saved version. Run anyway?')
+    ) {
+      return;
+    }
 
     let parsed: unknown;
     try {

@@ -119,6 +119,24 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
               />
             </div>
 
+            <!-- Unsaved package.json banner: outside the tab panels on purpose,
+                 so it stays visible after leaving the package.json tab. -->
+            @if (packageJsonDirty()) {
+              <div
+                class="flex items-center gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-600 dark:text-yellow-500"
+              >
+                <z-icon zType="triangle-alert" class="h-4 w-4 shrink-0" />
+                <span class="flex-1">
+                  package.json has unsaved changes. Dependencies are only installed when you save, and
+                  runs execute the last saved version.
+                </span>
+                <button z-button zType="default" zSize="sm" (click)="save()">
+                  <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+                  Save
+                </button>
+              </div>
+            }
+
             <!-- Tabs -->
             <z-tab-group class="flex flex-1 flex-col overflow-hidden" zTabsPosition="top" [zShowArrow]="false">
               <z-tab label="Script">
@@ -165,7 +183,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
             <!-- Runner panel -->
             @if (showRunner()) {
               <div class="h-64 shrink-0 border-t border-border">
-                <app-runner [functionName]="fn.name" />
+                <app-runner [functionName]="fn.name" [unsaved]="isDirty()" />
               </div>
             }
 
@@ -219,6 +237,16 @@ export class EditorComponent implements OnInit {
   protected readonly cronFunctions = signal<Set<string>>(new Set());
 
   private syncingFromStore = false;
+
+  /**
+   * Isolated from isDirty because this one has no visible effect: dependencies
+   * are only installed when the function is saved, so an edited package.json
+   * that was never saved installs nothing at all.
+   */
+  protected readonly packageJsonDirty = computed(() => {
+    const fn = this.store.selectedFunction();
+    return !!fn && this.localPackageJson() !== fn.packageJson;
+  });
 
   protected readonly isDirty = computed(() => {
     const fn = this.store.selectedFunction();
