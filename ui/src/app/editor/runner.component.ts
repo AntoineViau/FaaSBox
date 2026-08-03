@@ -24,21 +24,34 @@ import { ZardIconComponent } from '@shared/components/icon';
       <div class="flex items-center gap-2 border-b border-border px-3 py-1.5">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Runner</span>
         <div class="flex-1"></div>
+        @if (busy()) {
+          <span class="flex items-center text-xs text-muted-foreground">
+            <z-icon zType="loader-circle" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            Running...
+          </span>
+        }
         <button
           z-button
-          zType="default"
+          [zType]="dirty() ? 'outline' : 'default'"
           zSize="sm"
           [disabled]="busy() || !functionName()"
           (click)="run.emit()"
         >
-          @if (busy()) {
-            <z-icon zType="loader-circle" class="mr-1.5 h-4 w-4 animate-spin" />
-            Running...
-          } @else {
-            <z-icon zType="zap" class="mr-1.5 h-4 w-4" />
-            Save and run
-          }
+          <z-icon zType="zap" class="mr-1.5 h-4 w-4" />
+          Run
         </button>
+        @if (dirty()) {
+          <button
+            z-button
+            zType="default"
+            zSize="sm"
+            [disabled]="busy() || !functionName()"
+            (click)="saveAndRun.emit()"
+          >
+            <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+            Save and run
+          </button>
+        }
       </div>
 
       <!-- Content: payload + result side by side -->
@@ -121,13 +134,24 @@ export class RunnerComponent {
   readonly functionName = input.required<string>();
   /** Saving and running are one action, driven by the editor: it owns the flag. */
   readonly busy = input(false);
+  /**
+   * True while the buffer differs from what the server holds. The editor owns
+   * it, like busy: the runner has no view on the edit buffer.
+   */
+  readonly dirty = input(false);
 
   /**
-   * Asks the editor to save the buffer, then call execute(). /invoke runs the
-   * file on disk, so running without saving first would diagnose code the user
-   * is not looking at.
+   * Asks the editor to call execute() straight away. /invoke runs the file on
+   * disk, so this diagnoses the last saved version — which is the point when
+   * nothing was edited.
    */
   readonly run = output<void>();
+
+  /**
+   * Asks the editor to save the buffer first, then call execute(). Only offered
+   * while the two differ, so it disappears once there is nothing left to save.
+   */
+  readonly saveAndRun = output<void>();
 
   protected readonly payload = signal('{}');
   protected readonly lastResult = signal<InvocationResult | null>(null);

@@ -126,9 +126,9 @@ The editor does not display these yet: read them from the PocketBase admin UI, i
 The FaaSBox Editor includes a built-in **Runner** panel that lets you test your function without leaving the browser.
 
 1. Open your function in the Editor.
-2. Switch to the **Runner** tab.
+2. Open the **Runner** panel from the header.
 3. Enter a JSON payload in the left pane (defaults to `{}`).
-4. Click **Save and run**.
+4. Click **Run**, or **Save and run** if you changed something.
 
 The result appears in the right pane with:
 
@@ -136,7 +136,13 @@ The result appears in the right pane with:
 - **Result**: the parsed stdout output.
 - **stdout / stderr**: raw output streams, displayed separately.
 
-**Save and run saves before it executes** — both your script and your `package.json`. It has to: the Runner calls the same `/invoke/{name}` endpoint as any other caller, and that endpoint runs the file on disk, so what is only on your screen would never be tested. If your `package.json` changed, saving starts the dependency install and the run waits for it to finish rather than executing against stale dependencies.
+### Run and Save and run
+
+**Run** is always there. It executes what the server holds: the Runner calls the same `/invoke/{name}` endpoint as any other caller, and that endpoint runs the file on disk. Nothing is saved, so what you get is your last saved version.
+
+**Save and run** only appears while what is on your screen differs from what is saved, and it disappears as soon as the save goes through. It writes the name, the script and the `package.json`, then invokes. That is the button to use to test what you just typed — without saving, `/invoke` would never see it. If your `package.json` changed, saving starts the dependency install and the run waits for it to finish rather than executing against stale dependencies.
+
+The rule of thumb: if **Save and run** is on screen, **Run** is about to test something other than what you are looking at.
 
 Nothing is executed if the save itself fails — the server refusing the record, for instance. Fix what the message reports and click again. Your environment variables are not part of this: the **Environment** tab has its own **Save**, and neither **Save** nor **Save and run** touches your secrets.
 

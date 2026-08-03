@@ -52,22 +52,9 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
           <h1 class="text-lg font-semibold">FaaSBox</h1>
         </div>
         <div class="flex flex-1 items-center gap-2 px-4">
-          <!-- These act on the open function, so they only exist when there is
-               one. Nothing here applies to the empty state. -->
+          <!-- Panels of the open function, so they only exist when there is one.
+               Save is not here: it lives next to the name it records. -->
           @if (store.selectedFunction()) {
-            <button
-              z-button
-              zType="default"
-              zSize="sm"
-              [disabled]="!isDirty()"
-              (click)="save()"
-            >
-              <z-icon zType="save" class="mr-1.5 h-4 w-4" />
-              Save
-            </button>
-            @if (isDirty()) {
-              <span class="text-xs text-muted-foreground">(unsaved changes)</span>
-            }
             <button
               z-button
               [zType]="showRunner() ? 'secondary' : 'outline'"
@@ -114,16 +101,23 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
         <!-- Editor area -->
         <div class="flex flex-1 flex-col overflow-hidden">
           @if (store.selectedFunction(); as fn) {
-            <!-- Name field -->
-            <div class="border-b border-border px-4 py-2">
+            <!-- Name field, and the one Save of the function: it records the
+                 name, the script and the package.json, from any of the tabs. -->
+            <div class="flex items-center gap-2 border-b border-border px-4 py-2">
               <input
                 z-input
                 type="text"
                 placeholder="Function name"
                 [value]="localName()"
                 (input)="localName.set($any($event.target).value)"
-                class="h-8 text-sm"
+                class="h-8 flex-1 text-sm"
               />
+              @if (nameOrScriptDirty()) {
+                <button z-button zType="default" zSize="sm" (click)="save()">
+                  <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+                  Save
+                </button>
+              }
             </div>
 
             <!-- Unsaved package.json banner: outside the tab panels on purpose,
@@ -178,7 +172,13 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
             <!-- Runner panel -->
             @if (showRunner()) {
               <div class="h-64 shrink-0 border-t border-border">
-                <app-runner [functionName]="fn.name" [busy]="running()" (run)="saveAndRun()" />
+                <app-runner
+                  [functionName]="fn.name"
+                  [busy]="running()"
+                  [dirty]="isDirty()"
+                  (run)="run()"
+                  (saveAndRun)="saveAndRun()"
+                />
               </div>
             }
 
@@ -207,13 +207,6 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
       flex-direction: column;
       flex: 1;
       overflow: hidden;
-    }
-    .tab-content {
-      flex: 1;
-      overflow: hidden;
-    }
-    [role="tabpanel"] {
-      height: 100%;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -247,16 +240,19 @@ export class EditorComponent implements OnInit {
     return !!fn && this.localPackageJson() !== fn.packageJson;
   });
 
-  /** Environment lives in its own tab, with its own Save: it is not part of this. */
-  protected readonly isDirty = computed(() => {
+  /**
+   * What the Save next to the name field answers for. It writes all three
+   * fields, but it only shows up for these two: a package.json edited alone
+   * already has the banner and its button, and a second call to action on the
+   * same record would just ask twice for the same click.
+   */
+  protected readonly nameOrScriptDirty = computed(() => {
     const fn = this.store.selectedFunction();
-    if (!fn) return false;
-    return (
-      this.localName() !== fn.name ||
-      this.localScript() !== fn.script ||
-      this.localPackageJson() !== fn.packageJson
-    );
+    return !!fn && (this.localName() !== fn.name || this.localScript() !== fn.script);
   });
+
+  /** Environment lives in its own tab, with its own Save: it is not part of this. */
+  protected readonly isDirty = computed(() => this.nameOrScriptDirty() || this.packageJsonDirty());
 
   constructor() {
     effect(() => {
@@ -319,6 +315,21 @@ export class EditorComponent implements OnInit {
     } catch (e) {
       alert(`Failed to save: ${(e as Error).message}`);
       return false;
+    }
+  }
+
+  /**
+   * Runs what the server already holds. /invoke executes the file on disk, so
+   * this is the last saved version — which is the whole point when the buffer
+   * has not been touched. The runner only offers Save and run past that.
+   */
+  protected async run(): Promise<void> {
+    if (this.running()) return;
+    this.running.set(true);
+    try {
+      await this.runner()?.execute();
+    } finally {
+      this.running.set(false);
     }
   }
 

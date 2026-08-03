@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -90,6 +92,66 @@ func TestEnsureCronJobsCollection_Migration(t *testing.T) {
 		if col.Fields.GetByName(fieldName) == nil {
 			t.Errorf("%s field not added during migration", fieldName)
 		}
+	}
+}
+
+func TestValidateCronScheduleHook(t *testing.T) {
+	// A test app starts with no hook bound: wire them the way main.go does.
+	bindCronHooks := func(app core.App) {
+		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+		app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+	}
+
+	scenarios := []tests.ApiScenario{
+		{
+			Name:   "invalid expression refused with a message the client can display",
+			Method: http.MethodPost,
+			URL:    "/api/collections/" + faasboxCronJobsCollection + "/records",
+			Body: strings.NewReader(
+				`{"name":"bad-schedule","schedule":"0 0 0 * *","functionName":"echo","active":true}`,
+			),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				bindCronHooks(app)
+			},
+			ExpectedStatus: 400,
+			// What is under test is the wording reaching the wire: an ordinary
+			// error would be swallowed and replaced by "Failed to create record",
+			// leaving the editor with nothing to show.
+			ExpectedContent: []string{
+				`Invalid cron expression \"0 0 0 * *\"`,
+				`minute hour day-of-month month day-of-week`,
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				if _, err := app.FindFirstRecordByData(faasboxCronJobsCollection, "name", "bad-schedule"); err == nil {
+					t.Error("record was created despite the rejected schedule")
+				}
+			},
+		},
+		{
+			Name:   "valid expression goes through",
+			Method: http.MethodPost,
+			URL:    "/api/collections/" + faasboxCronJobsCollection + "/records",
+			Body: strings.NewReader(
+				`{"name":"good-schedule","schedule":"0 0 * * *","functionName":"echo","active":true}`,
+			),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				bindCronHooks(app)
+			},
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"schedule":"0 0 * * *"`},
+		},
+	}
+
+	for _, s := range scenarios {
+		s.Test(t)
 	}
 }
 

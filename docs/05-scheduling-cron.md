@@ -11,12 +11,24 @@ The easiest way to manage cron jobs is directly from the FaaSBox Editor:
 
 1. Open your function in the Editor.
 2. Switch to the **Triggers** tab.
-3. Click **Add trigger**.
-4. Configure the schedule (pick a preset or type a custom cron expression), payload, and active state.
+3. Click **Add trigger**. The row appears on screen — nothing is written yet.
+4. Configure the schedule (click an example in the **Cron syntax** fold, or type your own expression), payload, and active state.
 5. Open the **Advanced** fold if you need to cap concurrency — see **Max queue** below.
-6. Changes are saved automatically.
+6. Click **Save**.
 
-You can toggle triggers on/off, edit their schedule, payload and max queue, or delete them — all from this panel. The scheduler picks up changes in real time, no restart needed.
+You can toggle triggers on/off, edit their schedule, payload and max queue, or delete them — all from this panel. Once saved, the scheduler picks the changes up in real time, no restart needed.
+
+### Nothing Is Written Before You Save
+
+Adding, editing and deleting a trigger all stay on screen until you click **Save**, which writes the whole list at once. The button is disabled while nothing has changed.
+
+This matters because the server can refuse a trigger — an invalid cron expression is the usual case. When it does, the panel names the trigger and reports why, the row keeps what you typed so you can fix it, and the other triggers are still saved. Click **Save** again once corrected.
+
+An invalid JSON payload is the one exception: it stops the save before anything is written at all, rather than saving part of the list.
+
+### The Cron Syntax Fold
+
+Under the schedule field, the **Cron syntax** fold — closed by default — spells out the five columns and lists ready-made expressions. Click one and it fills the field.
 
 ### Max queue
 

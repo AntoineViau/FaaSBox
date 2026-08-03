@@ -31,7 +31,7 @@ Pass this to your Docker container:
 - The trash button removes a row.
 - **Save** writes the whole set to the database, encrypted.
 
-This tab saves on its own. **Save** in the header and **Save and run** never touch your secrets, so a script you are still editing has no bearing on them, and the reverse holds too.
+This tab saves on its own. The function's own **Save**, next to the name field, and **Save and run** never touch your secrets, so a script you are still editing has no bearing on them, and the reverse holds too.
 
 > ⚠️ **Saving replaces the whole set.** There is no merge: a row you delete is deleted from the function, and saving with no rows at all removes every variable. This is why the tab shows you what is there — editing it blind would drop what you could not see.
 

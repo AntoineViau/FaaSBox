@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   effect,
   inject,
   input,
@@ -11,147 +12,58 @@ import { firstValueFrom } from 'rxjs';
 
 import type { FaasboxCronJob } from '@/models/faasbox-cron-job.model';
 import { CronService } from '@/editor/cron.service';
+import { CronTriggerCardComponent, type CronRow } from '@/editor/cron-trigger-card.component';
+import { ZardAlertComponent } from '@shared/components/alert';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
-import { ZardInputDirective } from '@shared/components/input';
 
-const CRON_PRESETS: Record<string, string> = {
-  '* * * * *': 'Every minute',
-  '*/5 * * * *': 'Every 5 minutes',
-  '*/10 * * * *': 'Every 10 minutes',
-  '*/15 * * * *': 'Every 15 minutes',
-  '*/30 * * * *': 'Every 30 minutes',
-  '0 * * * *': 'Every hour',
-  '0 */2 * * *': 'Every 2 hours',
-  '0 */6 * * *': 'Every 6 hours',
-  '0 */12 * * *': 'Every 12 hours',
-  '0 0 * * *': 'Every day at midnight',
-  '0 6 * * *': 'Every day at 6:00 AM',
-  '0 12 * * *': 'Every day at noon',
-  '0 0 * * 0': 'Every Sunday at midnight',
-  '0 0 * * 1': 'Every Monday at midnight',
-  '0 0 1 * *': 'First day of every month',
-};
-
+/**
+ * The Triggers panel.
+ *
+ * Nothing here is written as it is typed: adding, editing and deleting all stay
+ * on screen until Save, which reconciles the list with the database. Immediate
+ * writes left a refused schedule displayed as if it had been accepted.
+ */
 @Component({
   selector: 'app-cron-editor',
   standalone: true,
-  imports: [ZardButtonComponent, ZardIconComponent, ZardInputDirective],
+  imports: [CronTriggerCardComponent, ZardAlertComponent, ZardButtonComponent, ZardIconComponent],
   template: `
     <div class="flex h-full flex-col overflow-y-auto p-4">
+      @if (errorMessage()) {
+        <z-alert class="mb-4" zType="destructive" zTitle="Error" [zDescription]="errorMessage()" />
+      }
+
       @if (isLoading()) {
         <p class="text-sm text-muted-foreground">Loading triggers...</p>
       } @else {
-        @if (crons().length === 0) {
+        @if (rows().length === 0) {
           <p class="mb-4 text-sm text-muted-foreground">No triggers configured for this function.</p>
         }
 
-        @for (cron of crons(); track cron.id) {
-          <div class="mb-3 rounded-lg border border-border p-3">
-            <div class="flex items-start gap-3">
-              <div class="flex-1 space-y-2">
-                <!-- Name -->
-                <div>
-                  <label class="mb-1 block text-xs text-muted-foreground">Name</label>
-                  <input
-                    z-input
-                    type="text"
-                    class="h-8 text-sm"
-                    [value]="cron.name"
-                    (change)="updateField(cron, 'name', $any($event.target).value)"
-                  />
-                </div>
-
-                <!-- Schedule -->
-                <div>
-                  <label class="mb-1 block text-xs text-muted-foreground">Schedule (cron expression)</label>
-                  <input
-                    z-input
-                    type="text"
-                    class="h-8 font-mono text-sm"
-                    placeholder="*/5 * * * *"
-                    [value]="cron.schedule"
-                    (change)="updateField(cron, 'schedule', $any($event.target).value)"
-                  />
-                  <p class="mt-0.5 text-xs text-muted-foreground">
-                    {{ describeSchedule(cron.schedule) }}
-                  </p>
-                </div>
-
-                <!-- Payload -->
-                <div>
-                  <label class="mb-1 block text-xs text-muted-foreground">Payload (JSON)</label>
-                  <textarea
-                    z-input
-                    rows="2"
-                    class="font-mono text-sm"
-                    placeholder="{}"
-                    [value]="formatPayload(cron.payload)"
-                    (change)="updatePayload(cron, $any($event.target).value)"
-                  ></textarea>
-                </div>
-
-                <!-- Advanced (collapsed by default) -->
-                <details>
-                  <summary
-                    class="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Advanced
-                  </summary>
-                  <div class="mt-2">
-                    <label class="mb-1 block text-xs text-muted-foreground">Max queue</label>
-                    <input
-                      z-input
-                      type="number"
-                      min="0"
-                      step="1"
-                      class="h-8 w-28 text-sm"
-                      value="{{ cron.maxQueue }}"
-                      (change)="updateMaxQueue(cron, $any($event.target))"
-                    />
-                    <p class="mt-0.5 text-xs text-muted-foreground">
-                      Maximum simultaneous executions (waiting + running) for this trigger. Extra
-                      triggers are skipped with a warning in the server log. 0 means no limit.
-                    </p>
-                  </div>
-                </details>
-              </div>
-
-              <!-- Right actions -->
-              <div class="flex flex-col items-center gap-2 pt-5">
-                <label class="flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    [checked]="cron.active"
-                    (change)="updateField(cron, 'active', $any($event.target).checked)"
-                    class="h-4 w-4 accent-primary"
-                  />
-                  <span class="text-xs text-muted-foreground">Active</span>
-                </label>
-                <button
-                  z-button
-                  zType="ghost"
-                  zSize="icon"
-                  class="h-7 w-7"
-                  (click)="deleteCron(cron)"
-                >
-                  <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
-                </button>
-              </div>
-            </div>
-          </div>
+        @for (row of rows(); track row.key) {
+          <app-cron-trigger-card
+            [row]="row"
+            (rowChange)="patch(row.key, $event)"
+            (removeRow)="remove(row.key)"
+          />
         }
 
-        <button
-          z-button
-          zType="outline"
-          zSize="sm"
-          class="self-start"
-          (click)="addCron()"
-        >
-          <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
-          Add trigger
-        </button>
+        <div class="flex items-center gap-2">
+          <button z-button zType="outline" zSize="sm" (click)="add()">
+            <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
+            Add trigger
+          </button>
+          <button z-button zType="default" zSize="sm" [disabled]="!canSave()" (click)="save()">
+            <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+            Save
+          </button>
+          @if (saving()) {
+            <span class="text-xs text-muted-foreground">Saving...</span>
+          } @else if (isDirty()) {
+            <span class="text-xs text-muted-foreground">(unsaved changes)</span>
+          }
+        </div>
       }
     </div>
   `,
@@ -163,93 +75,215 @@ export class CronEditorComponent {
   readonly functionName = input.required<string>();
   readonly cronCountChange = output<void>();
 
-  protected readonly crons = signal<FaasboxCronJob[]>([]);
+  protected readonly rows = signal<CronRow[]>([]);
   protected readonly isLoading = signal(false);
+  protected readonly saving = signal(false);
+  protected readonly errorMessage = signal('');
+
+  /**
+   * What the database is known to hold, keyed by record id. Only rows that
+   * exist there are listed: a row absent from it is a creation, and an entry
+   * with no row left on screen is a deletion. Recomputing the work at save time
+   * from these two lists is what keeps a delete-then-re-add from turning into a
+   * removal followed by a different record.
+   */
+  private readonly saved = signal<Map<string, CronRow>>(new Map());
+
+  private nextKey = 0;
+
+  protected readonly isDirty = computed(() => {
+    const saved = this.saved();
+    const rows = this.rows();
+    if (rows.length !== saved.size) return true;
+    return rows.some((row) => {
+      const previous = saved.get(row.id);
+      return !previous || !sameRow(previous, row);
+    });
+  });
+
+  protected readonly canSave = computed(() => !this.saving() && this.isDirty());
 
   constructor() {
     effect(() => {
       const name = this.functionName();
       if (name) {
-        this.loadCrons(name);
+        this.load(name);
       }
     });
   }
 
-  private async loadCrons(functionName: string): Promise<void> {
+  private async load(functionName: string): Promise<void> {
     this.isLoading.set(true);
+    this.errorMessage.set('');
     try {
       const res = await firstValueFrom(this.cronService.list(functionName));
-      this.crons.set(res.items);
+      // A slow answer must not land on the function the user switched to.
+      if (this.functionName() !== functionName) return;
+      this.rows.set(res.items.map((item) => this.toRow(item)));
+      this.snapshot();
+    } catch (e) {
+      this.errorMessage.set(`Failed to load the triggers: ${errorText(e)}`);
     } finally {
       this.isLoading.set(false);
     }
   }
 
-  protected async addCron(): Promise<void> {
+  protected add(): void {
     const fnName = this.functionName();
-    const existing = this.crons().length;
-    const created = await firstValueFrom(
-      this.cronService.create({
+    const existing = this.rows().length;
+    // On screen only: nothing reaches the database until Save.
+    this.rows.update((list) => [
+      {
+        key: this.nextKey++,
+        id: '',
         name: existing === 0 ? fnName : `${fnName}-${existing + 1}`,
         schedule: '0 * * * *',
-        functionName: fnName,
-        payload: {},
+        payload: '{}',
         active: true,
         maxQueue: 0,
-      }),
-    );
-    this.crons.update((list) => [created, ...list]);
-    this.cronCountChange.emit();
+      },
+      ...list,
+    ]);
   }
 
-  protected async updateField(cron: FaasboxCronJob, field: string, value: unknown): Promise<void> {
-    const updated = await firstValueFrom(this.cronService.update(cron.id, { [field]: value }));
-    this.crons.update((list) => list.map((c) => (c.id === cron.id ? updated : c)));
-    if (field === 'active') {
+  protected patch(key: number, changes: Partial<CronRow>): void {
+    this.rows.update((list) => list.map((row) => (row.key === key ? { ...row, ...changes } : row)));
+  }
+
+  protected remove(key: number): void {
+    this.rows.update((list) => list.filter((row) => row.key !== key));
+  }
+
+  protected async save(): Promise<void> {
+    const rows = this.rows();
+
+    // Every payload is parsed first: a malformed document stops the whole save
+    // instead of writing half of it and reporting the rest.
+    const payloads = new Map<number, unknown>();
+    for (const row of rows) {
+      const text = row.payload.trim();
+      try {
+        payloads.set(row.key, text ? JSON.parse(text) : {});
+      } catch {
+        this.errorMessage.set(
+          `"${label(row)}": the payload is not valid JSON. Nothing was saved.`,
+        );
+        return;
+      }
+    }
+
+    this.errorMessage.set('');
+    this.saving.set(true);
+
+    const saved = new Map(this.saved());
+    const failures: string[] = [];
+    let written = false;
+
+    // Deletions first: an entry whose row left the screen has to go.
+    for (const [id, previous] of this.saved()) {
+      if (rows.some((row) => row.id === id)) continue;
+      try {
+        await firstValueFrom(this.cronService.delete(id));
+        saved.delete(id);
+        written = true;
+      } catch (e) {
+        failures.push(`"${label(previous)}": ${errorText(e)}`);
+      }
+    }
+
+    for (const row of rows) {
+      const previous = row.id ? saved.get(row.id) : undefined;
+      if (previous && sameRow(previous, row)) continue;
+      const data: Partial<FaasboxCronJob> = {
+        name: row.name,
+        schedule: row.schedule,
+        functionName: this.functionName(),
+        payload: payloads.get(row.key),
+        active: row.active,
+        maxQueue: row.maxQueue,
+      };
+      try {
+        const record = row.id
+          ? await firstValueFrom(this.cronService.update(row.id, data))
+          : await firstValueFrom(this.cronService.create(data));
+        // A creation only becomes an update on the next save once its row
+        // carries the id the server just handed back.
+        this.patch(row.key, { id: record.id });
+        saved.set(record.id, { ...row, id: record.id });
+        written = true;
+      } catch (e) {
+        // The other triggers stay written; this one keeps what was typed, so it
+        // can be corrected and saved again.
+        failures.push(`"${label(row)}": ${errorText(e)}`);
+      }
+    }
+
+    this.saved.set(saved);
+    this.saving.set(false);
+
+    if (failures.length) {
+      this.errorMessage.set(`Failed to save — ${failures.join(' — ')}`);
+    }
+    // Never before: the sidebar icon must not announce a schedule the database
+    // refused.
+    if (written) {
       this.cronCountChange.emit();
     }
   }
 
-  protected async updateMaxQueue(cron: FaasboxCronJob, input: HTMLInputElement): Promise<void> {
-    // The DOM yields a string; maxQueue is a PocketBase NumberField. Empty, invalid
-    // and negative inputs all collapse to 0, which means "no limit" server-side.
-    const parsed = Number.parseInt(input.value, 10);
-    const value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-    // Re-sync the field when the typed text was normalized: rebinding alone would
-    // not repaint it if the stored value did not change (e.g. 0 -> "-5" -> 0).
-    if (input.value !== String(value)) {
-      input.value = String(value);
-    }
-    await this.updateField(cron, 'maxQueue', value);
+  private toRow(job: FaasboxCronJob): CronRow {
+    return {
+      key: this.nextKey++,
+      id: job.id,
+      name: job.name,
+      schedule: job.schedule,
+      payload: formatPayload(job.payload),
+      active: job.active,
+      maxQueue: job.maxQueue ?? 0,
+    };
   }
 
-  protected async updatePayload(cron: FaasboxCronJob, text: string): Promise<void> {
-    let parsed: unknown;
-    try {
-      parsed = text.trim() ? JSON.parse(text) : {};
-    } catch {
-      return; // ignore invalid JSON
-    }
-    await this.updateField(cron, 'payload', parsed);
+  /** Records what the database now holds, which is what isDirty compares against. */
+  private snapshot(): void {
+    this.saved.set(new Map(this.rows().filter((row) => row.id).map((row) => [row.id, { ...row }])));
   }
+}
 
-  protected async deleteCron(cron: FaasboxCronJob): Promise<void> {
-    await firstValueFrom(this.cronService.delete(cron.id));
-    this.crons.update((list) => list.filter((c) => c.id !== cron.id));
-    this.cronCountChange.emit();
-  }
+/** Compares what is stored; the on-screen key and the record id are not part of it. */
+function sameRow(a: CronRow, b: CronRow): boolean {
+  return (
+    a.name === b.name &&
+    a.schedule === b.schedule &&
+    a.payload === b.payload &&
+    a.active === b.active &&
+    a.maxQueue === b.maxQueue
+  );
+}
 
-  protected formatPayload(payload: unknown): string {
-    if (payload == null) return '';
-    if (typeof payload === 'string') return payload;
-    return JSON.stringify(payload, null, 2);
-  }
+/** What names a trigger in a message: its name, or its schedule for an unnamed one. */
+function label(row: CronRow): string {
+  return row.name.trim() || row.schedule.trim() || 'unnamed trigger';
+}
 
-  protected describeSchedule(schedule: string): string {
-    const trimmed = schedule.trim();
-    if (!trimmed) return '';
-    const preset = CRON_PRESETS[trimmed];
-    if (preset) return preset;
-    return 'Custom schedule — check crontab.guru';
+function formatPayload(payload: unknown): string {
+  if (payload == null) return '';
+  if (typeof payload === 'string') return payload;
+  return JSON.stringify(payload, null, 2);
+}
+
+/**
+ * PocketBase puts the useful text in the response body — the validation message
+ * of a refused schedule lands there. HttpErrorResponse.message only restates the
+ * status, so reading it alone would drop exactly what the user needs.
+ */
+function errorText(error: unknown): string {
+  const failure = error as { error?: { message?: unknown }; message?: unknown } | null;
+  const body = failure?.error;
+  if (body && typeof body.message === 'string' && body.message) {
+    return body.message;
   }
+  if (typeof failure?.message === 'string' && failure.message) {
+    return failure.message;
+  }
+  return 'Unknown error';
 }

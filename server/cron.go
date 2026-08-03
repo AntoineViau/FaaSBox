@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/cron"
 	"github.com/pocketbase/pocketbase/tools/types"
@@ -59,11 +60,24 @@ func ensureCronJobsCollection(app core.App) error {
 }
 
 // validateCronScheduleHook rejects cron job records with an invalid schedule expression.
+//
+// The refusal is an ApiError and not an ordinary error on purpose: the record
+// endpoints wrap a hook failure through firstApiError, which keeps the first
+// argument that already is an ApiError and discards anything else. An ordinary
+// error is replaced by a bare "Failed to create record", and the client is left
+// with nothing to show. The message is written for the user — the cron library
+// error talks about internal field bounds and belongs in the server log, not in
+// the response.
 func validateCronScheduleHook(e *core.RecordEvent) error {
 	schedule := e.Record.GetString("schedule")
 	if schedule != "" {
 		if _, err := cron.NewSchedule(schedule); err != nil {
-			return fmt.Errorf("invalid cron expression %q: %w", schedule, err)
+			e.App.Logger().Debug("faasbox cron: rejected schedule",
+				"schedule", schedule, "error", err)
+			return apis.NewBadRequestError(fmt.Sprintf(
+				"Invalid cron expression %q. Expected 5 fields: minute hour day-of-month month day-of-week.",
+				schedule,
+			), nil)
 		}
 	}
 	return e.Next()
