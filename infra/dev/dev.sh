@@ -12,13 +12,24 @@ if [ ! -d "ui/node_modules" ]; then
     cd ui && npm install && cd ..
 fi
 
-# 2. Generate encryption key (if not already set)
-if [ -z "$FAASBOX_ENCRYPTION_KEY" ]; then
-    echo "🔑 Generating a new FAASBOX_ENCRYPTION_KEY..."
-    export FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32)
-    echo "Generated key: $FAASBOX_ENCRYPTION_KEY (save it to decrypt your secrets later)"
+# 2. Encryption key. It is kept next to the database it decrypts: a key minted
+#    fresh on every launch would leave every secret written by the previous run
+#    permanently unreadable, and the editor would answer 500 on its Environment
+#    tab with no way back. Same directory means same lifetime — wiping pb_data
+#    to reset the schema drops the key with the ciphertext it opens.
+DEV_KEY_FILE="data/pb_data/.faasbox-dev-key"
+if [ -n "$FAASBOX_ENCRYPTION_KEY" ]; then
+    echo "🔑 Using FAASBOX_ENCRYPTION_KEY from the environment."
+elif [ -s "$DEV_KEY_FILE" ]; then
+    export FAASBOX_ENCRYPTION_KEY=$(cat "$DEV_KEY_FILE")
+    echo "🔑 Using the development key stored in $DEV_KEY_FILE."
 else
-    echo "🔑 Using existing FAASBOX_ENCRYPTION_KEY."
+    echo "🔑 Generating a development FAASBOX_ENCRYPTION_KEY..."
+    mkdir -p "$(dirname "$DEV_KEY_FILE")"
+    # openssl rand -hex 32
+    export FAASBOX_ENCRYPTION_KEY=4966dd3de23c98e13aa7907e00cb4c46b795ba1bd52e4602445308add9002b9d
+    (umask 077 && printf '%s' "$FAASBOX_ENCRYPTION_KEY" > "$DEV_KEY_FILE")
+    echo "Stored in $DEV_KEY_FILE — it is gitignored, and reused by the next run."
 fi
 
 # 3. Create/update superuser if credentials are provided

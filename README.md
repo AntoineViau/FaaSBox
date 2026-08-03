@@ -60,16 +60,20 @@ Requires **Go 1.24+**, **Bun**, and **Node.js** (for the Angular build).
 bash infra/dev/dev.sh
 ```
 
+It keeps a development encryption key in `data/pb_data/.faasbox-dev-key` and reuses it on the next run, so secrets written in one session are still readable in the next. Export `FAASBOX_ENCRYPTION_KEY` yourself to override it.
+
 Or step by step:
 
 ```bash
 # Build the Angular editor
 cd ui && npm install && npm run build && cd ..
 
-# Start the server (generates an encryption key if not set)
+# Start the server (without a key, secrets are disabled — the server only warns)
 export FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32)
 cd server && go run . serve --http=127.0.0.1:8080 --dir=../data/pb_data
 ```
+
+A key that changes between two runs leaves the secrets written by the previous one unreadable: the editor's **Environment** tab then answers `500`, on purpose, rather than showing an empty set you would overwrite.
 
 Then open `http://localhost:8080/_/` to create your superuser account on first launch.
 
