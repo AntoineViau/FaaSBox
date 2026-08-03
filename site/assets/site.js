@@ -47,6 +47,20 @@
     });
   }
 
+  /* --- Outbound clicks ---------------------------------------------- */
+
+  /* The one action worth counting on this page: leaving for the repository.
+     Recorded as a GoatCounter event, which does nothing when the script is
+     blocked or absent. Docs links are told apart from the repo itself. */
+  document.querySelectorAll('a[href^="https://github.com/"]').forEach(function (link) {
+    link.addEventListener('click', function () {
+      var target = link.href.includes('/blob/') ? 'github-docs' : 'github-repo';
+      if (window.goatcounter && window.goatcounter.count) {
+        window.goatcounter.count({ path: target, title: 'Outbound: ' + target, event: true });
+      }
+    });
+  });
+
   /* --- Copy --------------------------------------------------------- */
 
   document.querySelectorAll('[data-copy]').forEach(function (button) {
