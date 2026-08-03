@@ -1,0 +1,158 @@
+{
+  "lang": "en",
+  "label": "English",
+
+  "meta": {
+    "title": "FaaSBox — a lightweight FaaS platform for TypeScript",
+    "description": "A lightweight functions-as-a-service platform for TypeScript, with zero dependencies. Call a function over HTTP or put it on a cron schedule. One Go binary, one SQLite file, nothing else to install."
+  },
+
+  "nav": {
+    "how": "How it works",
+    "storage": "Storage",
+    "docs": "Docs",
+    "github": "GitHub",
+    "skip": "Skip to content",
+    "language": "Language",
+    "toDark": "Switch to dark theme",
+    "toLight": "Switch to light theme"
+  },
+
+  "hero": {
+    "eyebrow": "Self-hosted · Open source",
+    "titleTop": "A lightweight FaaS platform",
+    "titleBottom": "for TypeScript. Zero dependencies.",
+    "lead": "Write your functions in the browser, then call them over HTTP or put them on a cron schedule. Deploys as a single Docker container: one Go binary, one SQLite file, nothing else to install.",
+    "ctaPrimary": "Run it in one command",
+    "ctaSecondary": "Read the source",
+    "meta": "MIT licensed · Go · Bun · SQLite",
+    "shot": {
+      "src": "assets/shots/editor-full.png",
+      "size": "2280 × 1603",
+      "alt": "The FaaSBox editor: the function list, the four tabs of a function, its code, and the runner showing a successful run"
+    }
+  },
+
+  "how": {
+    "eyebrow": "How it works",
+    "title": "Three steps, and it runs.",
+    "codeName": "daily-report",
+    "steps": [
+      {
+        "title": "Write, install and test in the browser",
+        "body": "Everything a function needs is on one screen — no local toolchain, no deploy step.",
+        "bullets": [
+          "<strong>The code.</strong> Your function reads JSON on stdin and writes JSON on stdout. No framework, no handler signature to memorise, nothing to import.",
+          "<strong>package.json</strong> — optional. List your npm packages and saving downloads and installs them for you, in the background. There is nothing else to set up.",
+          "<strong>Run</strong> — one click executes the function and shows you its result, its output and its duration, without leaving the tab."
+        ]
+      },
+      {
+        "title": "Give it a trigger",
+        "body": "Two ways to start a run, and a function can carry both at once.",
+        "ways": [
+          "<strong>An HTTP call.</strong> <code>POST /invoke/{name}</code> with an API key. The request body becomes the function's stdin, and the response carries its result and duration.",
+          "<strong>A cron schedule.</strong> Added in the <strong>Triggers</strong> tab: fifteen ready-made expressions, a free field, and a cap on concurrent runs. Changes take effect immediately — nothing restarts."
+        ]
+      },
+      {
+        "title": "Read the log",
+        "body": "Every run records its trigger, status, duration, stdout, stderr, request payload and exit code. Including the runs that never happened: a schedule that came due while the server was down is logged as <code>missed</code>, with the count and the window."
+      }
+    ]
+  },
+
+  "storage": {
+    "eyebrow": "Storage",
+    "title": "The database is a single file.",
+    "lead": "SQLite. Functions, schedules, secrets, keys and logs all live in it. No database server to provision, and backing up the instance means copying one file.",
+    "boxLocal": "Container",
+    "boxLocalNote": "replaced on every deploy",
+    "boxFile": "data.db",
+    "boxFileNote": "your whole instance",
+    "boxRemote": "S3 bucket",
+    "boxRemoteFileNote": "the same file, kept in sync",
+    "boxRemoteNote": "outlives the container",
+    "flowOut": "every write, as it happens",
+    "flowIn": "restored before start-up",
+    "midLabel": "Litestream · optional",
+    "noteTitle": "Two reasons to turn it on",
+    "noteDocker": "<strong>The disk underneath is not permanent.</strong> A container is replaced on every deploy and takes its filesystem with it. Litestream puts the file back before the server starts, so the container stays disposable and your data doesn't.",
+    "noteBackup": "<strong>Or simply as a backup.</strong> Even on a server whose disk does survive, the same mirror is an off-site copy that is always current — no dump to schedule, no window during which the last hour is missing.",
+    "noteOff": "Leave it off and nothing else changes: FaaSBox runs from the local file alone, which is what you want on your own machine."
+  },
+
+  "inside": {
+    "eyebrow": "In the box",
+    "title": "Everything you need, nothing you have to wire up.",
+    "cards": [
+      {
+        "title": "An editor, not a pipeline",
+        "body": "Four tabs per function: script, package.json, triggers, secrets. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it."
+      },
+      {
+        "title": "npm, when you need it",
+        "body": "List dependencies in package.json. They install on save, keyed by content, so an unchanged manifest never reinstalls. An invocation that lands mid-install waits — it doesn't fail."
+      },
+      {
+        "title": "Secrets encrypted at rest",
+        "body": "AES-256-GCM. Edit them as key/value pairs in the Environment tab, masked until you reveal them, and they land in the subprocess environment. Saving replaces the whole set — which is why you can see it."
+      },
+      {
+        "title": "Keys you can scope",
+        "body": "Hashed on creation, revealed once, optionally restricted to named functions and given an expiry date. An expiry the server can't read is refused at creation rather than quietly dropped."
+      },
+      {
+        "title": "Logs that answer questions",
+        "body": "Trigger, status, duration, both streams, request payload, exit code, and a flag when something was truncated to fit. Retention is by row count, purged hourly."
+      },
+      {
+        "title": "Backed up while it runs",
+        "body": "Litestream replicates the SQLite file to S3 continuously and restores it at boot. The container stays disposable; the database is the source of truth, the disk is a cache."
+      }
+    ]
+  },
+
+  "scope": {
+    "eyebrow": "By design",
+    "title": "Small enough to hold in your head.",
+    "lead": "Every decision below takes a moving part out. What is left behaves the same way every time, and you can reason about all of it at once.",
+    "items": [
+      "<strong>One boundary to secure.</strong> A single superuser administers the instance. No permission matrix to audit, no role that quietly grants more than you meant.",
+      "<strong>Runs are atomic.</strong> A call returns a complete result or an error. Nothing to reassemble on the client, no half-written response to detect.",
+      "<strong>Functions stay independent.</strong> Each one is written, invoked and tested on its own. When something breaks there is no hidden call graph to unwind first.",
+      "<strong>Nothing fires twice behind your back.</strong> A schedule missed during downtime is reported, never replayed — the distinction matters when the function bills a customer or sends mail.",
+      "<strong>One moving part.</strong> No control plane, no registry, no broker, no VPC, no serverless.yml. The platform is the container you started, and that is the whole of it."
+    ]
+  },
+
+  "start": {
+    "eyebrow": "Get started",
+    "title": "One container, one command.",
+    "codeName": "docker",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Select it",
+    "thenTitle": "Then",
+    "thenAdmin": "<code>localhost:8080/</code> — the editor. Sign in with the address and password from the command above; the account is created on first boot.",
+    "thenEditor": "<code>localhost:8080/_/</code> — the PocketBase admin underneath, if you ever want the raw collections.",
+    "localTitle": "Working on it locally",
+    "localBody": "Go 1.24+ and Bun, then <code>bash infra/dev/dev.sh</code> builds the editor and starts the server.",
+    "ctaPrimary": "GitHub",
+    "ctaSecondary": "Getting started"
+  },
+
+  "footer": {
+    "tagline": "FaaSBox — self-hosted functions-as-a-service.",
+    "license": "MIT licensed. © 2026 Antoine Viau.",
+    "linksLabel": "Documentation",
+    "links": [
+      { "text": "Getting started", "doc": "02-getting-started.md" },
+      { "text": "Writing functions", "doc": "03-writing-functions.md" },
+      { "text": "Scheduling", "doc": "05-scheduling-cron.md" },
+      { "text": "API reference", "doc": "09-api-reference.md" },
+      { "text": "Deployment", "doc": "10-deployment.md" },
+      { "text": "Security policy", "doc": "../SECURITY.md" }
+    ]
+  }
+}

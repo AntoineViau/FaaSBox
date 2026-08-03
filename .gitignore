@@ -3,6 +3,7 @@ data/pb_public/
 ui/node_modules/
 ui/dist/
 ui/.angular/
+site/dist/
 server/faasbox
 server/functions/
 *.log

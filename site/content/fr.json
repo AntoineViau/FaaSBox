@@ -1,0 +1,158 @@
+{
+  "lang": "fr",
+  "label": "Français",
+
+  "meta": {
+    "title": "FaaSBox — une plateforme FaaS légère pour TypeScript",
+    "description": "Une plateforme functions-as-a-service légère pour TypeScript, sans aucune dépendance. Appelez une fonction en HTTP ou planifiez-la en cron. Un binaire Go, un fichier SQLite, rien d'autre à installer."
+  },
+
+  "nav": {
+    "how": "Fonctionnement",
+    "storage": "Stockage",
+    "docs": "Docs",
+    "github": "GitHub",
+    "skip": "Aller au contenu",
+    "language": "Langue",
+    "toDark": "Passer au thème sombre",
+    "toLight": "Passer au thème clair"
+  },
+
+  "hero": {
+    "eyebrow": "Auto-hébergé · Open source",
+    "titleTop": "Une plateforme FaaS légère",
+    "titleBottom": "pour TypeScript. Zéro dépendance.",
+    "lead": "Écrivez vos fonctions dans le navigateur, puis appelez-les en HTTP ou planifiez-les en cron. Se déploie en un seul conteneur Docker : un binaire Go, un fichier SQLite, rien d'autre à installer.",
+    "ctaPrimary": "Lancer en une commande",
+    "ctaSecondary": "Lire le code",
+    "meta": "Licence MIT · Go · Bun · SQLite",
+    "shot": {
+      "src": "assets/shots/editor-full.png",
+      "size": "2280 × 1603",
+      "alt": "L'éditeur FaaSBox : la liste des fonctions, les quatre onglets d'une fonction, son code, et le runner affichant une exécution réussie"
+    }
+  },
+
+  "how": {
+    "eyebrow": "Fonctionnement",
+    "title": "Trois étapes, et ça tourne.",
+    "codeName": "daily-report",
+    "steps": [
+      {
+        "title": "Écrivez, installez et testez dans le navigateur",
+        "body": "Tout ce qu'il faut à une fonction tient sur un seul écran — aucune chaîne d'outils locale, aucune étape de déploiement.",
+        "bullets": [
+          "<strong>Le code.</strong> Votre fonction lit du JSON sur stdin et écrit du JSON sur stdout. Aucun framework, aucune signature de handler à retenir, rien à importer.",
+          "<strong>package.json</strong> — optionnel. Listez vos paquets npm : la sauvegarde les télécharge et les installe pour vous, en tâche de fond. Il n'y a rien d'autre à faire.",
+          "<strong>Run</strong> — un clic exécute la fonction et vous montre son résultat, sa sortie et sa durée, sans quitter l'onglet."
+        ]
+      },
+      {
+        "title": "Posez-lui un déclencheur",
+        "body": "Deux façons de lancer une exécution, et une fonction peut porter les deux à la fois.",
+        "ways": [
+          "<strong>Un appel HTTP.</strong> <code>POST /invoke/{nom}</code> avec une clé d'API. Le corps de la requête devient le stdin de la fonction, et la réponse porte son résultat et sa durée.",
+          "<strong>Une planification cron.</strong> Ajoutée dans l'onglet <strong>Triggers</strong> : quinze expressions toutes faites, un champ libre, et un plafond d'exécutions simultanées. Un changement prend effet immédiatement — rien ne redémarre."
+        ]
+      },
+      {
+        "title": "Lisez le log",
+        "body": "Chaque exécution enregistre son déclencheur, son statut, sa durée, stdout, stderr, le payload de la requête et le code de sortie. Y compris celles qui n'ont jamais eu lieu : une planification due pendant un arrêt du serveur est journalisée en <code>missed</code>, avec le nombre d'occurrences et la période."
+      }
+    ]
+  },
+
+  "storage": {
+    "eyebrow": "Stockage",
+    "title": "La base de données est un simple fichier.",
+    "lead": "Du SQLite. Fonctions, planifications, secrets, clés et logs y vivent tous. Aucun serveur de base à provisionner, et sauvegarder l'instance revient à copier un fichier.",
+    "boxLocal": "Conteneur",
+    "boxLocalNote": "remplacé à chaque déploiement",
+    "boxFile": "data.db",
+    "boxFileNote": "toute votre instance",
+    "boxRemote": "Bucket S3",
+    "boxRemoteFileNote": "le même fichier, tenu à jour",
+    "boxRemoteNote": "survit au conteneur",
+    "flowOut": "chaque écriture, au fil de l'eau",
+    "flowIn": "restauré avant le démarrage",
+    "midLabel": "Litestream · optionnel",
+    "noteTitle": "Deux raisons de l'activer",
+    "noteDocker": "<strong>Le disque en dessous n'est pas permanent.</strong> Un conteneur est remplacé à chaque déploiement et emporte son système de fichiers. Litestream remet le fichier en place avant que le serveur ne démarre : le conteneur reste jetable, vos données non.",
+    "noteBackup": "<strong>Ou simplement comme sauvegarde.</strong> Même sur un serveur dont le disque survit, cette même réplication est une copie hors site toujours à jour — aucun dump à planifier, aucune fenêtre pendant laquelle la dernière heure manque.",
+    "noteOff": "Laissez-le désactivé et rien d'autre ne change : FaaSBox tourne sur le seul fichier local, ce qu'on veut sur sa propre machine."
+  },
+
+  "inside": {
+    "eyebrow": "Dans la boîte",
+    "title": "Tout ce qu'il faut, rien à câbler.",
+    "cards": [
+      {
+        "title": "Un éditeur, pas un pipeline",
+        "body": "Quatre onglets par fonction : script, package.json, triggers, secrets. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère."
+      },
+      {
+        "title": "npm, quand vous en avez besoin",
+        "body": "Listez vos dépendances dans package.json. Elles s'installent à la sauvegarde, indexées par contenu : un manifeste inchangé ne réinstalle jamais. Une invocation qui tombe en pleine installation attend — elle n'échoue pas."
+      },
+      {
+        "title": "Des secrets chiffrés au repos",
+        "body": "AES-256-GCM. Éditez-les en paires clé/valeur dans l'onglet Environment, masquées jusqu'à ce que vous les révéliez, et injectées dans l'environnement du subprocess. La sauvegarde remplace l'ensemble — raison pour laquelle vous le voyez."
+      },
+      {
+        "title": "Des clés dont vous fixez la portée",
+        "body": "Hachées à la création, révélées une fois, restreintes au besoin à des fonctions nommées et assorties d'une date d'expiration. Une expiration que le serveur ne sait pas lire est refusée à la création plutôt qu'ignorée en silence."
+      },
+      {
+        "title": "Des logs qui répondent",
+        "body": "Déclencheur, statut, durée, les deux flux, payload de la requête, code de sortie, et un drapeau quand quelque chose a été tronqué pour tenir. La rétention se compte en lignes, purgées toutes les heures."
+      },
+      {
+        "title": "Sauvegardé pendant qu'il tourne",
+        "body": "Litestream réplique le fichier SQLite vers S3 en continu et le restaure au démarrage. Le conteneur reste jetable ; la base est la source de vérité, le disque un cache."
+      }
+    ]
+  },
+
+  "scope": {
+    "eyebrow": "Par conception",
+    "title": "Assez simple pour tenir en tête.",
+    "lead": "Chaque décision ci-dessous retire une pièce mobile. Ce qui reste se comporte pareil à chaque fois, et tient dans un seul raisonnement.",
+    "items": [
+      "<strong>Une seule frontière à sécuriser.</strong> Un unique superuser administre l'instance. Aucune matrice de permissions à auditer, aucun rôle qui accorde en silence plus que prévu.",
+      "<strong>Les exécutions sont atomiques.</strong> Un appel rend un résultat complet ou une erreur. Rien à réassembler côté client, aucune réponse à moitié écrite à détecter.",
+      "<strong>Les fonctions restent indépendantes.</strong> Chacune s'écrit, s'invoque et se teste seule. Quand quelque chose casse, aucun graphe d'appels caché à démêler d'abord.",
+      "<strong>Rien ne part deux fois à votre insu.</strong> Une planification manquée pendant un arrêt est signalée, jamais rejouée — la nuance compte quand la fonction facture un client ou envoie du courrier.",
+      "<strong>Une seule pièce mobile.</strong> Pas de control plane, pas de registre, pas de broker, pas de VPC, pas de serverless.yml. La plateforme est le conteneur que vous avez lancé, et c'est tout."
+    ]
+  },
+
+  "start": {
+    "eyebrow": "Démarrer",
+    "title": "Un conteneur, une commande.",
+    "codeName": "docker",
+    "copy": "Copier",
+    "copied": "Copié",
+    "copyFailed": "Sélectionnez",
+    "thenTitle": "Ensuite",
+    "thenAdmin": "<code>localhost:8080/</code> — l'éditeur. Connectez-vous avec l'adresse et le mot de passe de la commande ci-dessus ; le compte est créé au premier démarrage.",
+    "thenEditor": "<code>localhost:8080/_/</code> — l'admin PocketBase en dessous, si vous voulez les collections brutes.",
+    "localTitle": "Pour travailler en local",
+    "localBody": "Go 1.24+ et Bun, puis <code>bash infra/dev/dev.sh</code> construit l'éditeur et démarre le serveur.",
+    "ctaPrimary": "GitHub",
+    "ctaSecondary": "Guide de démarrage"
+  },
+
+  "footer": {
+    "tagline": "FaaSBox — functions-as-a-service auto-hébergé.",
+    "license": "Licence MIT. © 2026 Antoine Viau.",
+    "linksLabel": "Documentation",
+    "links": [
+      { "text": "Démarrer", "doc": "02-getting-started.md" },
+      { "text": "Écrire des fonctions", "doc": "03-writing-functions.md" },
+      { "text": "Planification", "doc": "05-scheduling-cron.md" },
+      { "text": "Référence API", "doc": "09-api-reference.md" },
+      { "text": "Déploiement", "doc": "10-deployment.md" },
+      { "text": "Politique de sécurité", "doc": "../SECURITY.md" }
+    ]
+  }
+}

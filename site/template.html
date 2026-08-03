@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="{{lang}}" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{meta.title}}</title>
+<meta name="description" content="{{meta.description}}">
+<meta name="color-scheme" content="light dark">
+<link rel="canonical" href="{{canonical}}">
+{{@hreflang}}
+<link rel="icon" href="{{base}}assets/favicon.svg" type="image/svg+xml">
+
+<meta property="og:type" content="website">
+<meta property="og:locale" content="{{lang}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:title" content="{{meta.title}}">
+<meta property="og:description" content="{{meta.description}}">
+
+<script>
+/* Set the theme before first paint so the page never flashes the wrong one. */
+(function () {
+  try {
+    var stored = localStorage.getItem('faasbox-theme');
+    var theme = stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+  } catch (e) { /* private mode: keep the light default */ }
+})();
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="{{base}}assets/styles.css">
+</head>
+<body data-copy-label="{{start.copy}}" data-copied-label="{{start.copied}}" data-copy-failed-label="{{start.copyFailed}}" data-to-dark="{{nav.toDark}}" data-to-light="{{nav.toLight}}">
+
+<a class="skip" href="#main">{{nav.skip}}</a>
+
+<header class="nav">
+  <div class="wrap nav__inner">
+    <a class="brand" href="#top">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <path d="M6 11.5 16 6l10 5.5v9L16 26 6 20.5Z" fill="none" stroke="var(--http)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M6 11.5 16 17l10-5.5M16 17v9" fill="none" stroke="var(--cron)" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <span class="brand__name">FaaSBox</span>
+    </a>
+
+    <nav class="nav__links" aria-label="{{nav.docs}}">
+      <a href="#how">{{nav.how}}</a>
+      <a href="#storage">{{nav.storage}}</a>
+      <a href="{{introduction}}">{{nav.docs}}</a>
+    </nav>
+
+    <div class="nav__end">
+      <div class="lang">
+        <label class="lang__label" for="lang">{{nav.language}}</label>
+        <select class="lang__select" id="lang" data-lang-select>
+          {{@langOptions}}
+        </select>
+        <svg class="lang__caret" viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+          <path d="M3 4.8 6 7.8l3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <a class="btn btn--ghost nav__gh" href="{{repo}}">{{nav.github}}</a>
+      <button class="toggle" type="button" data-theme-toggle aria-label="{{nav.toDark}}">
+        <svg class="toggle__sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="4.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+          <path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.3 5.3l1.9 1.9M16.8 16.8l1.9 1.9M18.7 5.3l-1.9 1.9M7.2 16.8l-1.9 1.9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        </svg>
+        <svg class="toggle__moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M20 14.4A8.5 8.5 0 0 1 9.6 4a8.5 8.5 0 1 0 10.4 10.4Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ── Hero ─────────────────────────────────────────────────────────── -->
+  <section class="hero" id="top">
+    <div class="wrap hero__inner">
+      <p class="eyebrow rise" style="--d:0">{{hero.eyebrow}}</p>
+      <h1 class="hero__title rise" style="--d:1">{{hero.titleTop}} <br class="wide-only">{{hero.titleBottom}}</h1>
+      <p class="lead rise" style="--d:2">{{hero.lead}}</p>
+      <div class="hero__cta rise" style="--d:3">
+        <a class="btn btn--solid" href="#start">{{hero.ctaPrimary}}</a>
+        <a class="btn btn--ghost" href="{{repo}}">{{hero.ctaSecondary}}</a>
+      </div>
+      <p class="hero__meta rise" style="--d:4">{{hero.meta}}</p>
+
+      <!-- The interface itself, unannotated: it says more than a caption could. -->
+      <div class="hero__shot rise" style="--d:5">
+        {{@heroShot}}
+      </div>
+    </div>
+  </section>
+
+  <!-- ── How it works ─────────────────────────────────────────────────── -->
+  <section class="sec" id="how">
+    <div class="wrap">
+      <p class="eyebrow">{{how.eyebrow}}</p>
+      <h2 class="sec__title">{{how.title}}</h2>
+
+      <ol class="steps">
+        <li class="step">
+          <span class="step__n">1</span>
+          <div class="step__text">
+            <h3>{{how.steps.0.title}}</h3>
+            <p>{{how.steps.0.body}}</p>
+            <ul class="bullets">
+              {{@writeBullets}}
+            </ul>
+          </div>
+          <div class="code step__code">
+            <div class="code__bar"><span class="code__name">{{how.codeName}}</span></div>
+<pre class="code__body"><code><span class="c-key">const</span> { team } = <span class="c-key">await</span> Bun.stdin.<span class="c-fn">json</span>();
+
+<span class="c-key">const</span> res = <span class="c-key">await</span> <span class="c-fn">fetch</span>(<span class="c-str">`https://api.internal/teams/</span>${team}<span class="c-str">`</span>);
+<span class="c-key">const</span> members = <span class="c-key">await</span> res.<span class="c-fn">json</span>();
+
+<span class="c-fn">console</span>.<span class="c-fn">log</span>(<span class="c-fn">JSON</span>.<span class="c-fn">stringify</span>({ sent: members.length }));</code></pre>
+          </div>
+        </li>
+
+        <li class="step">
+          <span class="step__n">2</span>
+          <div class="step__text">
+            <h3>{{how.steps.1.title}}</h3>
+            <p>{{how.steps.1.body}}</p>
+            <ul class="bullets bullets--triggers">
+              {{@triggerWays}}
+            </ul>
+          </div>
+        </li>
+
+        <li class="step">
+          <span class="step__n">3</span>
+          <div class="step__text">
+            <h3>{{how.steps.2.title}}</h3>
+            <p>{{how.steps.2.body}}</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ── Storage ──────────────────────────────────────────────────────── -->
+  <section class="sec sec--quiet" id="storage">
+    <div class="wrap">
+      <p class="eyebrow">{{storage.eyebrow}}</p>
+      <h2 class="sec__title">{{storage.title}}</h2>
+      <p class="sec__lead">{{storage.lead}}</p>
+
+      <!-- The one thing worth showing rather than describing: the file lives in
+           a container that gets replaced, and in a bucket that doesn't. Built in
+           HTML rather than SVG so it stacks on a narrow screen instead of
+           shrinking its labels past legibility. -->
+      <figure class="flow">
+        <div class="flow__side">
+          <div class="flow__box">
+            <span class="flow__eyebrow">{{storage.boxLocal}}</span>
+            <div class="flow__file">
+              <strong>{{storage.boxFile}}</strong>
+              <span>{{storage.boxFileNote}}</span>
+            </div>
+          </div>
+          <p class="flow__note">{{storage.boxLocalNote}}</p>
+        </div>
+
+        <div class="flow__middle">
+          <p class="flow__mid-label">{{storage.midLabel}}</p>
+          <div class="flow__arrows">
+            <span class="flow__arrow flow__arrow--out">{{storage.flowOut}}</span>
+            <span class="flow__arrow flow__arrow--in">{{storage.flowIn}}</span>
+          </div>
+        </div>
+
+        <div class="flow__side">
+          <div class="flow__box">
+            <span class="flow__eyebrow">{{storage.boxRemote}}</span>
+            <div class="flow__file">
+              <strong>{{storage.boxFile}}</strong>
+              <span>{{storage.boxRemoteFileNote}}</span>
+            </div>
+          </div>
+          <p class="flow__note">{{storage.boxRemoteNote}}</p>
+        </div>
+      </figure>
+
+      <div class="storage__note">
+        <h3>{{storage.noteTitle}}</h3>
+        <p>{{storage.noteDocker}}</p>
+        <p>{{storage.noteBackup}}</p>
+        <p class="storage__off">{{storage.noteOff}}</p>
+      </div>
+    </div>
+  </section>
+
+    <!-- ── In the box ───────────────────────────────────────────────────── -->
+  <section class="sec" id="inside">
+    <div class="wrap">
+      <p class="eyebrow">{{inside.eyebrow}}</p>
+      <h2 class="sec__title">{{inside.title}}</h2>
+
+      <div class="cards">
+        {{@cards}}
+      </div>
+    </div>
+  </section>
+
+    <!-- ── Non-goals ────────────────────────────────────────────────────── -->
+  <section class="sec sec--quiet" id="design">
+    <div class="wrap">
+      <p class="eyebrow">{{scope.eyebrow}}</p>
+      <h2 class="sec__title">{{scope.title}}</h2>
+      <p class="sec__lead">{{scope.lead}}</p>
+
+      <ul class="traits">
+        {{@scopeItems}}
+      </ul>
+    </div>
+  </section>
+
+  <!-- ── Get started ──────────────────────────────────────────────────── -->
+  <section class="sec" id="start">
+    <div class="wrap">
+      <p class="eyebrow">{{start.eyebrow}}</p>
+      <h2 class="sec__title">{{start.title}}</h2>
+
+      <div class="start">
+        <div class="code">
+          <div class="code__bar">
+            <span class="code__name">{{start.codeName}}</span>
+            <button class="code__copy" type="button" data-copy>{{start.copy}}</button>
+          </div>
+<pre class="code__body"><code>docker run -d -p 8080:8080 \
+  -e SUPERUSER_EMAIL=admin@example.com \
+  -e SUPERUSER_PASSWORD=<span class="c-str">'…'</span> \
+  -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -v faasbox-data:/app/data/pb_data \
+  faasbox</code></pre>
+        </div>
+
+        <div class="start__aside">
+          <h3>{{start.thenTitle}}</h3>
+          <p>{{start.thenAdmin}}</p>
+          <p>{{start.thenEditor}}</p>
+          <h3>{{start.localTitle}}</h3>
+          <p>{{start.localBody}}</p>
+          <div class="start__cta">
+            <a class="btn btn--solid" href="{{repo}}">{{start.ctaPrimary}}</a>
+            <a class="btn btn--ghost" href="{{gettingStarted}}">{{start.ctaSecondary}}</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot__inner">
+    <div class="foot__brand">
+      <svg class="brand__mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <path d="M6 11.5 16 6l10 5.5v9L16 26 6 20.5Z" fill="none" stroke="var(--http)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M6 11.5 16 17l10-5.5M16 17v9" fill="none" stroke="var(--cron)" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+      <p>{{footer.tagline}}<br>{{footer.license}}</p>
+    </div>
+    <nav class="foot__links" aria-label="{{footer.linksLabel}}">
+      {{@footerLinks}}
+    </nav>
+  </div>
+</footer>
+
+<script src="{{base}}assets/site.js" defer></script>
+</body>
+</html>
