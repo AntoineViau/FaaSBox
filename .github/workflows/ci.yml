@@ -1,0 +1,84 @@
+name: CI
+
+# Formats, vets and tests the server, and builds the editor. Runs on pushes to
+# master and on every pull request, so a contribution is checked before review.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'server/**'
+      - 'ui/**'
+      - 'infra/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'ui/**'
+      - 'infra/**'
+      - '.github/workflows/ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A newer push on the same branch supersedes a running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    name: Server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      # Part of the suite spawns real Bun subprocesses — exec and deps invoke
+      # `bun` from PATH with no fallback, so those tests need it present.
+      - uses: oven-sh/setup-bun@v2
+
+      - name: gofmt
+        working-directory: server
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: server
+        run: go vet ./...
+
+      - name: go test
+        working-directory: server
+        run: go test ./...
+
+  editor:
+    name: Editor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install
+        working-directory: ui
+        run: npm ci
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
