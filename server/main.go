@@ -158,8 +158,14 @@ func main() {
 	})
 
 	// Live-sync function code to disk and install its dependencies when records change
-	app.OnRecordAfterCreateSuccess(faasboxFunctionsCollection).BindFunc(syncFunctionRecordHook(lifecycleCtx, functionsDir))
-	app.OnRecordAfterUpdateSuccess(faasboxFunctionsCollection).BindFunc(syncFunctionRecordHook(lifecycleCtx, functionsDir))
+	// functionsDir is read inside the handler, not when the hook is bound: the
+	// flag still holds its default at this point.
+	app.OnRecordAfterCreateSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
+		return syncFunctionRecord(lifecycleCtx, e, functionsDir)
+	})
+	app.OnRecordAfterUpdateSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
+		return syncFunctionRecord(lifecycleCtx, e, functionsDir)
+	})
 	app.OnRecordAfterDeleteSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
 		if err := deleteRecordFromDisk(e.Record, functionsDir); err != nil {
 			e.App.Logger().Error("faasbox: failed to delete function from disk",

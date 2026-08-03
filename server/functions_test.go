@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tests"
 )
 
 func TestSyncRecordToDisk_Validation(t *testing.T) {
@@ -104,5 +106,58 @@ func TestDeleteRecordFromDisk_Validation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestSyncFunctionRecord_ReadsDirAtEventTime pins down the wiring of the
+// create and update hooks, not the sync itself.
+//
+// The hooks are bound while main() runs, before the command line is parsed, so
+// functionsDir still holds the flag's default at that point. Binding a closure
+// built around its value there — as a factory would — freezes the default: every
+// save would write to ./functions while /invoke, the boot-time restore and the
+// delete hook all read the directory --functionsDir actually names, and an
+// invocation would answer "function not found" for a record that plainly exists.
+//
+// The test therefore binds the hook the way main.go does, then changes the
+// variable, the way flag parsing does, and checks the later value is the one used.
+func TestSyncFunctionRecord_ReadsDirAtEventTime(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	if err := ensureFunctionsCollection(app); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stands in for the flag's default, the value present when the hook is bound.
+	defaultDir := t.TempDir()
+	functionsDir := defaultDir
+
+	app.OnRecordAfterCreateSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
+		return syncFunctionRecord(context.Background(), e, functionsDir)
+	})
+
+	// Stands in for --functionsDir, written once the command line is parsed.
+	chosenDir := t.TempDir()
+	functionsDir = chosenDir
+
+	collection, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(collection)
+	record.Set("name", "probe")
+	record.Set("script", "console.log(1)")
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(chosenDir, "probe", "index.ts")); err != nil {
+		t.Errorf("function not written to the chosen directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(defaultDir, "probe")); err == nil {
+		t.Error("function written to the default directory: the hook froze the flag's default")
 	}
 }

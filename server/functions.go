@@ -221,20 +221,24 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	return nil
 }
 
-// syncFunctionRecordHook returns the record hook shared by create and update:
-// mirror the saved record to disk, then install its dependencies in the
-// background. A disk sync failure skips the install — the spec on disk is then
-// unknown, and installing against it would be guesswork.
-func syncFunctionRecordHook(ctx context.Context, functionsDir string) func(*core.RecordEvent) error {
-	return func(e *core.RecordEvent) error {
-		if err := syncRecordToDisk(e.Record, functionsDir); err != nil {
-			e.App.Logger().Error("faasbox: failed to sync function to disk",
-				"function", e.Record.GetString("name"), "error", err)
-			return e.Next()
-		}
-		scheduleDepsInstall(ctx, e.App, e.Record, functionsDir)
+// syncFunctionRecord is the record handler shared by create and update: mirror
+// the saved record to disk, then install its dependencies in the background. A
+// disk sync failure skips the install — the spec on disk is then unknown, and
+// installing against it would be guesswork.
+//
+// It takes functionsDir as a plain argument rather than returning a closure
+// built around it. A factory called while the hooks are registered captures the
+// flag's default, since the command line is only parsed later, and every save
+// would then write to ./functions while /invoke read the directory the flag
+// actually names.
+func syncFunctionRecord(ctx context.Context, e *core.RecordEvent, functionsDir string) error {
+	if err := syncRecordToDisk(e.Record, functionsDir); err != nil {
+		e.App.Logger().Error("faasbox: failed to sync function to disk",
+			"function", e.Record.GetString("name"), "error", err)
 		return e.Next()
 	}
+	scheduleDepsInstall(ctx, e.App, e.Record, functionsDir)
+	return e.Next()
 }
 
 // writeIfChanged writes data only when the content differs. Rewriting an identical

@@ -27,6 +27,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Fail here rather than several steps later with a confusing error: a busy port
+# lets the server exit while the capture goes on talking to whatever answers.
+if (echo >"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
+  echo "Port $PORT is already in use. Stop what is listening, or set PORT=…" >&2
+  exit 1
+fi
+
 echo "▸ Building the editor"
 (cd ui && npm run build >/dev/null)
 
@@ -42,15 +49,10 @@ echo "▸ Creating the superuser"
 "$WORK/faasbox" superuser upsert "$EMAIL" "$PASSWORD" --dir="$WORK/pb_data" >/dev/null
 
 echo "▸ Starting FaaSBox on :$PORT"
-# Started from $WORK on purpose. The record hooks that mirror a function to
-# disk capture functionsDir before the flag is parsed, so they always write to
-# ./functions relative to the working directory, while /invoke reads the flag.
-# Running from $WORK is what makes the two agree — and keeps the write out of
-# the repository. See tools/README.md.
-(cd "$WORK" && "$WORK/faasbox" serve \
+"$WORK/faasbox" serve \
   --http="127.0.0.1:$PORT" \
   --dir="$WORK/pb_data" \
-  --functionsDir="$WORK/functions" > "$WORK/server.log" 2>&1) &
+  --functionsDir="$WORK/functions" > "$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 40); do
