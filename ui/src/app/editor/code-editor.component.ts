@@ -22,6 +22,15 @@ import { ThemeService } from '@/theme/theme.service';
   selector: 'app-code-editor',
   standalone: true,
   template: `<div #editorHost class="h-full w-full overflow-auto"></div>`,
+  // An Angular host is inline by default, and a percentage height against an
+  // inline box resolves to auto: without this, the div below grows to the
+  // height of the whole document instead of scrolling inside its panel.
+  styles: `
+    :host {
+      display: block;
+      height: 100%;
+    }
+  `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CodeEditorComponent implements OnDestroy {

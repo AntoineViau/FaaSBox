@@ -1,11 +1,21 @@
 import { Routes } from '@angular/router';
-import { authGuard } from '@/auth/auth.guard';
 
+import { ApiKeysComponent } from '@/api-keys/api-keys.component';
+import { authGuard } from '@/auth/auth.guard';
+import { LoginComponent } from '@/auth/login.component';
+import { EditorComponent } from '@/editor/editor.component';
+
+/**
+ * Every route is eager. The application is small enough that lazy chunks buy
+ * nothing, while they cost a whole failure mode: a rebuild renames the chunks,
+ * and a browser still holding the previous page asks for a file that no longer
+ * exists - "Failed to fetch dynamically imported module". One bundle cannot
+ * fall out of step with itself.
+ */
 export const routes: Routes = [
   {
     path: 'login',
-    loadComponent: () =>
-      import('@/auth/login.component').then((m) => m.LoginComponent),
+    component: LoginComponent,
     title: 'FaaSBox - Login',
   },
   {
@@ -14,15 +24,13 @@ export const routes: Routes = [
     // {"error":"Missing X-API-Key header"} instead of the editor - a browser
     // navigation carries no X-API-Key header, valid session or not.
     path: 'editor',
-    loadComponent: () =>
-      import('@/editor/editor.component').then((m) => m.EditorComponent),
+    component: EditorComponent,
     canActivate: [authGuard],
     title: 'FaaSBox',
   },
   {
     path: 'keys',
-    loadComponent: () =>
-      import('@/api-keys/api-keys.component').then((m) => m.ApiKeysComponent),
+    component: ApiKeysComponent,
     canActivate: [authGuard],
     title: 'FaaSBox - API keys',
   },
