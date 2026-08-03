@@ -18,7 +18,7 @@ Access to all FaaS endpoints (except `/health`) is restricted by API keys.
 
 Two paths, one result. Both go through the same endpoint — the editor simply calls it for you — and both reveal the raw value exactly once.
 
-**From the editor.** Sign in, click **API keys** in the header, then fill the creation form:
+**From the editor.** Sign in, click **API keys** at the top of the left sidebar, then fill the creation form. The entry only shows up once you have created at least one function, since a key grants access to nothing before that:
 
 1.  A **Name**, for your own reference. Required.
 2.  A **Scope**: either *All functions*, or a selection among the functions that exist on the instance.

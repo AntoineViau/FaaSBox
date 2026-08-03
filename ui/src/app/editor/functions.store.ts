@@ -25,7 +25,7 @@ export const FunctionsStore = signalStore(
   withComputed(({ functions, selectedId }) => ({
     selectedFunction: computed(() => {
       const id = selectedId();
-      return id ? functions().find((f) => f.id === id) ?? null : null;
+      return id ? (functions().find((f) => f.id === id) ?? null) : null;
     }),
     sortedFunctions: computed(() =>
       functions()
@@ -49,7 +49,7 @@ export const FunctionsStore = signalStore(
     },
 
     async createFunction(name: string): Promise<FaasboxFunction> {
-      const defaultScript = `const input = await Bun.stdin.json();\n\nconst result = { message: "Hello from ${name}!" };\n\nconsole.log(JSON.stringify(result));\n`;
+      const defaultScript = `const payload = await Bun.stdin.json();\n\nconst result = { message: "Hello from ${name}!" };\n\nconsole.log(JSON.stringify(result));\n`;
       const created = await firstValueFrom(
         functionsService.create({ name, script: defaultScript, packageJson: '' }),
       );
@@ -59,7 +59,11 @@ export const FunctionsStore = signalStore(
 
     async updateFunction(
       id: string,
-      data: Partial<Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> & { plainEnv?: Record<string, string> }>,
+      data: Partial<
+        Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> & {
+          plainEnv?: Record<string, string>;
+        }
+      >,
     ): Promise<FaasboxFunction> {
       const updated = await firstValueFrom(functionsService.update(id, data));
       patchState(store, {

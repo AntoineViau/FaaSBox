@@ -3,6 +3,7 @@ import {
   Component,
   inject,
   input,
+  output,
   signal,
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
@@ -22,26 +23,20 @@ import { ZardIconComponent } from '@shared/components/icon';
       <!-- Toolbar -->
       <div class="flex items-center gap-2 border-b border-border px-3 py-1.5">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Runner</span>
-        @if (unsaved()) {
-          <span class="flex items-center gap-1.5 text-xs text-yellow-500">
-            <z-icon zType="triangle-alert" class="h-3.5 w-3.5" />
-            Unsaved changes — runs the last saved version.
-          </span>
-        }
         <div class="flex-1"></div>
         <button
           z-button
           zType="default"
           zSize="sm"
-          [disabled]="isExecuting() || !functionName()"
-          (click)="execute()"
+          [disabled]="busy() || !functionName()"
+          (click)="run.emit()"
         >
-          @if (isExecuting()) {
+          @if (busy()) {
             <z-icon zType="loader-circle" class="mr-1.5 h-4 w-4 animate-spin" />
             Running...
           } @else {
             <z-icon zType="zap" class="mr-1.5 h-4 w-4" />
-            Run
+            Save and run
           }
         </button>
       </div>
@@ -124,25 +119,23 @@ export class RunnerComponent {
   private readonly functionsService = inject(FunctionsService);
 
   readonly functionName = input.required<string>();
-  /** Editor buffer differs from what was saved, so /invoke runs older code. */
-  readonly unsaved = input(false);
+  /** Saving and running are one action, driven by the editor: it owns the flag. */
+  readonly busy = input(false);
+
+  /**
+   * Asks the editor to save the buffer, then call execute(). /invoke runs the
+   * file on disk, so running without saving first would diagnose code the user
+   * is not looking at.
+   */
+  readonly run = output<void>();
 
   protected readonly payload = signal('{}');
-  protected readonly isExecuting = signal(false);
   protected readonly lastResult = signal<InvocationResult | null>(null);
 
-  protected async execute(): Promise<void> {
+  /** Called by the editor once the save went through. */
+  async execute(): Promise<void> {
     const name = this.functionName();
     if (!name) return;
-
-    // /invoke runs the file on disk, so an unsaved buffer would be diagnosed
-    // against code the user is not looking at.
-    if (
-      this.unsaved() &&
-      !confirm('This function has unsaved changes. Running executes the last saved version. Run anyway?')
-    ) {
-      return;
-    }
 
     let parsed: unknown;
     try {
@@ -152,7 +145,6 @@ export class RunnerComponent {
       return;
     }
 
-    this.isExecuting.set(true);
     this.lastResult.set(null);
 
     try {
@@ -168,8 +160,6 @@ export class RunnerComponent {
           duration_ms: 0,
         });
       }
-    } finally {
-      this.isExecuting.set(false);
     }
   }
 

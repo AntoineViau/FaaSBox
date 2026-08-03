@@ -24,20 +24,36 @@ Pass this to your Docker container:
 > ⚠️ **Warning**: If you lose this key, you will not be able to decrypt your secrets. If you change it, existing secrets will become unreadable.
 
 ### 2. Configure Secrets for a Function
-1.  Open the **PocketBase Admin UI**.
-2.  Go to the **faasbox_functions** collection.
-3.  Create or Edit a record where the **name** matches your function's folder name.
-4.  In the `plainEnv` field, enter your secrets as a JSON object:
-    ```json
-    {
-      "STRIPE_KEY": "sk_test_...",
-      "DB_PASSWORD": "super-secret-pass"
-    }
-    ```
-5.  **Save the record**.
-    - The server will encrypt this JSON using your `FAASBOX_ENCRYPTION_KEY`.
-    - The encrypted blob is stored in the `env` field.
-    - The `plainEnv` field is **automatically cleared**.
+
+**From the editor.** Open your function and switch to the **Environment** tab. It lists the variables the function currently carries, one row per variable, with the values masked — click **Reveal** to read them.
+
+- **Add** appends an empty row: type a name on the left, its value on the right.
+- The trash button removes a row.
+- **Save** writes the whole set to the database, encrypted.
+
+This tab saves on its own. **Save** in the header and **Save and run** never touch your secrets, so a script you are still editing has no bearing on them, and the reverse holds too.
+
+> ⚠️ **Saving replaces the whole set.** There is no merge: a row you delete is deleted from the function, and saving with no rows at all removes every variable. This is why the tab shows you what is there — editing it blind would drop what you could not see.
+
+Values are readable because the tab is superuser-only, and a superuser can already print `process.env` from any function. Hiding them protected nothing while hiding what a save was about to overwrite.
+
+Three things the tab refuses rather than doing quietly:
+
+- Saving while it could not read the current variables — they are left untouched instead of being replaced by what is on screen.
+- The same name twice, since one of the two would silently win.
+- A name containing a space or an `=`, which would not reach your function under the name you typed.
+
+A row whose name is left empty is simply ignored when saving.
+
+**From the PocketBase Admin UI.** The same thing by hand: in the **faasbox_functions** collection, write your JSON object in the `plainEnv` field of the record whose **name** matches your function, then save.
+
+Either way, on save:
+
+- The server encrypts the JSON using your `FAASBOX_ENCRYPTION_KEY`.
+- The encrypted blob is stored in the `env` field.
+- The `plainEnv` field is **automatically cleared**.
+
+A record saved without touching `plainEnv` keeps its secrets — editing a script never disturbs them.
 
 ### 3. Access Secrets in your Function
 Secrets are injected into the function's environment and are available via `process.env`.

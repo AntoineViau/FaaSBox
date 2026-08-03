@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
+/* Ties the `dark:` variant to the `.dark` class. Without it Tailwind 4 falls
+   back to prefers-color-scheme, while the color variables below follow the
+   class: the two theme mechanisms would then disagree. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
+  /* Single source for the application width bound. Tailwind derives max-w-app
+     from it; both page shells use that utility, nothing hardcodes the value. */
+  --container-app: 80rem;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);

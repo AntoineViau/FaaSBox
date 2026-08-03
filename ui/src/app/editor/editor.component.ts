@@ -7,8 +7,8 @@ import {
   inject,
   type OnInit,
   signal,
+  viewChild,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from '@/auth/auth.service';
@@ -16,9 +16,11 @@ import { CronService } from '@/editor/cron.service';
 import { FunctionsStore } from '@/editor/functions.store';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { CronEditorComponent } from '@/editor/cron-editor.component';
+import { EnvEditorComponent } from '@/editor/env-editor.component';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
 import { RunnerComponent } from '@/editor/runner.component';
 import { SidebarComponent } from '@/editor/sidebar.component';
+import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
 import { ZardInputDirective } from '@shared/components/input';
@@ -28,7 +30,6 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
   selector: 'app-editor',
   standalone: true,
   imports: [
-    RouterLink,
     ZardButtonComponent,
     ZardIconComponent,
     ZardInputDirective,
@@ -36,57 +37,63 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
     ZardTabComponent,
     CodeEditorComponent,
     CronEditorComponent,
+    EnvEditorComponent,
     LogViewerComponent,
     RunnerComponent,
     SidebarComponent,
+    ThemeToggleComponent,
   ],
   template: `
-    <div class="flex h-screen flex-col">
-      <!-- Header -->
-      <header class="flex items-center justify-between border-b border-border px-4 py-2">
-        <div class="flex items-center gap-3">
+    <div class="mx-auto flex h-screen w-full max-w-app flex-col">
+      <!-- Header. The title block matches the sidebar width, so the actions
+           below start exactly where the editor area does. -->
+      <header class="flex items-center border-b border-border py-2">
+        <div class="w-56 shrink-0 px-4">
           <h1 class="text-lg font-semibold">FaaSBox</h1>
-          @if (isDirty()) {
-            <span class="text-xs text-muted-foreground">(unsaved changes)</span>
-          }
         </div>
-        <div class="flex items-center gap-2">
-          <button
-            z-button
-            zType="default"
-            zSize="sm"
-            [disabled]="!isDirty()"
-            (click)="save()"
-          >
-            <z-icon zType="save" class="mr-1.5 h-4 w-4" />
-            Save
-          </button>
-          <button
-            z-button
-            [zType]="showRunner() ? 'secondary' : 'outline'"
-            zSize="sm"
-            (click)="showRunner.set(!showRunner())"
-          >
-            <z-icon zType="terminal" class="mr-1.5 h-4 w-4" />
-            Runner
-          </button>
-          <button
-            z-button
-            [zType]="showLogs() ? 'secondary' : 'outline'"
-            zSize="sm"
-            (click)="showLogs.set(!showLogs())"
-          >
-            <z-icon zType="scroll-text" class="mr-1.5 h-4 w-4" />
-            Logs
-          </button>
-          <a z-button zType="outline" zSize="sm" routerLink="/keys">
-            <z-icon zType="shield" class="mr-1.5 h-4 w-4" />
-            API keys
-          </a>
-          <button z-button zType="outline" zSize="sm" (click)="logout()">
-            <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
-            Sign out
-          </button>
+        <div class="flex flex-1 items-center gap-2 px-4">
+          <!-- These act on the open function, so they only exist when there is
+               one. Nothing here applies to the empty state. -->
+          @if (store.selectedFunction()) {
+            <button
+              z-button
+              zType="default"
+              zSize="sm"
+              [disabled]="!isDirty()"
+              (click)="save()"
+            >
+              <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+              Save
+            </button>
+            @if (isDirty()) {
+              <span class="text-xs text-muted-foreground">(unsaved changes)</span>
+            }
+            <button
+              z-button
+              [zType]="showRunner() ? 'secondary' : 'outline'"
+              zSize="sm"
+              (click)="showRunner.set(!showRunner())"
+            >
+              <z-icon zType="terminal" class="mr-1.5 h-4 w-4" />
+              Runner
+            </button>
+            <button
+              z-button
+              [zType]="showLogs() ? 'secondary' : 'outline'"
+              zSize="sm"
+              (click)="showLogs.set(!showLogs())"
+            >
+              <z-icon zType="scroll-text" class="mr-1.5 h-4 w-4" />
+              Logs
+            </button>
+          }
+          <div class="ml-auto flex items-center gap-2">
+            <app-theme-toggle />
+            <button z-button zType="outline" zSize="sm" (click)="logout()">
+              <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -164,26 +171,14 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
                 />
               </z-tab>
               <z-tab label="Environment">
-                <div class="p-4">
-                  <p class="mb-2 text-xs text-muted-foreground">
-                    JSON object of secret environment variables. Encrypted at save time.
-                  </p>
-                  <textarea
-                    z-input
-                    rows="10"
-                    placeholder='{"MY_SECRET": "value"}'
-                    [value]="localPlainEnv()"
-                    (input)="localPlainEnv.set($any($event.target).value)"
-                    class="font-mono text-sm"
-                  ></textarea>
-                </div>
+                <app-env-editor [functionId]="fn.id" [functionName]="fn.name" />
               </z-tab>
             </z-tab-group>
 
             <!-- Runner panel -->
             @if (showRunner()) {
               <div class="h-64 shrink-0 border-t border-border">
-                <app-runner [functionName]="fn.name" [unsaved]="isDirty()" />
+                <app-runner [functionName]="fn.name" [busy]="running()" (run)="saveAndRun()" />
               </div>
             }
 
@@ -231,12 +226,16 @@ export class EditorComponent implements OnInit {
   protected readonly localName = signal('');
   protected readonly localScript = signal('');
   protected readonly localPackageJson = signal('');
-  protected readonly localPlainEnv = signal('');
-  protected readonly showRunner = signal(false);
-  protected readonly showLogs = signal(false);
+  protected readonly showRunner = signal(true);
+  protected readonly showLogs = signal(true);
+  protected readonly running = signal(false);
   protected readonly cronFunctions = signal<Set<string>>(new Set());
 
-  private syncingFromStore = false;
+  private readonly runner = viewChild(RunnerComponent);
+  private readonly envEditor = viewChild(EnvEditorComponent);
+
+  /** Guards the sync effect below: see why it keys on the id and not the record. */
+  private lastSyncedId: string | null = null;
 
   /**
    * Isolated from isDirty because this one has no visible effect: dependencies
@@ -248,26 +247,28 @@ export class EditorComponent implements OnInit {
     return !!fn && this.localPackageJson() !== fn.packageJson;
   });
 
+  /** Environment lives in its own tab, with its own Save: it is not part of this. */
   protected readonly isDirty = computed(() => {
     const fn = this.store.selectedFunction();
     if (!fn) return false;
     return (
       this.localName() !== fn.name ||
       this.localScript() !== fn.script ||
-      this.localPackageJson() !== fn.packageJson ||
-      this.localPlainEnv() !== ''
+      this.localPackageJson() !== fn.packageJson
     );
   });
 
   constructor() {
     effect(() => {
       const fn = this.store.selectedFunction();
-      this.syncingFromStore = true;
+      // Only on a change of selection. The store record is also patched by every
+      // save - including the Environment tab's own - and re-filling the buffers
+      // then would discard whatever was typed during the round trip.
+      if (fn?.id === this.lastSyncedId) return;
+      this.lastSyncedId = fn?.id ?? null;
       this.localName.set(fn?.name ?? '');
       this.localScript.set(fn?.script ?? '');
       this.localPackageJson.set(fn?.packageJson ?? '');
-      this.localPlainEnv.set('');
-      this.syncingFromStore = false;
     });
   }
 
@@ -297,9 +298,10 @@ export class EditorComponent implements OnInit {
     }
   }
 
-  protected async save(): Promise<void> {
+  /** Returns false when nothing was written, so callers can stop there. */
+  protected async save(): Promise<boolean> {
     const fn = this.store.selectedFunction();
-    if (!fn) return;
+    if (!fn) return false;
 
     const data: Record<string, unknown> = {
       name: this.localName(),
@@ -307,21 +309,42 @@ export class EditorComponent implements OnInit {
       packageJson: this.localPackageJson(),
     };
 
-    const envText = this.localPlainEnv().trim();
-    if (envText) {
-      try {
-        data['plainEnv'] = JSON.parse(envText);
-      } catch {
-        alert('Invalid JSON in environment variables.');
-        return;
-      }
+    try {
+      // The store holds the saved record, so the unsaved markers clear as soon
+      // as it is patched - including the package.json banner. plainEnv is left
+      // out entirely: omitting it is what tells the server to keep the secrets
+      // it holds, and the Environment tab writes them on its own.
+      await this.store.updateFunction(fn.id, data as any);
+      return true;
+    } catch (e) {
+      alert(`Failed to save: ${(e as Error).message}`);
+      return false;
     }
+  }
 
-    await this.store.updateFunction(fn.id, data as any);
+  /**
+   * The runner posts to /invoke, which executes the file on disk: saving first
+   * is what makes it diagnose the code on screen. A changed package.json is
+   * saved along with the script, and the invocation waits for the install the
+   * save triggers rather than running against stale dependencies.
+   */
+  protected async saveAndRun(): Promise<void> {
+    if (this.running()) return;
+    this.running.set(true);
+    try {
+      if (await this.save()) {
+        await this.runner()?.execute();
+      }
+    } finally {
+      this.running.set(false);
+    }
   }
 
   protected onSelectFunction(id: string): void {
-    if (this.isDirty() && !confirm('You have unsaved changes. Discard and switch?')) {
+    // The Environment tab saves itself, so it is absent from isDirty - but
+    // leaving it behind unsaved loses just as much.
+    const dirty = this.isDirty() || (this.envEditor()?.isDirty() ?? false);
+    if (dirty && !confirm('You have unsaved changes. Discard and switch?')) {
       return;
     }
     this.store.selectFunction(id);

@@ -88,7 +88,7 @@ export class LoginComponent {
 
     try {
       await this.authService.login(this.email, this.password);
-      this.router.navigate(['/functions']);
+      this.router.navigate(['/editor']);
     } catch (error) {
       this.errorMessage.set(
         error instanceof Error ? error.message : 'Authentication failed',

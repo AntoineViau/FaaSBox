@@ -21,6 +21,7 @@ docker run -d -p 8080:8080 \
 ```
 
 ### Environment Variables:
+
 - `SUPERUSER_EMAIL`: The email for your admin account.
 - `SUPERUSER_PASSWORD`: The password for your admin account (min 8 chars).
 - `FAASBOX_ENCRYPTION_KEY`: A 64-character hex string used to encrypt secrets. **Keep this safe!**
@@ -65,6 +66,7 @@ Once started, you have access to two main interfaces:
 2.  **FaaS Editor (`/`)**: `http://localhost:8080/`
     - Write, edit, and test your functions in a web-based IDE.
     - Run functions manually and see the output in real-time.
+    - Switch between the light and dark theme with the sun/moon button in the header. Your choice is remembered by the browser; without one, the editor follows your system preference.
 
 ## 4. Create Your First Function
 
@@ -74,24 +76,29 @@ Once started, you have access to two main interfaces:
 4.  In `index.ts`, write the following:
 
 ```typescript
-// Read input from stdin
-const input = await Bun.stdin.text();
-const data = JSON.parse(input || "{}");
+// Read payload from stdin
+const payload = await Bun.stdin.text();
+const data = JSON.parse(payload || "{}");
 
 // Perform logic
 const name = data.name || "World";
 
 // Return output via stdout
-console.log(JSON.stringify({
-  message: `Hello, ${name}!`,
-  timestamp: new Date().toISOString()
-}));
+console.log(
+  JSON.stringify({
+    message: `Hello, ${name}!`,
+    timestamp: new Date().toISOString(),
+  }),
+);
 ```
 
 ## 5. Invoke Your Function
 
 ### Step 1: Create an API Key
-Go to the **PocketBase Admin UI** -> **faasbox_api_keys** collection. **IMPORTANT**: Creating a record manually in the Admin UI will not show you the raw API key. To generate a new key and see it, you must use the API:
+
+The quickest way is the editor: click **API keys** at the top of the left sidebar and fill the creation form — the raw key is revealed once, with a copy button. See [06 - API Keys and Security](06-api-keys-and-security.md).
+
+By hand, use the API. **Creating a record straight in the PocketBase Admin UI gives you no usable key**: only a hash of the key is stored, so a record you fill in yourself matches no key you can present.
 
 ```bash
 # Get a superuser token first
@@ -109,6 +116,7 @@ curl -s -X POST http://localhost:8080/api/faasbox/keys \
 The response will contain the `key` (starting with `fbx_`). Copy it.
 
 ### Step 2: Call via Curl
+
 ```bash
 curl -X POST http://localhost:8080/invoke/hello-world \
   -H "X-API-Key: YOUR_API_KEY" \
@@ -117,6 +125,7 @@ curl -X POST http://localhost:8080/invoke/hello-world \
 ```
 
 You should receive a JSON response:
+
 ```json
 {
   "function": "hello-world",
@@ -129,6 +138,7 @@ You should receive a JSON response:
 ```
 
 ## Next Steps
+
 - Learn how to [manage dependencies](03-writing-functions.md).
 - Secure your function with [encrypted environment variables](04-environment-variables.md).
 - Schedule your function with [Cron jobs](05-scheduling-cron.md).

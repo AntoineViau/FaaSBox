@@ -12,14 +12,14 @@ The folder name is the function name. It must follow these rules:
 
 Examples:
 
-| Name | Valid? |
-|------|--------|
-| `my-function` | Yes |
-| `hello123` | Yes |
-| `a` | Yes |
-| `-my-function` | No (starts with a hyphen) |
-| `my-function-` | No (ends with a hyphen) |
-| `my_function` | No (underscores not allowed) |
+| Name           | Valid?                       |
+| -------------- | ---------------------------- |
+| `my-function`  | Yes                          |
+| `hello123`     | Yes                          |
+| `a`            | Yes                          |
+| `-my-function` | No (starts with a hyphen)    |
+| `my-function-` | No (ends with a hyphen)      |
+| `my_function`  | No (underscores not allowed) |
 
 ## Basic Structure
 
@@ -29,12 +29,12 @@ A function is a folder containing an `index.ts`.
 // functions/my-function/index.ts
 
 // 1. Read input from stdin (JSON)
-const input = await Bun.stdin.text();
+const payload = await Bun.stdin.text();
 let body = {};
 try {
-  body = JSON.parse(input || "{}");
+  body = JSON.parse(payload || "{}");
 } catch (e) {
-  console.error("Failed to parse input:", e);
+  console.error("Failed to parse payload:", e);
 }
 
 // 2. Business Logic
@@ -75,6 +75,7 @@ functions/
 ```
 
 **package.json example:**
+
 ```json
 {
   "name": "use-moment",
@@ -85,15 +86,19 @@ functions/
 ```
 
 **index.ts example:**
+
 ```typescript
 import moment from "moment";
 
-console.log(JSON.stringify({
-  now: moment().format('MMMM Do YYYY, h:mm:ss a')
-}));
+console.log(
+  JSON.stringify({
+    now: moment().format("MMMM Do YYYY, h:mm:ss a"),
+  }),
+);
 ```
 
 ### How Dependency Installation Works
+
 - FaaSBox automatically detects the `package.json`.
 - **Saving** your function runs `bun install` in its directory, in the background. The save returns immediately — you do not wait for the install.
 - The corollary matters: an edited `package.json` that has not been saved installs **nothing**. The dependency is on your screen and nowhere else, which is why the editor shows a banner until you save.
@@ -106,13 +111,13 @@ console.log(JSON.stringify({
 
 Two fields on your function record report where the install stands:
 
-| `depsStatus` | Meaning |
-|---|---|
-| *(empty)* | The function declares no `package.json`. |
-| `pending` | The install has been requested, or was interrupted by a server restart and is still owed. |
-| `installing` | `bun install` is running. |
-| `ready` | `node_modules` matches the current dependencies. |
-| `error` | The last install failed — `depsError` carries the `bun install` output. |
+| `depsStatus` | Meaning                                                                                   |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| _(empty)_    | The function declares no `package.json`.                                                  |
+| `pending`    | The install has been requested, or was interrupted by a server restart and is still owed. |
+| `installing` | `bun install` is running.                                                                 |
+| `ready`      | `node_modules` matches the current dependencies.                                          |
+| `error`      | The last install failed — `depsError` carries the `bun install` output.                   |
 
 The editor does not display these yet: read them from the PocketBase admin UI, in the `faasbox_functions` collection.
 
@@ -123,14 +128,17 @@ The FaaSBox Editor includes a built-in **Runner** panel that lets you test your 
 1. Open your function in the Editor.
 2. Switch to the **Runner** tab.
 3. Enter a JSON payload in the left pane (defaults to `{}`).
-4. Click **Run**.
+4. Click **Save and run**.
 
 The result appears in the right pane with:
+
 - **Status** (success or error) and execution time.
 - **Result**: the parsed stdout output.
 - **stdout / stderr**: raw output streams, displayed separately.
 
-**The Runner executes the last saved version**, not what is on your screen — it calls the same `/invoke/{name}` endpoint as any other caller, and that runs the file on disk. While you have unsaved changes, the Runner toolbar says so and **Run** asks for confirmation before executing. Confirming runs the saved version anyway; declining sends no request at all. Save first if you meant to test what you just typed.
+**Save and run saves before it executes** — both your script and your `package.json`. It has to: the Runner calls the same `/invoke/{name}` endpoint as any other caller, and that endpoint runs the file on disk, so what is only on your screen would never be tested. If your `package.json` changed, saving starts the dependency install and the run waits for it to finish rather than executing against stale dependencies.
+
+Nothing is executed if the save itself fails — the server refusing the record, for instance. Fix what the message reports and click again. Your environment variables are not part of this: the **Environment** tab has its own **Save**, and neither **Save** nor **Save and run** touches your secrets.
 
 This is the fastest way to iterate on a function. You can also use `curl` for automated testing (see [06 - API Keys and Security](06-api-keys-and-security.md)).
 
@@ -143,16 +151,16 @@ This is the fastest way to iterate on a function. You can also use `curl` for au
 
 ## Technical Limits
 
-| Feature | Limit |
-|---------|-------|
-| Execution Timeout | 30 seconds |
-| Install Timeout | 60 seconds |
-| Max Request Body | 1 MB (`FAASBOX_MAX_BODY_SIZE`) |
-| Max Stdout Capture | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
-| Max Stderr Capture | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`) |
-| Max Stdout/Stderr Stored in Logs | 8 KB each (`FAASBOX_MAX_LOG_OUTPUT`) |
-| Max Request Payload Stored in Logs | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`) |
-| Max Concurrent Executions | 4 (global, `FAASBOX_MAX_CONCURRENCY`) |
+| Feature                            | Limit                                 |
+| ---------------------------------- | ------------------------------------- |
+| Execution Timeout                  | 30 seconds                            |
+| Install Timeout                    | 60 seconds                            |
+| Max Request Body                   | 1 MB (`FAASBOX_MAX_BODY_SIZE`)        |
+| Max Stdout Capture                 | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`)      |
+| Max Stderr Capture                 | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`)      |
+| Max Stdout/Stderr Stored in Logs   | 8 KB each (`FAASBOX_MAX_LOG_OUTPUT`)  |
+| Max Request Payload Stored in Logs | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`)      |
+| Max Concurrent Executions          | 4 (global, `FAASBOX_MAX_CONCURRENCY`) |
 
 Every limit that names a variable is a **default**, not a hard ceiling: set the variable on the server and restart. See [04 - Environment Variables](04-environment-variables.md).
 

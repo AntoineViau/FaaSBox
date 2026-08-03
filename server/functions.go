@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -65,33 +66,47 @@ func ensureFunctionsCollection(app core.App) error {
 	return nil
 }
 
-// lookupFunctionEnv retrieves and decrypts the environment variables for a function.
-// Returns a slice of "KEY=value" strings ready for cmd.Env, or nil if no env is configured.
-func lookupFunctionEnv(app core.App, name string) []string {
-	if encryptionKey == nil {
-		return nil
+// decryptFunctionEnv decrypts the environment variables of a function record.
+// A function without secrets yields an empty map, which is not an error: only a
+// key that is missing, a payload that will not decrypt, or plaintext that is not
+// a JSON object are. Callers must not confuse the two — reading an empty map out
+// of a failure would let an editor overwrite secrets it could not display.
+func decryptFunctionEnv(record *core.Record) (map[string]string, error) {
+	encryptedEnv := record.GetString("env")
+	if encryptedEnv == "" {
+		return map[string]string{}, nil
 	}
 
+	if encryptionKey == nil {
+		return nil, fmt.Errorf("FAASBOX_ENCRYPTION_KEY is not configured")
+	}
+
+	plaintext, err := decrypt(encryptedEnv, encryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt env: %w", err)
+	}
+
+	var envMap map[string]string
+	if err := json.Unmarshal(plaintext, &envMap); err != nil {
+		return nil, fmt.Errorf("parse decrypted env: %w", err)
+	}
+
+	return envMap, nil
+}
+
+// lookupFunctionEnv retrieves and decrypts the environment variables for a function.
+// Returns a slice of "KEY=value" strings ready for cmd.Env, or nil if no env is configured.
+// A failure is logged and degrades to nil: an invocation runs without secrets
+// rather than not running at all.
+func lookupFunctionEnv(app core.App, name string) []string {
 	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
 	if err != nil {
 		return nil
 	}
 
-	encryptedEnv := record.GetString("env")
-	if encryptedEnv == "" {
-		return nil
-	}
-
-	plaintext, err := decrypt(encryptedEnv, encryptionKey)
+	envMap, err := decryptFunctionEnv(record)
 	if err != nil {
-		app.Logger().Error("faasbox: failed to decrypt env for function",
-			"function", name, "error", err)
-		return nil
-	}
-
-	var envMap map[string]string
-	if err := json.Unmarshal(plaintext, &envMap); err != nil {
-		app.Logger().Error("faasbox: failed to parse decrypted env as JSON",
+		app.Logger().Error("faasbox: failed to read env for function",
 			"function", name, "error", err)
 		return nil
 	}
@@ -101,6 +116,34 @@ func lookupFunctionEnv(app core.App, name string) []string {
 		envSlice = append(envSlice, k+"="+v)
 	}
 	return envSlice
+}
+
+// functionEnvHandler returns the decrypted environment of a function as a JSON
+// object. Superuser only: it is the one path that turns a stored secret back
+// into plaintext, and the editor needs it to show what is set before replacing
+// it — saving rewrites the whole object, so editing blind silently drops the
+// variables the user could not see.
+func functionEnvHandler(e *core.RequestEvent) error {
+	name := e.Request.PathValue("name")
+	if !validName.MatchString(name) || len(name) > 64 {
+		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
+	}
+
+	record, err := e.App.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
+	if err != nil {
+		return e.JSON(http.StatusNotFound, map[string]string{"error": "Function not found"})
+	}
+
+	envMap, err := decryptFunctionEnv(record)
+	if err != nil {
+		e.App.Logger().Error("faasbox: failed to read env for function",
+			"function", name, "error", err)
+		return e.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to read the environment of this function",
+		})
+	}
+
+	return e.JSON(http.StatusOK, envMap)
 }
 
 // encryptPlainEnvHook is a PocketBase hook that encrypts the plainEnv field
@@ -117,9 +160,16 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 		return e.Next()
 	}
 
-	// Skip if plainEnv is empty, null, or empty object
+	// A record whose plainEnv was never submitted still carries the null left by
+	// the previous save, so null means "untouched" and must preserve env. An
+	// explicit {} is the opposite: the editor sends it to remove every variable.
 	s := string(jsonBytes)
-	if s == "null" || s == `""` || s == "{}" || s == "" {
+	if s == "null" || s == `""` || s == "" {
+		return e.Next()
+	}
+	if s == "{}" {
+		e.Record.Set("env", "")
+		e.Record.Set("plainEnv", nil)
 		return e.Next()
 	}
 

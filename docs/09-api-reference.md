@@ -102,7 +102,27 @@ Creates a new hashed API key.
 
 ---
 
-## 4. Health Check
+## 4. Read a Function's Environment
+**Endpoint**: `GET /api/faasbox/functions/{name}/env`
+
+**Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
+
+Returns the decrypted environment variables of a function, as a flat JSON object. This is the only endpoint that turns a stored secret back into plaintext; the editor uses it to show what a function carries before you replace it.
+
+- **Response**:
+    ```json
+    {
+      "STRIPE_KEY": "sk_test_...",
+      "DB_PASSWORD": "super-secret-pass"
+    }
+    ```
+- A function with no secrets returns `{}`.
+- **404** if no function carries that name, **400** if the name is not a valid function name.
+- **500** if the stored value cannot be decrypted — for instance after `FAASBOX_ENCRYPTION_KEY` changed. An empty object is never returned in that case, since it would read as "no variable" and invite an overwrite.
+
+---
+
+## 5. Health Check
 **Endpoint**: `GET /health`
 
 **No Authentication Required.**

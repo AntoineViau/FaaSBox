@@ -101,6 +101,11 @@ func main() {
 				return createKeyHandler(re)
 			}).Bind(apis.RequireSuperuserAuth())
 
+			// Decrypted environment of a function (superuser only)
+			e.Router.GET("/api/faasbox/functions/{name}/env", func(re *core.RequestEvent) error {
+				return functionEnvHandler(re)
+			}).Bind(apis.RequireSuperuserAuth())
+
 			// serve static files from pb_public (Angular SPA + assets)
 			if !e.Router.HasRoute(http.MethodGet, "/{path...}") {
 				e.Router.GET("/{path...}", apis.Static(os.DirFS(publicDir()), true))

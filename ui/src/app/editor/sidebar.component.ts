@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
 
 import type { FaasboxFunction } from '@/models/faasbox-function.model';
 import { ZardButtonComponent } from '@shared/components/button';
@@ -7,9 +8,19 @@ import { ZardIconComponent } from '@shared/components/icon';
 @Component({
   selector: 'app-sidebar',
   standalone: true,
-  imports: [ZardButtonComponent, ZardIconComponent],
+  imports: [RouterLink, ZardButtonComponent, ZardIconComponent],
   template: `
     <div class="flex h-full flex-col">
+      <!-- A key only ever grants access to functions, so it has nothing to
+           govern until at least one exists. -->
+      @if (functions().length > 0) {
+        <div class="border-b border-border p-1">
+          <a z-button zType="ghost" zSize="sm" class="w-full justify-start" routerLink="/keys">
+            <z-icon zType="shield" class="mr-1.5 h-4 w-4" />
+            API keys
+          </a>
+        </div>
+      }
       <div class="flex items-center justify-between border-b border-border px-3 py-2">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Functions</span>
         <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="create.emit()">

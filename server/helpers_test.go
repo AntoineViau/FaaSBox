@@ -73,7 +73,7 @@ func setupTestFunctionsDir(t testing.TB, funcs map[string]string) string {
 			t.Fatalf("failed to create function dir %q: %v", name, err)
 		}
 		if content == "" {
-			content = `const input = await Bun.stdin.text(); console.log(JSON.stringify({echo: input}));`
+			content = `const payload = await Bun.stdin.text(); console.log(JSON.stringify({echo: payload}));`
 		}
 		if err := os.WriteFile(filepath.Join(funcDir, "index.ts"), []byte(content), 0o644); err != nil {
 			t.Fatalf("failed to write index.ts for %q: %v", name, err)
@@ -152,6 +152,11 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	// Key management (superuser only)
 	e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
 		return createKeyHandler(re)
+	}).Bind(apis.RequireSuperuserAuth())
+
+	// Decrypted environment of a function (superuser only)
+	e.Router.GET("/api/faasbox/functions/{name}/env", func(re *core.RequestEvent) error {
+		return functionEnvHandler(re)
 	}).Bind(apis.RequireSuperuserAuth())
 }
 

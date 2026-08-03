@@ -7,6 +7,7 @@ import { ApiKeysService } from '@/api-keys/api-keys.service';
 import { FunctionScopeComponent, isUnrestrictedScope } from '@/api-keys/function-scope.component';
 import { FunctionsService } from '@/editor/functions.service';
 import type { FaasboxApiKey } from '@/models/faasbox-api-key.model';
+import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
 import { ZardAlertComponent } from '@shared/components/alert';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -36,20 +37,22 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
     RouterLink,
     ApiKeyCreateComponent,
     FunctionScopeComponent,
+    ThemeToggleComponent,
     ZardAlertComponent,
     ZardButtonComponent,
     ZardIconComponent,
   ],
   template: `
-    <div class="flex h-screen flex-col">
+    <div class="mx-auto flex h-screen w-full max-w-app flex-col">
       <header class="flex items-center justify-between border-b border-border px-4 py-2">
         <div class="flex items-center gap-3">
-          <a z-button zType="ghost" zSize="sm" routerLink="/functions">
+          <a z-button zType="ghost" zSize="sm" routerLink="/editor">
             <z-icon zType="arrow-left" class="mr-1.5 h-4 w-4" />
             Functions
           </a>
           <h1 class="text-lg font-semibold">API keys</h1>
         </div>
+        <app-theme-toggle />
       </header>
 
       <div class="flex-1 overflow-y-auto p-4">

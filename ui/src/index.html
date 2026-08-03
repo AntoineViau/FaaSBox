@@ -1,11 +1,23 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>FaaSBox</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!-- Applies the theme before the first paint: Angular only boots after the
+       document is rendered, so leaving this to ThemeService would flash the
+       light theme before switching to dark. Storage key and default rule are
+       duplicated from ui/src/app/theme/theme.service.ts on purpose - anything
+       inside the bundle runs too late. Change one, change the other. -->
+  <script>
+    (function () {
+      var stored = localStorage.getItem('faasbox-theme');
+      var dark = stored ? stored === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+      if (dark) document.documentElement.classList.add('dark');
+    })();
+  </script>
 </head>
 <body class="bg-background text-foreground min-h-screen antialiased">
   <app-root></app-root>

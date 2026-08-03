@@ -31,4 +31,9 @@ export class FunctionsService {
   invoke(name: string, payload: unknown) {
     return this.http.post<InvocationResult>(`/invoke/${name}`, payload);
   }
+
+  /** Decrypted secrets of a function. Superuser only, and the only way to read them back. */
+  getEnv(name: string) {
+    return this.http.get<Record<string, string>>(`/api/faasbox/functions/${name}/env`);
+  }
 }
