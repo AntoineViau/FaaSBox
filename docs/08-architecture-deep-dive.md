@@ -10,6 +10,28 @@ This document explains the technical implementation of FaaSBox for developers an
 - **Frontend**: [Angular](https://angular.dev/) (Editor & Runner)
 - **Database**: [SQLite](https://www.sqlite.org/) (Embedded via PocketBase)
 
+FaaSBox integrates all of it into a single binary, shipped as a single container:
+
+```mermaid
+graph TD
+    User([User / App]) -->|HTTP / API Key| PB[PocketBase Server]
+    Cron[Cron Scheduler] -->|Internal Trigger| PB
+
+    subgraph "Execution Engine"
+        PB -->|Spawn Subprocess| Bun[Bun Runtime]
+        Bun -->|Read| Input[Stdin JSON]
+        Bun -->|Write| Output[Stdout JSON]
+        Bun -->|Log| Error[Stderr]
+    end
+
+    subgraph "Persistence (SQLite)"
+        PB --- Logs[(Execution Logs)]
+        PB --- Keys[(Hashed API Keys)]
+        PB --- Config[(Encrypted Secrets)]
+        PB --- Functions[(Function Code Sync)]
+    end
+```
+
 ## Component Overview
 
 ### 1. The Go Server (`faasbox`)

@@ -6,35 +6,7 @@
 
 It allows you to write TypeScript/JavaScript functions, deploy them instantly, invoke them via HTTP with hashed API keys, or schedule them using a flexible cron system. Code, dependencies, secrets, schedules and execution logs are all managed from the built-in editor, with the PocketBase admin UI underneath for direct access to the underlying collections.
 
----
-
-## 🏗️ Architecture
-
-FaaSBox integrates several powerful technologies into a single binary/container:
-
-- **PocketBase (Go)**: The backbone. Handles HTTP routing, SQLite persistence, Authentication, Cron scheduling, and the Admin UI.
-- **Bun**: The high-performance JavaScript runtime. Executes functions in isolated subprocesses with fast startup times.
-- **Angular (UI)**: A modern, signal-based frontend for managing and testing functions directly from your browser.
-
-```mermaid
-graph TD
-    User([User / App]) -->|HTTP / API Key| PB[PocketBase Server]
-    Cron[Cron Scheduler] -->|Internal Trigger| PB
-    
-    subgraph "Execution Engine"
-        PB -->|Spawn Subprocess| Bun[Bun Runtime]
-        Bun -->|Read| Input[Stdin JSON]
-        Bun -->|Write| Output[Stdout JSON]
-        Bun -->|Log| Error[Stderr]
-    end
-    
-    subgraph "Persistence (SQLite)"
-        PB --- Logs[(Execution Logs)]
-        PB --- Keys[(Hashed API Keys)]
-        PB --- Config[(Encrypted Secrets)]
-        PB --- Functions[(Function Code Sync)]
-    end
-```
+Under the hood: **Go** and **PocketBase** for the server, **Bun** for function execution, **Angular** for the editor, **SQLite** for everything stored. See [08 - Architecture Deep Dive](docs/08-architecture-deep-dive.md) for how the pieces fit together.
 
 ---
 
