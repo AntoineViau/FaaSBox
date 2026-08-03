@@ -80,7 +80,7 @@ This means you never need to manage files manually. Whether you edit code in the
 │       └── package.json
 └── data/
     ├── pb_data/         # Persistent SQLite database & settings
-    └── pb_public/       # Static files for the Admin UI and Editor
+    └── pb_public/       # Static files for the Editor (the Admin UI is embedded in the binary)
 ```
 
 ## Compilation & Build

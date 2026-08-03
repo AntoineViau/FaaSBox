@@ -78,8 +78,8 @@ A key that changes between two runs leaves the secrets written by the previous o
 Then open `http://localhost:8080/_/` to create your superuser account on first launch.
 
 ### 3. Access the UI
-- **Admin UI**: `http://localhost:8080/_/` (for system config, logs, and keys).
-- **Editor UI**: `http://localhost:8080/` (to write and test functions).
+- **Editor UI**: `http://localhost:8080/` — where you work: write and test functions, schedule them, set their secrets, manage API keys and read execution logs.
+- **Admin UI**: `http://localhost:8080/_/` — the PocketBase dashboard underneath, for the raw collections, backups and server settings.
 
 ### 4. Create an API Key
 

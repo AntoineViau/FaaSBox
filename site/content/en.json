@@ -91,8 +91,8 @@
         "body": "Four tabs per function: script, package.json, triggers, secrets. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it."
       },
       {
-        "title": "npm, when you need it",
-        "body": "List dependencies in package.json. They install on save, keyed by content, so an unchanged manifest never reinstalls. An invocation that lands mid-install waits — it doesn't fail."
+        "title": "Two triggers, one engine",
+        "body": "An HTTP call and a cron tick take the same path: one Bun subprocess, the same environment, the same ceilings, the same log line. What differs is what happens when the box is busy — HTTP refuses with <strong>429</strong>, a cron run waits its turn."
       },
       {
         "title": "Secrets encrypted at rest",
@@ -107,8 +107,8 @@
         "body": "Trigger, status, duration, both streams, request payload, exit code, and a flag when something was truncated to fit. Retention is by row count, purged hourly."
       },
       {
-        "title": "Backed up while it runs",
-        "body": "Litestream replicates the SQLite file to S3 continuously and restores it at boot. The container stays disposable; the database is the source of truth, the disk is a cache."
+        "title": "Bounded by design",
+        "body": "Nothing runs unbounded: 30 seconds per run, 1 MB per request body, 1 MB captured per output stream, four concurrent runs. The sizes and the concurrency are defaults you change with an environment variable; the two timeouts are fixed."
       }
     ]
   },
@@ -137,7 +137,7 @@
     "thenAdmin": "<code>localhost:8080/</code> — the editor. Sign in with the address and password from the command above; the account is created on first boot.",
     "thenEditor": "<code>localhost:8080/_/</code> — the PocketBase admin underneath, if you ever want the raw collections.",
     "localTitle": "Working on it locally",
-    "localBody": "Go 1.24+ and Bun, then <code>bash infra/dev/dev.sh</code> builds the editor and starts the server.",
+    "localBody": "Go 1.24+, Bun and Node.js, then <code>bash infra/dev/dev.sh</code> builds the editor and starts the server.",
     "ctaPrimary": "GitHub",
     "ctaSecondary": "Getting started"
   },

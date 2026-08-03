@@ -91,8 +91,8 @@
         "body": "Quatre onglets par fonction : script, package.json, triggers, secrets. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère."
       },
       {
-        "title": "npm, quand vous en avez besoin",
-        "body": "Listez vos dépendances dans package.json. Elles s'installent à la sauvegarde, indexées par contenu : un manifeste inchangé ne réinstalle jamais. Une invocation qui tombe en pleine installation attend — elle n'échoue pas."
+        "title": "Deux déclencheurs, un seul moteur",
+        "body": "Un appel HTTP et un tic cron empruntent le même chemin : un subprocess Bun, le même environnement, les mêmes plafonds, la même ligne de log. Ce qui diffère, c'est ce qui se passe quand la boîte est occupée — HTTP refuse avec un <strong>429</strong>, une exécution cron attend son tour."
       },
       {
         "title": "Des secrets chiffrés au repos",
@@ -107,8 +107,8 @@
         "body": "Déclencheur, statut, durée, les deux flux, payload de la requête, code de sortie, et un drapeau quand quelque chose a été tronqué pour tenir. La rétention se compte en lignes, purgées toutes les heures."
       },
       {
-        "title": "Sauvegardé pendant qu'il tourne",
-        "body": "Litestream réplique le fichier SQLite vers S3 en continu et le restaure au démarrage. Le conteneur reste jetable ; la base est la source de vérité, le disque un cache."
+        "title": "Borné par conception",
+        "body": "Rien ne tourne sans borne : 30 secondes par exécution, 1 Mo de corps de requête, 1 Mo capturé par flux de sortie, quatre exécutions simultanées. Les tailles et la concurrence sont des défauts que vous changez par variable d'environnement ; les deux délais, eux, sont fixes."
       }
     ]
   },
@@ -137,7 +137,7 @@
     "thenAdmin": "<code>localhost:8080/</code> — l'éditeur. Connectez-vous avec l'adresse et le mot de passe de la commande ci-dessus ; le compte est créé au premier démarrage.",
     "thenEditor": "<code>localhost:8080/_/</code> — l'admin PocketBase en dessous, si vous voulez les collections brutes.",
     "localTitle": "Pour travailler en local",
-    "localBody": "Go 1.24+ et Bun, puis <code>bash infra/dev/dev.sh</code> construit l'éditeur et démarre le serveur.",
+    "localBody": "Go 1.24+, Bun et Node.js, puis <code>bash infra/dev/dev.sh</code> construit l'éditeur et démarre le serveur.",
     "ctaPrimary": "GitHub",
     "ctaSecondary": "Guide de démarrage"
   },

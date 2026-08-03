@@ -45,14 +45,14 @@ Truncation applies **only to the persisted copy**. The HTTP response of `POST /i
 The FaaSBox Editor includes a built-in **Logs** panel for each function:
 
 1. Open your function in the Editor.
-2. Switch to the **Logs** tab.
+2. Click **Logs** in the header — it toggles a panel below the code, alongside the **Runner**.
 3. Logs appear in real time — new entries are pushed automatically as the function runs.
 
 Each entry shows the status (success, error, timeout, missed), trigger type (http/cron), duration, and relative timestamp. Click on any entry to expand it and see the full stdout, stderr, payload, and exit code.
 
 The log viewer displays the 50 most recent entries for the current function. Use the refresh button to reload the list.
 
-## Viewing Logs (Admin UI)
+## From the Admin UI (optional)
 
 You can also view logs in the **PocketBase Admin UI** under the `faasbox_logs` collection.
 - **Filter** by `status="error"` to find failing functions.

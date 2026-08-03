@@ -42,9 +42,9 @@ Set it to `0` — the default — for no limit. Empty and negative values are re
 
 A skipped run is not the same as a missed run: skipping is the behaviour you asked for, while a missed run means the trigger never fired at all because the server was down (see below).
 
-## Creating a Scheduled Task (Admin UI)
+## From the Admin UI (optional)
 
-Alternatively, you can manage cron jobs from the PocketBase Admin UI:
+You never need this — the Triggers tab covers everything below. It is here for when you are already in the collections, or scripting against them:
 
 1.  Open the **PocketBase Admin UI**.
 2.  Go to the **faasbox_cron_jobs** collection.

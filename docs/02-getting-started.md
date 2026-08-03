@@ -54,26 +54,36 @@ export FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32)
 cd server && go run . serve --http=127.0.0.1:8080 --dir=../data/pb_data
 ```
 
-On first launch, open `http://localhost:8080/_/` to create your superuser account.
+If you started the server without superuser credentials, open `http://localhost:8080/_/` once to create the account. Both the Docker command above and `dev.sh` with `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` already create it for you — sign in with those.
 
-## 3. Access the Dashboards
+## 3. The Two Interfaces
 
-Once started, you have access to two main interfaces:
+### FaaS Editor (`/`) — where you work
 
-1.  **PocketBase Admin (`/_/`)**: `http://localhost:8080/_/`
-    - Manage Cron jobs and view logs.
-    - View the underlying data collections.
-2.  **FaaS Editor (`/`)**: `http://localhost:8080/`
-    - Write, edit, and test your functions in a web-based IDE.
-    - Run functions manually and see the output in real-time.
-    - Switch between the light and dark theme with the sun/moon button in the header. Your choice is remembered by the browser; without one, the editor follows your system preference.
+`http://localhost:8080/` is the interface you will spend your time in. It covers everything you need to run functions:
+
+- **Write and test.** Four tabs per function — **Script**, **package.json**, **Triggers**, **Environment** — plus a **Runner** to invoke a function on demand and a **Logs** panel to read its history. Both open from the buttons in the header.
+- **Schedule.** Cron triggers are created and edited in the **Triggers** tab, with ready-made expressions and a free field. See [05 - Scheduling (Cron)](05-scheduling-cron.md).
+- **Secrets.** Encrypted environment variables are edited as key/value pairs in the **Environment** tab. See [04 - Environment Variables](04-environment-variables.md).
+- **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
+- **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
+
+### PocketBase Admin (`/_/`) — the collections underneath
+
+`http://localhost:8080/_/` is the standard PocketBase dashboard. You no longer need it for day-to-day work; it is there when you want the raw data:
+
+- Browse and query the four collections directly (`faasbox_functions`, `faasbox_cron_jobs`, `faasbox_logs`, `faasbox_api_keys`).
+- Read fields the editor does not surface yet, such as `depsStatus` and `depsError`.
+- Manage the instance itself: superuser accounts, backups, server settings.
+
+One thing it cannot do: **creating an API key record by hand gives you no usable key**, because only a hash is stored. Use the editor or the API — see step 5.
 
 ## 4. Create Your First Function
 
 1.  Open the **FaaS Editor**.
-2.  Click "New Function" (or create a folder in `functions/` if developing locally).
+2.  Click the **+** button next to *Functions* in the left sidebar.
 3.  Name it `hello-world`.
-4.  In `index.ts`, write the following:
+4.  In the **Script** tab, write the following:
 
 ```typescript
 // Read payload from stdin
@@ -98,7 +108,7 @@ console.log(
 
 The quickest way is the editor: click **API keys** at the top of the left sidebar and fill the creation form — the raw key is revealed once, with a copy button. See [06 - API Keys and Security](06-api-keys-and-security.md).
 
-By hand, use the API. **Creating a record straight in the PocketBase Admin UI gives you no usable key**: only a hash of the key is stored, so a record you fill in yourself matches no key you can present.
+By hand, use the API — not the PocketBase Admin UI, for the reason given in step 3: only a hash of the key is stored, so a record you fill in yourself matches no key you can present.
 
 ```bash
 # Get a superuser token first
