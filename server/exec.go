@@ -13,10 +13,9 @@ import (
 	"time"
 )
 
-const (
-	depsTimeout = 60 * time.Second
-	execTimeout = 30 * time.Second
-)
+// execTimeout bounds the function subprocess. The dependency install has its own
+// budget, declared and applied in deps.go.
+const execTimeout = 30 * time.Second
 
 // errNotFound indicates the function script does not exist.
 type errNotFound struct{ Name string }
@@ -69,14 +68,16 @@ func executeFunction(ctx context.Context, functionsDir, name, payload string, ex
 		return execResult{Err: &errNotFound{Name: name}}
 	}
 
-	// 3. Install dependencies if needed (dedicated timeout)
+	// 3. Install dependencies if needed. No deadline is set here: ensureDeps takes
+	// its own once it holds the directory lock, so that queueing behind another
+	// install does not eat this caller's budget.
 	funcDir := filepath.Join(absDir, name)
-	depsCtx, depsCancel := context.WithTimeout(ctx, depsTimeout)
-	defer depsCancel()
 	// Timed like the subprocess below: an error response publishes duration_ms,
-	// and a failure that waited a full minute must not report zero.
+	// and a failure that waited a full minute must not report zero. The wait for
+	// the lock is inside ensureDeps, hence inside this measure — the caller really
+	// did wait that long.
 	depsStart := time.Now()
-	depsInstalled, err := ensureDeps(depsCtx, funcDir)
+	depsInstalled, err := ensureDeps(ctx, funcDir)
 	if err != nil {
 		return execResult{Err: &errDepsFailed{Cause: err}, Duration: time.Since(depsStart)}
 	}

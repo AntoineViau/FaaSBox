@@ -48,7 +48,7 @@ Executes the function with the given name.
     }
     ```
 
-    `duration_ms` is the time the install took before giving up, and the invocation is recorded in the logs like any other failure.
+    `duration_ms` is the whole time the call spent on dependencies before giving up — including any wait for an install already running on the same function — and the invocation is recorded in the logs like any other failure.
 
     A `502` body looks like this:
     ```json

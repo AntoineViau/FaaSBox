@@ -54,7 +54,11 @@ When `/invoke/{name}` is called:
 9.  **Respond**: Returns the JSON result to the client.
 
 ### 3. Dependency Installation
-Installing happens when a function is **saved**, in the background: the save returns straight away, and the `depsStatus` field on the record reports where the install stands. The invocation path keeps its own check as a safety net, for what a save cannot see — a restart on a fresh filesystem, or a `node_modules` removed by hand.
+Installing happens when a function is **saved**, in the background: the save returns straight away, and the `depsStatus` field on the record reports where the install stands.
+
+**At startup**, a second background pass covers what a save cannot see: `node_modules` is not part of what the database restores, so a rebuilt filesystem has none. The pass walks the functions, skips those whose fingerprint already matches, and installs the rest one at a time — serialised, because installing them all at once would multiply the memory peak by their number. It is detached from startup, so the server listens without waiting for it.
+
+The invocation path keeps its own check as a last resort, for what both miss — a `node_modules` removed by hand, or a startup install that failed.
 
 To prevent race conditions where a background install and an invocation try to run `bun install` at the same time, we use a global Go `sync.Map` of mutexes. One mutex per function directory: the second caller waits for the first, then finds the work already done.
 
@@ -80,7 +84,7 @@ The **database is the source of truth** for function code. The `faasbox_function
 
 ### Startup Sync
 
-When the server starts, `syncDiskFromDB` reads every record from `faasbox_functions` and writes the corresponding `index.ts` (and `package.json` if present) to the `functions/` directory. This ensures the file system is always consistent after a container restart or redeployment — even if the `functions/` directory was empty.
+When the server starts, `syncDiskFromDB` reads every record from `faasbox_functions` and writes the corresponding `index.ts` (and `package.json` and `bun.lock` if present) to the `functions/` directory. This ensures the file system is always consistent after a container restart or redeployment — even if the `functions/` directory was empty. The dependency pass described above then runs on the files it just restored.
 
 ### Live Sync via Hooks
 

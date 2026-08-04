@@ -56,6 +56,17 @@ func installCounter(t *testing.T) func() int {
 	return fakeBun(t, "exit 0")
 }
 
+// withDepsTimeout shrinks the install budget for the duration of a test. The
+// property under test — when the clock starts — only shows up when it expires,
+// and the production minute is not something a test can wait for. Safe because
+// the package runs its tests one at a time; a t.Parallel() here would race.
+func withDepsTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	old := depsTimeout
+	depsTimeout = d
+	t.Cleanup(func() { depsTimeout = old })
+}
+
 func TestEnsureDeps_NoPackageJson(t *testing.T) {
 	dir := t.TempDir()
 	// Empty dir, no package.json → should return nil immediately
@@ -372,6 +383,58 @@ func TestEnsureDeps_ReportsWhetherItInstalled(t *testing.T) {
 	}
 	if installed {
 		t.Error("installed = true without a package.json, want false")
+	}
+}
+
+// TestEnsureDeps_BoundsTheInstallItself pins the ownership of the budget: the
+// callers hand over their own context, so nothing else bounds bun.
+func TestEnsureDeps_BoundsTheInstallItself(t *testing.T) {
+	dir := depsFixture(t)
+	withDepsTimeout(t, 150*time.Millisecond)
+	fakeBun(t, "sleep 5\nexit 0")
+
+	// context.Background() carries no deadline of its own.
+	_, err := ensureDeps(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected an error when the install outlives the budget")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want it to name the deadline", err)
+	}
+}
+
+// TestEnsureDeps_DeadlineStartsAfterTheLock is the point of moving the timeout
+// inside: a caller that queued behind a slow failure used to get whatever was
+// left of a budget it never spent, and returned "timed out" against an install
+// that had barely started.
+func TestEnsureDeps_DeadlineStartsAfterTheLock(t *testing.T) {
+	dir := depsFixture(t)
+	depsMu.Delete(dir)
+	withDepsTimeout(t, 500*time.Millisecond)
+
+	// The first install holds the lock for 400 ms and fails, so the second caller
+	// has to install too. Its own install needs 300 ms: it fits in a fresh budget,
+	// never in the remainder of one started at the same time as the first.
+	once := filepath.Join(t.TempDir(), "first-install")
+	fakeBun(t, "if [ ! -f \""+once+"\" ]; then\n"+
+		"  touch \""+once+"\"\n  sleep 0.4\n  exit 1\nfi\n"+
+		"sleep 0.3\nmkdir -p node_modules\nexit 0")
+
+	first := make(chan error, 1)
+	go func() {
+		_, err := ensureDeps(context.Background(), dir)
+		first <- err
+	}()
+
+	// Let the first caller take the lock, then queue behind it.
+	time.Sleep(50 * time.Millisecond)
+	_, err := ensureDeps(context.Background(), dir)
+
+	if firstErr := <-first; firstErr == nil {
+		t.Fatal("the first install was meant to fail")
+	}
+	if err != nil {
+		t.Errorf("the caller that waited got %v, want a full budget of its own", err)
 	}
 }
 

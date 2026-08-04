@@ -234,6 +234,74 @@ func TestExecuteFunction_DependencyFailureIsTimed(t *testing.T) {
 	}
 }
 
+// TestExecuteFunction_WaitsOutAnInstallInFlight covers the invocation arriving
+// while the startup pass, or a save, is installing its dependencies: the
+// directory lock makes it wait, and waiting must not turn into failing.
+func TestExecuteFunction_WaitsOutAnInstallInFlight(t *testing.T) {
+	runs := fakeBun(t, "sleep 0.4\nmkdir -p node_modules\nexit 0")
+	dir := setupTestFunctionsDir(t, map[string]string{"needs-deps": ""})
+	funcDir := filepath.Join(dir, "needs-deps")
+	if err := os.WriteFile(filepath.Join(funcDir, "package.json"),
+		[]byte(`{"dependencies":{"left-pad":"1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	installing := make(chan struct{})
+	go func() {
+		defer close(installing)
+		ensureDeps(context.Background(), funcDir)
+	}()
+	time.Sleep(100 * time.Millisecond) // let the background install take the lock
+
+	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	<-installing
+
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want the invocation to wait and then run", res.Err)
+	}
+	if res.DepsInstalled {
+		t.Error("DepsInstalled = true: the invocation reinstalled what it had waited for")
+	}
+	// One install, then the run: the wait cost nothing beyond the wait itself.
+	if got := runs(); got != 2 {
+		t.Errorf("the stub bun ran %d times, want 2 (one install, one run)", got)
+	}
+}
+
+// TestExecuteFunction_DependencyDurationCoversTheLockWait guards duration_ms
+// against the other half of the story: the caller queued behind another install
+// really did spend that time, and an error response saying otherwise would send
+// the reader looking for a fast failure that never happened.
+func TestExecuteFunction_DependencyDurationCoversTheLockWait(t *testing.T) {
+	fakeBun(t, "sleep 0.3\nexit 1")
+	dir := setupTestFunctionsDir(t, map[string]string{"needs-deps": ""})
+	funcDir := filepath.Join(dir, "needs-deps")
+	if err := os.WriteFile(filepath.Join(funcDir, "package.json"),
+		[]byte(`{"dependencies":{"nope":"1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	installing := make(chan struct{})
+	go func() {
+		defer close(installing)
+		ensureDeps(context.Background(), funcDir)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	<-installing
+
+	var depsFailed *errDepsFailed
+	if !errors.As(res.Err, &depsFailed) {
+		t.Fatalf("Err = %v, want *errDepsFailed", res.Err)
+	}
+	// Roughly 250 ms of waiting plus a 300 ms install of its own. Timing only the
+	// install would report about 300.
+	if res.Duration < 400*time.Millisecond {
+		t.Errorf("Duration = %s, want the wait for the lock counted in", res.Duration)
+	}
+}
+
 // TestExecuteFunction_ReportsWhatTheSafetyNetDid carries to the callers the one
 // fact they need to decide whether to write the record: exec.go holds no
 // core.App, so the engine reports and they publish.

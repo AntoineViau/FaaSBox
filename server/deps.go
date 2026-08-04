@@ -11,12 +11,22 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 )
 
 // depsMu holds a per-directory mutex to prevent concurrent bun install runs.
 var depsMu sync.Map // map[string]*sync.Mutex
+
+// depsTimeout bounds a single bun install. It lives here because ensureDeps is
+// what applies it, holding the directory lock: no caller gets to set this budget,
+// and none may add one of its own on top.
+//
+// A var rather than a const, so a test can shrink it: the property that matters —
+// when the clock starts — is only observable when it expires, and no test waits a
+// minute for that.
+var depsTimeout = 60 * time.Second
 
 // depsHashFile records the dependency spec node_modules was built for. It lives
 // inside node_modules so that removing the directory also invalidates the marker.
@@ -97,6 +107,9 @@ func depsHash(funcDir string) (string, error) {
 // the last successful install. A per-directory lock prevents concurrent installs
 // for the same function.
 //
+// It owns depsTimeout, and takes it only once the lock is held (see below): the
+// callers hand it their own context, untouched.
+//
 // installed reports that bun install actually ran and succeeded. Every early
 // return — no package.json, unchanged spec — reports false, which is what lets
 // the invocation path tell a real install from the hash check it pays on every
@@ -121,6 +134,14 @@ func ensureDeps(ctx context.Context, funcDir string) (installed bool, err error)
 	mu := val.(*sync.Mutex)
 	mu.Lock()
 	defer mu.Unlock()
+
+	// The deadline starts here and not at the caller: waiting for another
+	// goroutine's install must not eat this one's budget, or a caller that queued
+	// behind a slow failure returns a "timed out" accusing an install that never
+	// had the time to run. The derived context stays a child, so a shutdown
+	// cancelling the parent still propagates.
+	ctx, cancel := context.WithTimeout(ctx, depsTimeout)
+	defer cancel()
 
 	want, err := depsHash(funcDir)
 	if err != nil {
@@ -227,35 +248,42 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 	setDepsState(app, record.Id, name, depsStatusPending, "")
 
 	recordId := record.Id
-	funcDir := filepath.Join(functionsDir, name)
+	go runDepsInstall(ctx, app, functionsDir, recordId, name)
+}
 
-	go func() {
-		setDepsState(app, recordId, name, depsStatusInstalling, "")
+// runDepsInstall installs one function's dependencies and publishes the outcome
+// on its record. It is shared by the save trigger and the startup pass, which
+// differ in what brings them here, not in what happens once they arrive.
+//
+// interrupted reports a shutdown rather than a failure, which is what the startup
+// pass reads to stop where it stands. A save has a single function to install and
+// ignores it.
+//
+// The install budget is not set here: ensureDeps owns it (see depsTimeout).
+func runDepsInstall(ctx context.Context, app core.App, functionsDir, recordId, name string) (interrupted bool) {
+	setDepsState(app, recordId, name, depsStatusInstalling, "")
 
-		installCtx, cancel := context.WithTimeout(ctx, depsTimeout)
-		defer cancel()
-
-		// ensureDeps returns on the hash check alone when the spec is unchanged,
-		// so a save that only touched the script costs nothing here. Whether it
-		// installed is of no use here: this path publishes the state either way,
-		// having claimed it from pending onwards.
-		if _, err := ensureDeps(installCtx, funcDir); err != nil {
-			// A shutdown interrupted the install, it did not fail: the work is still
-			// owed, and the safety net on the invocation path will do it. Reporting
-			// an error here would outlive the restart and accuse the dependencies.
-			if ctx.Err() != nil {
-				setDepsState(app, recordId, name, depsStatusPending, "")
-				return
-			}
-			app.Logger().Error("faasbox: dependency install failed", "function", name, "error", err)
-			msg, _ := truncateForLog(err.Error(), maxDepsError)
-			setDepsState(app, recordId, name, depsStatusError, msg)
-			return
+	// ensureDeps returns on the hash check alone when the spec is unchanged, so a
+	// save that only touched the script costs nothing here. Whether it installed is
+	// of no use: this path publishes the state either way, having claimed it from
+	// installing onwards.
+	if _, err := ensureDeps(ctx, filepath.Join(functionsDir, name)); err != nil {
+		// A shutdown interrupted the install, it did not fail: the work is still
+		// owed, and the safety net on the invocation path will do it. Reporting
+		// an error here would outlive the restart and accuse the dependencies.
+		if ctx.Err() != nil {
+			setDepsState(app, recordId, name, depsStatusPending, "")
+			return true
 		}
+		app.Logger().Error("faasbox: dependency install failed", "function", name, "error", err)
+		msg, _ := truncateForLog(err.Error(), maxDepsError)
+		setDepsState(app, recordId, name, depsStatusError, msg)
+		return false
+	}
 
-		// Before the state, so that a record announcing "ready" already carries
-		// what the install resolved.
-		persistLockfile(app, functionsDir, name)
-		setDepsState(app, recordId, name, depsStatusReady, "")
-	}()
+	// Before the state, so that a record announcing "ready" already carries
+	// what the install resolved.
+	persistLockfile(app, functionsDir, name)
+	setDepsState(app, recordId, name, depsStatusReady, "")
+	return false
 }

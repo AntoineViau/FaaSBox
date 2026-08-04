@@ -104,8 +104,9 @@ console.log(
 - The corollary matters: an edited `package.json` that has not been saved installs **nothing**. The dependency is on your screen and nowhere else, which is why the editor shows a banner until you save.
 - It caches the `node_modules` and only re-installs when the dependency spec changed. Editing your script alone never triggers an install.
 - If an invocation arrives before the install is done, it waits for it rather than failing.
-- An invocation still installs on its own when needed — after a restart on a fresh filesystem, for instance. In that case, and only then, the caller waits for the install.
-- **Timeout**: The installation process has a 60-second timeout. Past it the install is stopped and reported as a timeout, in those words — raise nothing, split your dependencies or drop the heaviest one.
+- **After a restart**, FaaSBox reinstalls what the machine lost on its own, in the background, one function at a time. The server answers straight away — the pass does not hold it up — and the editor shows each function go from `installing` to `ready` while it runs.
+- An invocation still installs on its own when needed, as a fallback: a `node_modules` removed by hand, or a startup install that failed. In that case, and only then, the caller waits for the install.
+- **Timeout**: The installation process has a 60-second timeout. Past it the install is stopped and reported as a timeout, in those words — raise nothing, split your dependencies or drop the heaviest one. The 60 seconds cover `bun install` itself: a call that had to queue behind another install of the same function is not charged for the wait.
 
 ### Your Versions Stay Put
 
@@ -133,7 +134,7 @@ The same information lives on the function record, in two fields:
 | `ready`      | `node_modules` matches the current dependencies.                                          |
 | `error`      | The last install failed — `depsError` says why.                                           |
 
-Both fields are written whichever way the install was triggered: by saving the function, or by an invocation that had to install on its own. A `ready` left behind by a restart on a fresh filesystem is therefore corrected by the first invocation, which reinstalls.
+Both fields are written whichever way the install was triggered: by saving the function, by the startup pass, or by an invocation that had to install on its own. A `ready` left behind by a restart on a fresh filesystem is therefore corrected within seconds of the server coming back, without waiting for anyone to call the function.
 
 `depsError` opens on one of three things:
 

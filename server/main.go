@@ -64,6 +64,11 @@ func main() {
 			// Restore functions from DB to disk (recreate files after container restart)
 			syncDiskFromDB(e.App, functionsDir)
 
+			// Reinstall the dependencies the disk lost, from the files just restored.
+			// Detached: OnServe runs before the server listens, so anything synchronous
+			// here delays the first response — and bun takes its time.
+			go installMissingDeps(lifecycleCtx, e.App, functionsDir)
+
 			// Load existing cron jobs
 			syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 
