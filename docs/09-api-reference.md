@@ -34,8 +34,21 @@ Executes the function with the given name.
     - `404`: Function not found.
     - `413`: Request body too large (default 1 MB, configurable via `FAASBOX_MAX_BODY_SIZE`).
     - `429`: Too many concurrent invocations (default 4, configurable via `FAASBOX_MAX_CONCURRENCY`).
+    - `500`: The function's dependencies could not be installed, so it never ran. The message carries the end of the `bun install` output (see [03 - Writing Functions](03-writing-functions.md)), and the same text lands in `depsError` on the function record.
     - `502`: The function ran, but its output was cut at the capture limit and what remains is not valid JSON. The result is incomplete and is not returned. The error message carries the effective limit and names `FAASBOX_MAX_OUTPUT_SIZE`, the variable that raises it.
     - `504`: Function timed out (> 30s).
+
+    A `500` from a failed install looks like this:
+    ```json
+    {
+      "error": "failed to install dependencies: error: package nope@1.0.0 not found",
+      "stdout": "",
+      "stderr": "",
+      "duration_ms": 843
+    }
+    ```
+
+    `duration_ms` is the time the install took before giving up, and the invocation is recorded in the logs like any other failure.
 
     A `502` body looks like this:
     ```json

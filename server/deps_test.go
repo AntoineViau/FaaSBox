@@ -59,7 +59,7 @@ func installCounter(t *testing.T) func() int {
 func TestEnsureDeps_NoPackageJson(t *testing.T) {
 	dir := t.TempDir()
 	// Empty dir, no package.json → should return nil immediately
-	err := ensureDeps(context.Background(), dir)
+	_, err := ensureDeps(context.Background(), dir)
 	if err != nil {
 		t.Errorf("expected nil error for dir without package.json, got: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestEnsureDeps_MarkerMatches(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := ensureDeps(ctx, dir); err != nil {
+	if _, err := ensureDeps(ctx, dir); err != nil {
 		t.Errorf("expected nil when the deps marker matches, got: %v", err)
 	}
 }
@@ -100,7 +100,7 @@ func TestEnsureDeps_MarkerMismatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := ensureDeps(ctx, dir); err == nil {
+	if _, err := ensureDeps(ctx, dir); err == nil {
 		t.Error("expected error (bun install attempted with cancelled ctx), got nil")
 	}
 }
@@ -119,7 +119,7 @@ func TestEnsureDeps_NodeModulesWithoutMarker(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := ensureDeps(ctx, dir); err == nil {
+	if _, err := ensureDeps(ctx, dir); err == nil {
 		t.Error("expected error (bun install attempted with cancelled ctx), got nil")
 	}
 }
@@ -134,7 +134,7 @@ func TestEnsureDeps_SkipsInstallWhenSpecUnchanged(t *testing.T) {
 	runs := installCounter(t)
 	depsMu.Delete(dir)
 
-	if err := ensureDeps(context.Background(), dir); err != nil {
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 	if got := runs(); got != 1 {
@@ -147,7 +147,7 @@ func TestEnsureDeps_SkipsInstallWhenSpecUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ensureDeps(context.Background(), dir); err != nil {
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 	if got := runs(); got != 1 {
@@ -180,7 +180,7 @@ func TestEnsureDeps_LockfileChangeTriggersInstall(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if err := ensureDeps(ctx, dir); err == nil {
+	if _, err := ensureDeps(ctx, dir); err == nil {
 		t.Error("expected error (bun install attempted after lockfile change), got nil")
 	}
 }
@@ -198,9 +198,180 @@ func TestEnsureDeps_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := ensureDeps(ctx, dir)
+	_, err := ensureDeps(ctx, dir)
 	if err == nil {
 		t.Error("expected error with cancelled context, got nil")
+	}
+}
+
+// depsFixture creates a function directory whose spec is not installed, so the
+// next ensureDeps call necessarily runs the fake bun on PATH.
+func depsFixture(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"dependencies":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// TestEnsureDeps_TimeoutIsNamed covers the confusion this whole qualification
+// exists to end: exec.CommandContext kills through Process.Kill, so an expired
+// deadline used to read "signal: killed" — indistinguishable from an OOM kill.
+func TestEnsureDeps_TimeoutIsNamed(t *testing.T) {
+	dir := depsFixture(t)
+	fakeBun(t, "sleep 5\nexit 0")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	_, err := ensureDeps(ctx, dir)
+	if err == nil {
+		t.Fatal("expected an error when the install outlives its deadline")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want it to name the deadline", err)
+	}
+	if strings.Contains(err.Error(), "signal: killed") {
+		t.Errorf("error = %q, want the plumbing kept out of the message", err)
+	}
+}
+
+func TestEnsureDeps_KilledFromOutsideIsNamed(t *testing.T) {
+	dir := depsFixture(t)
+	// The process kills itself with SIGKILL, which is what the OOM killer or a
+	// container shutdown does to it.
+	fakeBun(t, "kill -KILL $$")
+
+	_, err := ensureDeps(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected an error when bun is killed")
+	}
+	if !strings.Contains(err.Error(), "killed by the system") {
+		t.Errorf("error = %q, want it to say the process was killed from outside", err)
+	}
+	if strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want it distinct from the deadline message", err)
+	}
+}
+
+func TestEnsureDeps_OrdinaryFailureKeepsBunOutput(t *testing.T) {
+	dir := depsFixture(t)
+	fakeBun(t, `echo "error: package nope@1.0.0 not found" >&2`+"\nexit 1")
+
+	_, err := ensureDeps(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected an error when bun install fails")
+	}
+	// Neither of the two qualified cases: bun's own output is the information,
+	// and it must come through as it always did.
+	got := err.Error()
+	if !strings.Contains(got, "nope@1.0.0 not found") {
+		t.Errorf("error = %q, want the bun output verbatim", got)
+	}
+	if !strings.Contains(got, "exit status 1") {
+		t.Errorf("error = %q, want the wrapped exit status kept", got)
+	}
+	if strings.Contains(got, "timed out") || strings.Contains(got, "killed by the system") {
+		t.Errorf("error = %q, want no qualification on an ordinary failure", got)
+	}
+}
+
+func TestEnsureDeps_CapturesStdoutToo(t *testing.T) {
+	dir := depsFixture(t)
+	// bun appears to write everything to stderr, but a version that does not must
+	// not leave the field empty.
+	fakeBun(t, `echo "spoken on stdout"`+"\nexit 1")
+
+	_, err := ensureDeps(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected an error when bun install fails")
+	}
+	if !strings.Contains(err.Error(), "spoken on stdout") {
+		t.Errorf("error = %q, want the standard output captured too", err)
+	}
+}
+
+// TestEnsureDeps_KeepsTheEndOfAVerboseFailure is the point of the tail capture:
+// a chatty install that fails prints its diagnosis last, and a head-first cut
+// would keep the progress and drop it.
+func TestEnsureDeps_KeepsTheEndOfAVerboseFailure(t *testing.T) {
+	dir := depsFixture(t)
+	fakeBun(t, `head -c 200000 /dev/zero | tr "\0" "x" >&2`+"\n"+
+		`echo "error: the last line, which is the one that matters" >&2`+"\nexit 1")
+
+	_, err := ensureDeps(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected an error when bun install fails")
+	}
+
+	got := err.Error()
+	if !strings.Contains(got, "the last line, which is the one that matters") {
+		t.Errorf("error = %q, want the tail of the output kept", got)
+	}
+	if !strings.Contains(got, "...[truncated, ") {
+		t.Errorf("error = %q, want a marker stating what was dropped", got)
+	}
+}
+
+// TestEnsureDeps_FailureFitsUnderTheFieldCap ties the capture budget to the
+// field it feeds: truncateForLog cuts the tail, so a message that overflows
+// maxDepsError would lose exactly the bytes the tail capture went looking for.
+func TestEnsureDeps_FailureFitsUnderTheFieldCap(t *testing.T) {
+	dir := depsFixture(t)
+	fakeBun(t, `head -c 200000 /dev/zero | tr "\0" "x" >&2`+"\n"+
+		`echo "error: the last line" >&2`+"\nexit 1")
+
+	_, err := ensureDeps(context.Background(), dir)
+	if err == nil {
+		t.Fatal("expected an error when bun install fails")
+	}
+
+	// Both the message ensureDeps builds and the one an invocation wraps it in
+	// have to clear the cap: the safety net publishes the former, but the latter
+	// is what the HTTP response carries.
+	raw := err.Error()
+	wrapped := (&errDepsFailed{Cause: err}).Error()
+	for label, msg := range map[string]string{"ensureDeps": raw, "errDepsFailed": wrapped} {
+		if len(msg) > maxDepsError {
+			t.Errorf("%s message is %d bytes, beyond the %d cap — truncateForLog would cut the tail",
+				label, len(msg), maxDepsError)
+		}
+		if cut, _ := truncateForLog(msg, maxDepsError); cut != msg {
+			t.Errorf("%s message got cut by truncateForLog, which must stay a rampart", label)
+		}
+	}
+}
+
+func TestEnsureDeps_ReportsWhetherItInstalled(t *testing.T) {
+	dir := depsFixture(t)
+	fakeBun(t, "mkdir -p node_modules\nexit 0")
+
+	installed, err := ensureDeps(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	if !installed {
+		t.Error("installed = false after a real install, want true")
+	}
+
+	// Second call leaves on the hash check: nothing was installed, and the
+	// invocation path must not write the record for it.
+	installed, err = ensureDeps(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if installed {
+		t.Error("installed = true on the hash-check exit, want false")
+	}
+
+	// No package.json at all is the other silent exit.
+	installed, err = ensureDeps(context.Background(), t.TempDir())
+	if err != nil {
+		t.Fatalf("without package.json: %v", err)
+	}
+	if installed {
+		t.Error("installed = true without a package.json, want false")
 	}
 }
 
@@ -229,7 +400,7 @@ func TestEnsureDeps_ConcurrentCalls(t *testing.T) {
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
-			if err := ensureDeps(ctx, dir); err != nil {
+			if _, err := ensureDeps(ctx, dir); err != nil {
 				errCount.Add(1)
 			}
 		}()
@@ -274,7 +445,7 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	defer os.Setenv("PATH", oldPath)
 
 	// Test Case A: No bun.lock -> should NOT have --frozen-lockfile
-	if err := ensureDeps(context.Background(), dir); err != nil {
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Errorf("unexpected error without bun.lock: %v", err)
 	}
 	args, err := os.ReadFile(filepath.Join(dir, "install.args"))
@@ -297,7 +468,7 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	// Let's just remove node_modules if it exists to be sure.
 	os.RemoveAll(filepath.Join(dir, "node_modules"))
 
-	if err := ensureDeps(context.Background(), dir); err != nil {
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Errorf("unexpected error with bun.lock: %v", err)
 	}
 	args, err = os.ReadFile(filepath.Join(dir, "install.args"))
@@ -317,7 +488,7 @@ func TestEnsureDeps_ReinstallsAfterNodeModulesRemoved(t *testing.T) {
 
 	runs := fakeBun(t, "mkdir -p node_modules\nexit 0")
 
-	if err := ensureDeps(context.Background(), dir); err != nil {
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	if got := runs(); got != 1 {
@@ -330,7 +501,7 @@ func TestEnsureDeps_ReinstallsAfterNodeModulesRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ensureDeps(context.Background(), dir); err != nil {
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Fatalf("reinstall: %v", err)
 	}
 	if got := runs(); got != 2 {
@@ -364,7 +535,7 @@ func TestEnsureDeps_ConcurrentCallsInstallOnce(t *testing.T) {
 	for i, p := range paths {
 		go func() {
 			defer wg.Done()
-			errs[i] = ensureDeps(context.Background(), p)
+			_, errs[i] = ensureDeps(context.Background(), p)
 		}()
 	}
 	wg.Wait()
@@ -573,11 +744,65 @@ func TestScheduleDepsInstall_ScriptOnlyChangeSkipsInstall(t *testing.T) {
 	}
 
 	// And the invocation path must not repay the cost either.
-	if err := ensureDeps(context.Background(), filepath.Join(functionsDir, "stable-deps")); err != nil {
+	if _, err := ensureDeps(context.Background(), filepath.Join(functionsDir, "stable-deps")); err != nil {
 		t.Fatalf("safety net on the invocation path: %v", err)
 	}
 	if got := runs(); got != 1 {
 		t.Errorf("expected the invocation to exit on the hash check, got %d installs", got)
+	}
+}
+
+// TestSetDepsState_WritesWithoutFiringTheSaveHooks pins a mechanism, not a
+// style. app.Save would fire OnRecordAfterUpdateSuccess, which is precisely what
+// schedules an install — the record would save itself in an endless loop. Both
+// spellings of the write, by id and by name, have to stay out of that.
+func TestSetDepsState_WritesWithoutFiringTheSaveHooks(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	record := saveTestFunction(t, app, functionsDir, "state-write",
+		"console.log('hi')", `{"dependencies":{}}`)
+
+	var saves atomic.Int32
+	app.OnRecordAfterUpdateSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
+		saves.Add(1)
+		return e.Next()
+	})
+
+	cases := []struct {
+		label  string
+		write  func()
+		status string
+		errMsg string
+	}{
+		{"by id", func() { setDepsState(app, record.Id, "state-write", depsStatusError, "boom") }, depsStatusError, "boom"},
+		{"by name", func() { setDepsStateByName(app, "state-write", depsStatusReady, "") }, depsStatusReady, ""},
+	}
+
+	for _, tc := range cases {
+		tc.write()
+
+		stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := stored.GetString("depsStatus"); got != tc.status {
+			t.Errorf("%s: depsStatus = %q, want %q", tc.label, got, tc.status)
+		}
+		if got := stored.GetString("depsError"); got != tc.errMsg {
+			t.Errorf("%s: depsError = %q, want %q", tc.label, got, tc.errMsg)
+		}
+		// The update targets the two dependency columns and nothing else.
+		if got := stored.GetString("script"); got != "console.log('hi')" {
+			t.Errorf("%s: script = %q, want it untouched by the state write", tc.label, got)
+		}
+		if got := saves.Load(); got != 0 {
+			t.Fatalf("%s: the record save hooks fired %d times — the install loop is back", tc.label, got)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   effect,
   HostListener,
   inject,
@@ -16,6 +17,7 @@ import { CronService } from '@/editor/cron.service';
 import { FunctionsStore } from '@/editor/functions.store';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { CronEditorComponent } from '@/editor/cron-editor.component';
+import { DepsStatusComponent } from '@/editor/deps-status.component';
 import { EnvEditorComponent } from '@/editor/env-editor.component';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
 import { RunnerComponent } from '@/editor/runner.component';
@@ -37,6 +39,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
     ZardTabComponent,
     CodeEditorComponent,
     CronEditorComponent,
+    DepsStatusComponent,
     EnvEditorComponent,
     LogViewerComponent,
     RunnerComponent,
@@ -150,12 +153,16 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
                 </div>
               </z-tab>
               <z-tab label="package.json">
-                <div class="h-full">
-                  <app-code-editor
-                    [content]="localPackageJson()"
-                    language="json"
-                    (contentChange)="localPackageJson.set($event)"
-                  />
+                <div class="flex h-full flex-col">
+                  <!-- Install state, pushed by the server as it changes. -->
+                  <app-deps-status [status]="fn.depsStatus" [error]="fn.depsError" />
+                  <div class="min-h-0 flex-1">
+                    <app-code-editor
+                      [content]="localPackageJson()"
+                      language="json"
+                      (contentChange)="localPackageJson.set($event)"
+                    />
+                  </div>
                 </div>
               </z-tab>
               <z-tab label="Triggers">
@@ -214,6 +221,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
 export class EditorComponent implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly cronService = inject(CronService);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly store = inject(FunctionsStore);
 
   protected readonly localName = signal('');
@@ -271,6 +279,11 @@ export class EditorComponent implements OnInit {
   ngOnInit(): void {
     this.store.loadFunctions();
     this.loadCronFunctions();
+
+    // The install runs in the background for up to a minute after the save
+    // answered, so the save response alone would show one frozen value. The
+    // server pushes instead — nothing here polls.
+    this.destroyRef.onDestroy(this.store.startDepsStateSync());
   }
 
   protected async loadCronFunctions(): Promise<void> {

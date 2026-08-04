@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"fmt"
+	"unicode/utf8"
 )
 
 const defaultMaxOutputSize = 1 << 20 // 1 MB
@@ -52,4 +54,72 @@ func (w *limitedWriter) Bytes() []byte {
 
 func (w *limitedWriter) Len() int {
 	return w.buf.Len()
+}
+
+// tailWriter captures the *last* max bytes written to it and counts the total.
+// It is the mirror image of limitedWriter, which keeps the head and stops
+// writing once full.
+//
+// The two ends are not interchangeable. A command whose diagnosis arrives after
+// a long progress stream — bun install is the case at hand — puts everything
+// worth reading at the very end, so keeping the head keeps precisely the useless
+// half. Raising the cap does not fix that; only the direction of the cut does.
+//
+// Unlike newLimitedWriter, the cap is a constructor argument: the callers of
+// this writer feed a database field whose budget is theirs to compute, not a
+// process-wide tunable.
+type tailWriter struct {
+	buf   []byte
+	max   int
+	total int
+}
+
+func newTailWriter(max int) *tailWriter {
+	if max < 0 {
+		max = 0
+	}
+	return &tailWriter{max: max, buf: make([]byte, 0, max)}
+}
+
+func (w *tailWriter) Write(p []byte) (int, error) {
+	w.total += len(p)
+
+	// Always report the whole write as accepted: a short write makes exec's
+	// stream pumps fail the command, which would turn a bounded capture into a
+	// spurious install failure.
+	switch {
+	case len(p) >= w.max:
+		w.buf = append(w.buf[:0], p[len(p)-w.max:]...)
+	case len(w.buf)+len(p) > w.max:
+		drop := len(w.buf) + len(p) - w.max
+		w.buf = append(w.buf[:0], w.buf[drop:]...)
+		w.buf = append(w.buf, p...)
+	default:
+		w.buf = append(w.buf, p...)
+	}
+	return len(p), nil
+}
+
+func (w *tailWriter) truncated() bool {
+	return w.total > w.max
+}
+
+// String returns the captured tail, prefixed by a marker stating the original
+// size when bytes were dropped. The marker sits at the head because that is the
+// end the cut happened on — truncateForLog puts its own at the tail for the
+// same reason.
+func (w *tailWriter) String() string {
+	if !w.truncated() {
+		return string(w.buf)
+	}
+
+	// The cut lands wherever the writes did, including inside a multi-byte rune.
+	// Dropping the dangling continuation bytes keeps the value valid UTF-8, the
+	// same concern truncateForLog handles at the other end.
+	kept := w.buf
+	for len(kept) > 0 && !utf8.RuneStart(kept[0]) {
+		kept = kept[1:]
+	}
+
+	return fmt.Sprintf("...[truncated, %d bytes total]\n", w.total) + string(kept)
 }

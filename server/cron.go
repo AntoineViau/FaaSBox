@@ -164,6 +164,10 @@ func runFunction(ctx context.Context, app core.App, functionsDir, name, payload 
 	env := lookupFunctionEnv(app, name)
 	res := executeFunction(ctx, functionsDir, name, payload, env)
 
+	// Publish what the dependency safety net did, if anything. invokeHandler does
+	// the same right after its own call — the two must not diverge.
+	publishDepsOutcome(app, name, res)
+
 	// Stamp the trigger time whatever the outcome: what is recorded is that the
 	// job fired, not that it succeeded. Missed-run detection reads it back.
 	markCronJobRun(app, recordId, time.Now())

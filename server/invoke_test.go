@@ -260,6 +260,168 @@ func TestInvokeHandler_FunctionNotFound(t *testing.T) {
 	scenario.Test(t)
 }
 
+// invokeFunction drives one HTTP invocation through the real route stack, so
+// the dependency safety net, the execution log and the response all go through
+// the code path an operator actually hits.
+func invokeFunction(t *testing.T, app *tests.TestApp, functionsDir, name string, wantStatus int, wantContent []string) {
+	t.Helper()
+	key := createTestAPIKey(t, app, "deps-"+name, []string{"*"})
+	scenario := tests.ApiScenario{
+		Name:                  "invoke " + name,
+		Method:                http.MethodPost,
+		URL:                   "/invoke/" + name,
+		Headers:               map[string]string{"X-API-Key": key},
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+		DisableTestAppCleanup: true,
+		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+			registerFaaSRoutes(app, e, functionsDir)
+		},
+		ExpectedStatus:  wantStatus,
+		ExpectedContent: wantContent,
+	}
+	scenario.Test(t)
+}
+
+// TestInvokeHandler_DependencyFailureLeavesEveryTrace covers the blind spot this
+// ticket closes: the HTTP path used to answer 500 and record nothing anywhere —
+// no log line, no faasbox_logs entry, no state on the record. The cron path had
+// always done both.
+func TestInvokeHandler_DependencyFailureLeavesEveryTrace(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+	enableServerLogs(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, `echo "error: package nope@1.0.0 not found" >&2`+"\nexit 1")
+	record := saveTestFunction(t, app, functionsDir, "broken-deps",
+		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
+
+	invokeFunction(t, app, functionsDir, "broken-deps", 500,
+		[]string{"failed to install dependencies", "nope@1.0.0 not found"})
+
+	// An invocation that failed to install did take place: it earns its line.
+	if got := countExecutionLogs(t, app, "broken-deps"); got != 1 {
+		t.Errorf("faasbox_logs holds %d entries for the invocation, want 1", got)
+	}
+
+	// And the server log, which is what an operator reads during an incident.
+	messages := serverLogMessages(t, app)
+	found := false
+	for _, m := range messages {
+		if strings.Contains(m, "faasbox http: execution failed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("server log = %v, want a line reporting the failed invocation", messages)
+	}
+
+	// The state published by the safety net, which used to be written only by a
+	// save — so a failure met on the invocation path left "pending" in place.
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusError {
+		t.Errorf("depsStatus = %q, want %q", got, depsStatusError)
+	}
+	if got := stored.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+		t.Errorf("depsError = %q, want the install output", got)
+	}
+}
+
+func TestInvokeHandler_SafetyNetPublishesReady(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, "exit 0")
+	record := saveTestFunction(t, app, functionsDir, "fresh-deps",
+		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	// A restart on a fresh filesystem restores the sources but not node_modules,
+	// so "ready" survives in the database with nothing behind it. The first
+	// invocation reinstalls and must say so.
+	setDepsState(app, record.Id, "fresh-deps", depsStatusReady, "")
+
+	invokeFunction(t, app, functionsDir, "fresh-deps", 200, []string{`"function":"fresh-deps"`})
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusReady {
+		t.Errorf("depsStatus = %q, want %q after the safety net installed", got, depsStatusReady)
+	}
+	if got := stored.GetString("depsError"); got != "" {
+		t.Errorf("depsError = %q, want it cleared by a successful install", got)
+	}
+}
+
+// TestInvokeHandler_HashCheckExitWritesNothing keeps the publication off the hot
+// path: the overwhelming majority of invocations leave ensureDeps on the hash
+// check, and a write per invocation would be pure cost.
+func TestInvokeHandler_HashCheckExitWritesNothing(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, "exit 0")
+	record := saveTestFunction(t, app, functionsDir, "settled-deps",
+		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
+
+	// First invocation installs and publishes.
+	invokeFunction(t, app, functionsDir, "settled-deps", 200, []string{`"function":"settled-deps"`})
+
+	// A sentinel no code path would ever write: only an unwanted write shows up.
+	setDepsState(app, record.Id, "settled-deps", depsStatusPending, "sentinel")
+
+	invokeFunction(t, app, functionsDir, "settled-deps", 200, []string{`"function":"settled-deps"`})
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusPending {
+		t.Errorf("depsStatus = %q, want the sentinel %q untouched", got, depsStatusPending)
+	}
+	if got := stored.GetString("depsError"); got != "sentinel" {
+		t.Errorf("depsError = %q, want the sentinel untouched", got)
+	}
+}
+
+// TestInvokeHandler_NotFoundStaysOutOfTheLogs is the one exclusion left standing:
+// nothing ran, so there is no execution to record.
+func TestInvokeHandler_NotFoundStaysOutOfTheLogs(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := setupTestFunctionsDir(t, map[string]string{})
+
+	invokeFunction(t, app, functionsDir, "ghost", 404, []string{"not found"})
+
+	if got := countExecutionLogs(t, app, "ghost"); got != 0 {
+		t.Errorf("faasbox_logs holds %d entries for a function that does not exist, want 0", got)
+	}
+}
+
 func TestListFunctionsHandler(t *testing.T) {
 	t.Run("lists functions with index.ts", func(t *testing.T) {
 		app, err := tests.NewTestApp()

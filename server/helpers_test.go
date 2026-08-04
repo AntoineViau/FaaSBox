@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/logger"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
@@ -130,6 +132,56 @@ func waitDepsStatus(t testing.TB, app core.App, recordId, want string) *core.Rec
 	}
 	t.Fatalf("depsStatus = %q, want %q", got, want)
 	return nil
+}
+
+// enableServerLogs makes app.Logger() actually persist what it is handed. The
+// batch handler drops every record when Logs.MaxDays is 0, which is how the test
+// app ships — call this before the code under test logs anything.
+func enableServerLogs(t testing.TB, app core.App) {
+	t.Helper()
+	if app.Settings().Logs.MaxDays > 0 {
+		return
+	}
+	app.Settings().Logs.MaxDays = 7
+	if err := app.Save(app.Settings()); err != nil {
+		t.Fatalf("failed to enable server logs: %v", err)
+	}
+}
+
+// serverLogMessages returns the messages written through app.Logger().
+//
+// The handler batches by size and by a three-second ticker, neither of which a
+// test should wait for, so it is flushed first.
+func serverLogMessages(t testing.TB, app core.App) []string {
+	t.Helper()
+	handler, ok := app.Logger().Handler().(*logger.BatchHandler)
+	if !ok {
+		t.Fatalf("the app logger is a %T, expected a batch handler to flush", app.Logger().Handler())
+	}
+	if err := handler.WriteAll(context.Background()); err != nil {
+		t.Fatalf("failed to flush the log handler: %v", err)
+	}
+
+	logs := []*core.Log{}
+	if err := app.LogQuery().All(&logs); err != nil {
+		t.Fatalf("failed to read the server logs: %v", err)
+	}
+	messages := make([]string, len(logs))
+	for i, l := range logs {
+		messages[i] = l.Message
+	}
+	return messages
+}
+
+// countExecutionLogs returns how many faasbox_logs entries a function carries.
+func countExecutionLogs(t testing.TB, app core.App, functionName string) int {
+	t.Helper()
+	records, err := app.FindAllRecords(faasboxLogsCollection,
+		dbx.HashExp{"functionName": functionName})
+	if err != nil {
+		t.Fatalf("failed to read the execution logs of %q: %v", functionName, err)
+	}
+	return len(records)
 }
 
 // registerFaaSRoutes registers the FaaS HTTP routes on the test server's router.

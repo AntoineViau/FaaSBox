@@ -72,7 +72,11 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 	env := lookupFunctionEnv(e.App, name)
 	res := executeFunction(e.Request.Context(), functionsDir, name, string(body), env)
 
-	// 5. Decode stdout before logging: an execution whose output did not survive
+	// 5. Publish what the dependency safety net did, if anything. The cron path
+	// does the same right after its own call — the two must not diverge.
+	publishDepsOutcome(e.App, name, res)
+
+	// 6. Decode stdout before logging: an execution whose output did not survive
 	// the capture cap is a failure, and the log has to say so.
 	var result any
 	outputUsable := true
@@ -80,10 +84,12 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 		result, outputUsable = parseFunctionOutput(res.Stdout, res.StdoutTruncated)
 	}
 
-	// 6. Log execution to faasbox_logs (skip setup errors like not-found)
+	// 7. Log execution to faasbox_logs. Only errNotFound stays out: nothing ran,
+	// so there is no execution to record. A dependency install that failed did
+	// take place and earns its line, at the same title as on the cron path — the
+	// path where someone is waiting for an answer was the one explaining nothing.
 	var notFound *errNotFound
-	var depsFailed *errDepsFailed
-	if !errors.As(res.Err, &notFound) && !errors.As(res.Err, &depsFailed) {
+	if !errors.As(res.Err, &notFound) {
 		status := "success"
 		if res.TimedOut {
 			status = "timeout"
@@ -100,9 +106,17 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 			RequestPayload: string(body),
 			ExitCode:       res.ExitCode,
 		})
+
+		// Same rule for the server log, and the same reason: a failure the caller
+		// is told about still has to leave something behind for whoever reads the
+		// logs during an incident. runFunction has done this all along.
+		if res.Err != nil {
+			e.App.Logger().Error("faasbox http: execution failed",
+				"function", name, "error", res.Err, "stdout", res.Stdout, "stderr", res.Stderr, "truncated", res.Truncated)
+		}
 	}
 
-	// 7. Format HTTP response
+	// 8. Format HTTP response
 	if res.Err != nil {
 		if errors.As(res.Err, &notFound) {
 			return e.JSON(http.StatusNotFound, map[string]string{

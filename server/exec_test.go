@@ -209,6 +209,60 @@ func TestExecuteFunction_DependencyFailurePreventsTheRun(t *testing.T) {
 	}
 }
 
+// TestExecuteFunction_DependencyFailureIsTimed guards the field the error
+// response publishes: an install that failed after a long wait used to report
+// duration_ms = 0, which read as if nothing had happened.
+func TestExecuteFunction_DependencyFailureIsTimed(t *testing.T) {
+	fakeBun(t, "sleep 0.05\nexit 1")
+	dir := setupTestFunctionsDir(t, map[string]string{"needs-deps": ""})
+	pkgPath := filepath.Join(dir, "needs-deps", "package.json")
+	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{"nope":"1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+
+	var depsFailed *errDepsFailed
+	if !errors.As(res.Err, &depsFailed) {
+		t.Fatalf("Err = %v, want *errDepsFailed", res.Err)
+	}
+	if res.Duration <= 0 {
+		t.Errorf("Duration = %s, want the dependency step timed like the run", res.Duration)
+	}
+	if res.Duration.Milliseconds() < 1 {
+		t.Errorf("duration_ms would publish %d for a 50 ms install", res.Duration.Milliseconds())
+	}
+}
+
+// TestExecuteFunction_ReportsWhatTheSafetyNetDid carries to the callers the one
+// fact they need to decide whether to write the record: exec.go holds no
+// core.App, so the engine reports and they publish.
+func TestExecuteFunction_ReportsWhatTheSafetyNetDid(t *testing.T) {
+	fakeBun(t, "mkdir -p node_modules\nexit 0")
+	dir := setupTestFunctionsDir(t, map[string]string{"needs-deps": ""})
+	pkgPath := filepath.Join(dir, "needs-deps", "package.json")
+	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{"left-pad":"1.0.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want a clean run", res.Err)
+	}
+	if !res.DepsInstalled {
+		t.Error("DepsInstalled = false although the safety net ran the install")
+	}
+
+	// Second invocation: the hash check holds, and the caller must write nothing.
+	res = executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	if res.Err != nil {
+		t.Fatalf("Err = %v, want a clean run", res.Err)
+	}
+	if res.DepsInstalled {
+		t.Error("DepsInstalled = true on the hash-check exit, want false")
+	}
+}
+
 func TestExecuteFunction_ReservedEnvironment(t *testing.T) {
 	readEnv := fakeBunEnvDump(t)
 	dir := setupTestFunctionsDir(t, map[string]string{"envdump": ""})

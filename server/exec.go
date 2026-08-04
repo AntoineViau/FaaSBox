@@ -43,6 +43,10 @@ type execResult struct {
 	Truncated       bool
 	StdoutTruncated bool
 	ExitCode        int
+	// DepsInstalled reports that ensureDeps actually ran bun install rather than
+	// leaving on the hash check. Callers publish the installation state on the
+	// record only then; the engine itself does not know the database.
+	DepsInstalled bool
 }
 
 // executeFunction validates, installs deps, and runs a function in a Bun subprocess.
@@ -69,8 +73,12 @@ func executeFunction(ctx context.Context, functionsDir, name, payload string, ex
 	funcDir := filepath.Join(absDir, name)
 	depsCtx, depsCancel := context.WithTimeout(ctx, depsTimeout)
 	defer depsCancel()
-	if err := ensureDeps(depsCtx, funcDir); err != nil {
-		return execResult{Err: &errDepsFailed{Cause: err}}
+	// Timed like the subprocess below: an error response publishes duration_ms,
+	// and a failure that waited a full minute must not report zero.
+	depsStart := time.Now()
+	depsInstalled, err := ensureDeps(depsCtx, funcDir)
+	if err != nil {
+		return execResult{Err: &errDepsFailed{Cause: err}, Duration: time.Since(depsStart)}
 	}
 
 	// 4. Execute with timeout
@@ -114,6 +122,7 @@ func executeFunction(ctx context.Context, functionsDir, name, payload string, ex
 		Duration:        duration,
 		Truncated:       stdout.truncated || stderr.truncated,
 		StdoutTruncated: stdout.truncated,
+		DepsInstalled:   depsInstalled,
 	}
 
 	if err != nil {

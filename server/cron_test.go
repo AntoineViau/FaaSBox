@@ -303,3 +303,58 @@ func TestRunFunction_StampsLastRunAt(t *testing.T) {
 		t.Error("lastRunAt was not stamped after a failed cron execution")
 	}
 }
+
+// TestRunFunction_PublishesDependencyState is the cron half of the parity: the
+// safety net publishes what it did whichever path called the engine, because the
+// engine itself cannot — it holds no core.App.
+func TestRunFunction_PublishesDependencyState(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, `echo "error: package nope@1.0.0 not found" >&2`+"\nexit 1")
+	record := saveTestFunction(t, app, functionsDir, "cron-broken-deps",
+		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
+
+	runFunction(context.Background(), app, functionsDir, "cron-broken-deps", "{}", 0, "")
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusError {
+		t.Errorf("depsStatus = %q, want %q", got, depsStatusError)
+	}
+	if got := stored.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+		t.Errorf("depsError = %q, want the install output", got)
+	}
+}
+
+func TestRunFunction_SafetyNetPublishesReady(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, "exit 0")
+	record := saveTestFunction(t, app, functionsDir, "cron-fresh-deps",
+		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
+	setDepsState(app, record.Id, "cron-fresh-deps", depsStatusPending, "")
+
+	runFunction(context.Background(), app, functionsDir, "cron-fresh-deps", "{}", 0, "")
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusReady {
+		t.Errorf("depsStatus = %q, want %q after the safety net installed", got, depsStatusReady)
+	}
+}

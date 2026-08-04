@@ -1,16 +1,16 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, NgZone } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 
-import { AuthService } from '@/auth/auth.service';
 import type { FaasboxLog, FaasboxLogListResponse } from '@/models/faasbox-log.model';
+import { RealtimeService } from '@/editor/realtime.service';
 
 const BASE_URL = '/api/collections/faasbox_logs/records';
+const LOGS_TOPIC = 'faasbox_logs';
 
 @Injectable({ providedIn: 'root' })
 export class LogsService {
   private readonly http = inject(HttpClient);
-  private readonly authService = inject(AuthService);
-  private readonly ngZone = inject(NgZone);
+  private readonly realtime = inject(RealtimeService);
 
   list(functionName: string) {
     const filter = encodeURIComponent(`functionName='${functionName}'`);
@@ -19,46 +19,25 @@ export class LogsService {
     );
   }
 
-  subscribe(functionName: string, onNewLog: (log: FaasboxLog) => void): () => void {
-    let eventSource: EventSource | null = null;
-    let closed = false;
-
-    const setup = () => {
-      eventSource = new EventSource('/api/realtime');
-
-      eventSource.addEventListener('PB_CONNECT', async (e: MessageEvent) => {
-        if (closed) return;
-        const data = JSON.parse(e.data);
-        const clientId = data.clientId;
-
-        const token = this.authService.getToken();
-        await fetch('/api/realtime', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: token } : {}),
-          },
-          body: JSON.stringify({
-            clientId,
-            subscriptions: ['faasbox_logs'],
-          }),
-        });
-      });
-
-      eventSource.addEventListener('faasbox_logs', (e: MessageEvent) => {
-        if (closed) return;
-        const data = JSON.parse(e.data);
-        if (data.action === 'create' && data.record?.functionName === functionName) {
-          this.ngZone.run(() => onNewLog(data.record as FaasboxLog));
+  /**
+   * Streams the log entries of one function. onReconnect fires after a dropped
+   * stream comes back: entries written during the gap were never delivered, so
+   * the list has to be re-read rather than continued.
+   */
+  subscribe(
+    functionName: string,
+    onNewLog: (log: FaasboxLog) => void,
+    onReconnect?: () => void,
+  ): () => void {
+    return this.realtime.connect({
+      topics: [LOGS_TOPIC],
+      onMessage: (_topic, data) => {
+        const event = data as { action?: string; record?: FaasboxLog };
+        if (event.action === 'create' && event.record?.functionName === functionName) {
+          onNewLog(event.record);
         }
-      });
-    };
-
-    setup();
-
-    return () => {
-      closed = true;
-      eventSource?.close();
-    };
+      },
+      onReconnect,
+    });
   }
 }

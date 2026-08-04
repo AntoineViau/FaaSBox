@@ -120,9 +120,15 @@ export class LogViewerComponent {
     effect((onCleanup) => {
       const name = this.functionName();
       this.loadLogs(name);
-      const unsubscribe = this.logsService.subscribe(name, (log) => {
-        this.logs.update((current) => [log, ...current].slice(0, 50));
-      });
+      const unsubscribe = this.logsService.subscribe(
+        name,
+        (log) => {
+          this.logs.update((current) => [log, ...current].slice(0, 50));
+        },
+        // Entries written while the stream was down never arrived; appending to
+        // the list from there on would leave a hole nothing ever fills.
+        () => this.loadLogs(name),
+      );
       onCleanup(() => unsubscribe());
     });
   }

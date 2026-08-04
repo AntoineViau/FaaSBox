@@ -105,11 +105,15 @@ console.log(
 - It caches the `node_modules` and only re-installs when `package.json` or `bun.lock` changed. Editing your script alone never triggers an install.
 - If an invocation arrives before the install is done, it waits for it rather than failing.
 - An invocation still installs on its own when needed — after a restart on a fresh filesystem, for instance. In that case, and only then, the caller waits for the install.
-- **Timeout**: The installation process has a 60-second timeout.
+- **Timeout**: The installation process has a 60-second timeout. Past it the install is stopped and reported as a timeout, in those words — raise nothing, split your dependencies or drop the heaviest one.
 
 ### Following the Installation
 
-Two fields on your function record report where the install stands:
+The **package.json** tab of the editor shows where the install stands, right above the code. It updates **on its own**, without reloading the page: the server pushes each change as it happens, so a save shows the install start, run and finish while you watch. A function with no `package.json` shows nothing at all.
+
+A failed install is shown there in full, with the `bun` output preformatted in a scrollable block — the same text the record carries.
+
+The same information lives on the function record, in two fields:
 
 | `depsStatus` | Meaning                                                                                   |
 | ------------ | ----------------------------------------------------------------------------------------- |
@@ -117,9 +121,19 @@ Two fields on your function record report where the install stands:
 | `pending`    | The install has been requested, or was interrupted by a server restart and is still owed. |
 | `installing` | `bun install` is running.                                                                 |
 | `ready`      | `node_modules` matches the current dependencies.                                          |
-| `error`      | The last install failed — `depsError` carries the `bun install` output.                   |
+| `error`      | The last install failed — `depsError` says why.                                           |
 
-The editor does not display these yet: read them from the PocketBase admin UI, in the `faasbox_functions` collection.
+Both fields are written whichever way the install was triggered: by saving the function, or by an invocation that had to install on its own. A `ready` left behind by a restart on a fresh filesystem is therefore corrected by the first invocation, which reinstalls.
+
+`depsError` opens on one of three things:
+
+- **`dependency install timed out`** — the 60 seconds ran out.
+- **`dependency install was killed by the system…`** — something outside stopped the process, most often the machine running out of memory. Nothing can say which for certain: a killed process leaves no note.
+- Anything else — `bun`'s own output, which names the package or the lockfile at fault.
+
+The output kept is the **end** of the install, not its beginning: `bun` prints its progress first and its failure last. A long install that overflows the field opens on a `...[truncated, N bytes total]` marker saying how much was dropped ahead of what you are reading.
+
+Both fields are also readable from the PocketBase admin UI, in the `faasbox_functions` collection — useful when you want the raw value rather than the editor's rendering.
 
 ## Testing in the Editor
 
