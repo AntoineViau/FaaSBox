@@ -367,6 +367,33 @@ func TestInvokeHandler_SafetyNetPublishesReady(t *testing.T) {
 	}
 }
 
+// TestInvokeHandler_SafetyNetPersistsLockfile is the HTTP half of the parity: an
+// install done by the safety net must pin its result on the record, exactly as the
+// save path does. The cron path has the same test.
+func TestInvokeHandler_SafetyNetPersistsLockfile(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, "mkdir -p node_modules\necho resolved-by-http > bun.lock\nexit 0")
+	record := saveTestFunction(t, app, functionsDir, "http-pins",
+		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
+
+	invokeFunction(t, app, functionsDir, "http-pins", 200, []string{`"function":"http-pins"`})
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(stored.GetString("bunLock")); got != "resolved-by-http" {
+		t.Errorf("bunLock = %q, want what the safety net resolved", got)
+	}
+}
+
 // TestInvokeHandler_HashCheckExitWritesNothing keeps the publication off the hot
 // path: the overwhelming majority of invocations leave ensureDeps on the hash
 // check, and a write per invocation would be pure cost.

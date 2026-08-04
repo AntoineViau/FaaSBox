@@ -12,7 +12,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -51,6 +50,11 @@ const maxDepsError = 4 << 10
 // cuts, and remains what it is meant to be: a rampart, not a participant.
 const depsOutputSlack = 256
 
+// maxLockfileSize bounds what a record accepts of a lockfile. A TextField with no
+// explicit Max rejects the whole record past 5000 runes, and a lockfile goes past
+// that threshold on the very first real dependency.
+const maxLockfileSize = 1 << 20 // 1 MB
+
 func newDepsStatusField() *core.SelectField {
 	return &core.SelectField{
 		Name:   "depsStatus",
@@ -62,9 +66,20 @@ func newDepsErrorField() *core.TextField {
 	return &core.TextField{Name: "depsError", Max: maxDepsError + logMarkerSlack}
 }
 
+// newBunLockField declares the column carrying the lockfile a successful install
+// resolved. It is not Hidden, and that is not an oversight: autoResolveRecordsFlags
+// unmasks every hidden field as soon as the request authenticates as superuser,
+// which is what the editor does. Marking it would suggest a protection that does
+// not exist, on a value that is no secret anyway. What the API hands back is kept
+// down by the field selection the editor sends, not by this flag.
+func newBunLockField() *core.TextField {
+	return &core.TextField{Name: "bunLock", Max: maxLockfileSize}
+}
+
 // depsHash returns a hash of package.json and bun.lock (when present).
-// bun.lock is part of the hash because with --frozen-lockfile it is the lockfile,
-// not package.json, that determines the installed tree.
+// bun.lock is part of the hash because it determines the resolved tree for
+// everything it covers: a different lockfile is a different node_modules, even
+// for an unchanged package.json.
 func depsHash(funcDir string) (string, error) {
 	pkg, err := os.ReadFile(filepath.Join(funcDir, "package.json"))
 	if err != nil {
@@ -121,11 +136,16 @@ func ensureDeps(ctx context.Context, funcDir string) (installed bool, err error)
 	// --ignore-scripts: npm lifecycle scripts would run outside every guard the
 	// invocation path provides (no execution timeout, no bounded output capture),
 	// so a single malicious transitive dependency would get a free hand.
+	//
+	// No --frozen-lockfile. The flag does not mean "use the lockfile" but "use the
+	// lockfile *and fail* if it does not already satisfy package.json". Without it
+	// bun still honours the lockfile for everything it covers, resolves only what
+	// changed, then updates it — the pinning keeps applying, only the refusal to
+	// update goes away. That refusal is made for a CI, where the lockfile is a
+	// versioned file read in review. Nobody here commits it, reads it or is shown
+	// it, so the veto protected nothing and blocked the one gesture users make:
+	// adding a dependency to an already installed function.
 	args := []string{"install", "--ignore-scripts"}
-	lockPath := filepath.Join(funcDir, "bun.lock")
-	if _, err := os.Stat(lockPath); err == nil {
-		args = append(args, "--frozen-lockfile")
-	}
 
 	// Both streams land in the same bounded capture. bun appears to write
 	// everything to stderr, but wiring stdout too costs nothing and settles the
@@ -165,6 +185,14 @@ func ensureDeps(ctx context.Context, funcDir string) (installed bool, err error)
 		// An ordinary bun failure — missing package, desynchronised lockfile. Its
 		// own output carries the information and is already readable.
 		return false, fmt.Errorf("%w: %s", err, output)
+	}
+
+	// Recomputed, not reused: bun rewrites bun.lock during the install, so the
+	// hash taken before it no longer describes the directory. Storing the stale
+	// one would have the next call find a mismatch and reinstall for nothing.
+	// Best effort, like writing the marker itself.
+	if got, err := depsHash(funcDir); err == nil {
+		want = got
 	}
 
 	// Best-effort marker: if writing it fails we simply reinstall next time.
@@ -225,82 +253,9 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 			return
 		}
 
+		// Before the state, so that a record announcing "ready" already carries
+		// what the install resolved.
+		persistLockfile(app, functionsDir, name)
 		setDepsState(app, recordId, name, depsStatusReady, "")
 	}()
-}
-
-// publishDepsOutcome records on the function record what the safety net on the
-// invocation path just did.
-//
-// It belongs to the callers of executeFunction and not to the engine: exec.go
-// holds no core.App and must not grow one — it does not know the database.
-// invokeHandler and runFunction both hold one already, so the parity between the
-// two paths is kept by both calling this.
-//
-// An invocation that left ensureDeps on the hash check — the overwhelming
-// majority — writes nothing: the state is already right, and a write per
-// invocation would be pure cost.
-func publishDepsOutcome(app core.App, functionName string, res execResult) {
-	var depsFailed *errDepsFailed
-	if errors.As(res.Err, &depsFailed) {
-		// The cause, not the errDepsFailed wrapper: the field must read the same
-		// whether the install was triggered by a save or by this safety net.
-		msg, _ := truncateForLog(depsFailed.Cause.Error(), maxDepsError)
-		setDepsStateByName(app, functionName, depsStatusError, msg)
-		return
-	}
-	if res.DepsInstalled {
-		setDepsStateByName(app, functionName, depsStatusReady, "")
-	}
-}
-
-// setDepsState publishes the installation state on the function record, then
-// pushes it to the realtime subscribers. name is carried for the broadcast
-// alone — the write itself is keyed on the record id.
-func setDepsState(app core.App, recordId, name, status, errMsg string) {
-	if !updateDepsState(app, "id", recordId, status, errMsg) {
-		return
-	}
-	broadcastDepsState(app, name, status, errMsg)
-}
-
-// setDepsStateByName is the same write keyed on the function name, which is what
-// the invocation path holds — it never loaded the record. The name column carries
-// a unique index, so it identifies exactly one row.
-func setDepsStateByName(app core.App, name, status, errMsg string) {
-	if !updateDepsState(app, "name", name, status, errMsg) {
-		return
-	}
-	broadcastDepsState(app, name, status, errMsg)
-}
-
-// updateDepsState writes the two dependency columns through a direct SQL update
-// and reports whether it went through.
-//
-// The write stays targeted for two reasons, and the second is the one that
-// forbids app.Save outright. It would fire OnRecordAfterUpdateSuccess, hence a
-// new install, hence a new state write — a guard on record.Original() could
-// close that loop. But app.Save also rewrites the *whole* record, and the
-// install goroutine holds one loaded up to a minute earlier: a user save made in
-// the meantime would be silently overwritten. Re-reading just before writing
-// narrows the window without closing it, and PocketBase offers no optimistic
-// locking. Writing only the two columns this code owns is the correct move, and
-// broadcasting is not a reason to give it up.
-//
-// column is one of two literals from this file, never caller input.
-func updateDepsState(app core.App, column, value, status, errMsg string) bool {
-	_, err := app.DB().NewQuery(
-		"UPDATE " + faasboxFunctionsCollection +
-			" SET depsStatus = {:status}, depsError = {:err} WHERE " + column + " = {:value}",
-	).Bind(dbx.Params{
-		"status": status,
-		"err":    errMsg,
-		"value":  value,
-	}).Execute()
-	if err != nil {
-		app.Logger().Error("faasbox: failed to record dependency state",
-			column, value, "status", status, "error", err)
-		return false
-	}
-	return true
 }

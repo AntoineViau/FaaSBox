@@ -171,8 +171,8 @@ func TestEnsureDeps_LockfileChangeTriggersInstall(t *testing.T) {
 	}
 	writeDepsMarker(t, dir, hash)
 
-	// Same package.json, different lockfile → with --frozen-lockfile the installed
-	// tree would differ, so this counts as a spec change.
+	// Same package.json, different lockfile → the resolved tree differs for
+	// everything the lockfile covers, so this counts as a spec change.
 	if err := os.WriteFile(filepath.Join(dir, "bun.lock"), []byte("v2"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -422,29 +422,23 @@ func TestEnsureDeps_ConcurrentCalls(t *testing.T) {
 	}
 }
 
-func TestEnsureDeps_FrozenLockfile(t *testing.T) {
+// TestEnsureDeps_InstallArgsIgnoreTheLockfile pins the command line: an existing
+// bun.lock must not change it. It used to add --frozen-lockfile, which made every
+// dependency added to an already installed function fail.
+func TestEnsureDeps_InstallArgsIgnoreTheLockfile(t *testing.T) {
 	dir := t.TempDir()
 
-	// 1. Setup: package.json present, no node_modules, no bun.lock
 	pkgPath := filepath.Join(dir, "package.json")
 	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create a "fake bun" in PATH to capture arguments
-	binDir := t.TempDir()
-	fakeBun := filepath.Join(binDir, "bun")
-	// This script writes all arguments to a file in the function dir
-	script := "#!/bin/sh\necho \"$*\" > \"$PWD/install.args\"\nexit 0\n"
-	if err := os.WriteFile(fakeBun, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// A fake bun that records the arguments it was handed.
+	fakeBun(t, "echo \"$*\" > \"$PWD/install.args\"\nexit 0")
 
-	oldPath := os.Getenv("PATH")
-	os.Setenv("PATH", binDir+string(os.PathListSeparator)+oldPath)
-	defer os.Setenv("PATH", oldPath)
+	const want = "install --ignore-scripts"
 
-	// Test Case A: No bun.lock -> should NOT have --frozen-lockfile
+	// Case A: no bun.lock.
 	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Errorf("unexpected error without bun.lock: %v", err)
 	}
@@ -452,21 +446,15 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(args)) != "install --ignore-scripts" {
-		t.Errorf("expected 'install --ignore-scripts', got %q", string(args))
+	if got := strings.TrimSpace(string(args)); got != want {
+		t.Errorf("without bun.lock: args = %q, want %q", got, want)
 	}
 
-	// Test Case B: With bun.lock -> SHOULD have --frozen-lockfile
-	lockPath := filepath.Join(dir, "bun.lock")
-	if err := os.WriteFile(lockPath, []byte("fake lock"), 0o644); err != nil {
+	// Case B: bun.lock present — same command line.
+	if err := os.WriteFile(filepath.Join(dir, "bun.lock"), []byte("fake lock"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	// Make package.json newer than node_modules (which was created by our fake bun if it was real,
-	// but here we just need to bypass the mtime check if we were to have node_modules)
-	// Actually, ensureDeps checks if node_modules exists.
-	// Let's just remove node_modules if it exists to be sure.
-	os.RemoveAll(filepath.Join(dir, "node_modules"))
+	os.RemoveAll(filepath.Join(dir, "node_modules")) // invalidate the marker
 
 	if _, err := ensureDeps(context.Background(), dir); err != nil {
 		t.Errorf("unexpected error with bun.lock: %v", err)
@@ -475,8 +463,78 @@ func TestEnsureDeps_FrozenLockfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.TrimSpace(string(args)) != "install --ignore-scripts --frozen-lockfile" {
-		t.Errorf("expected 'install --ignore-scripts --frozen-lockfile', got %q", string(args))
+	if got := strings.TrimSpace(string(args)); got != want {
+		t.Errorf("with bun.lock: args = %q, want %q", got, want)
+	}
+}
+
+// TestEnsureDeps_AddingADependencyToAnInstalledFunction is the unblocking this
+// ticket is about: the sequence that produced "lockfile had changes, but lockfile
+// is frozen" must now succeed.
+func TestEnsureDeps_AddingADependencyToAnInstalledFunction(t *testing.T) {
+	dir := t.TempDir()
+	pkgPath := filepath.Join(dir, "package.json")
+	if err := os.WriteFile(pkgPath, []byte(`{"dependencies":{"dayjs":"^1.11.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A bun that behaves like the real one: it writes a lockfile, and refuses the
+	// job when handed --frozen-lockfile.
+	runs := fakeBun(t, `case "$*" in *--frozen-lockfile*)`+
+		`echo "error: lockfile had changes, but lockfile is frozen" >&2; exit 1;; esac`+
+		"\nmkdir -p node_modules\necho \"lock $(cat package.json)\" > bun.lock\nexit 0")
+
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "bun.lock")); err != nil {
+		t.Fatalf("the first install left no lockfile: %v", err)
+	}
+
+	// The user adds a dependency: the spec changes while the lockfile stays.
+	if err := os.WriteFile(pkgPath,
+		[]byte(`{"dependencies":{"dayjs":"^1.11.0","lodash":"^4.17.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("adding a dependency to an installed function failed: %v", err)
+	}
+	if got := runs(); got != 2 {
+		t.Errorf("expected 2 installs, got %d", got)
+	}
+}
+
+// TestEnsureDeps_MarkerSurvivesTheLockfileRewrite covers the marker being computed
+// after the install. bun rewrites bun.lock while it runs, and bun.lock is part of
+// the hash, so storing the hash taken beforehand had the next call reinstall.
+func TestEnsureDeps_MarkerSurvivesTheLockfileRewrite(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte(`{"dependencies":{"dayjs":"^1.11.0"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runs := fakeBun(t, "mkdir -p node_modules\necho resolved > bun.lock\nexit 0")
+
+	installed, err := ensureDeps(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("first install: %v", err)
+	}
+	if !installed {
+		t.Fatal("first call reported no install")
+	}
+
+	// The invocation that immediately follows must find the spec unchanged.
+	installed, err = ensureDeps(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	if installed {
+		t.Error("the call right after a successful install reinstalled")
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected a single install, got %d", got)
 	}
 }
 

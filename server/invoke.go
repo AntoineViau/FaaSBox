@@ -74,7 +74,7 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 
 	// 5. Publish what the dependency safety net did, if anything. The cron path
 	// does the same right after its own call — the two must not diverge.
-	publishDepsOutcome(e.App, name, res)
+	publishDepsOutcome(e.App, functionsDir, name, res)
 
 	// 6. Decode stdout before logging: an execution whose output did not survive
 	// the capture cap is a failure, and the log has to say so.

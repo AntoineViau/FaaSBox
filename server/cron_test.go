@@ -358,3 +358,30 @@ func TestRunFunction_SafetyNetPublishesReady(t *testing.T) {
 		t.Errorf("depsStatus = %q, want %q after the safety net installed", got, depsStatusReady)
 	}
 }
+
+// TestRunFunction_SafetyNetPersistsLockfile is the cron half of the parity, and the
+// path where it matters most: a nightly trigger is often what discovers the install
+// is due, so it must pin its result like every other caller.
+func TestRunFunction_SafetyNetPersistsLockfile(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fakeBun(t, "mkdir -p node_modules\necho resolved-by-cron > bun.lock\nexit 0")
+	record := saveTestFunction(t, app, functionsDir, "cron-pins",
+		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
+
+	runFunction(context.Background(), app, functionsDir, "cron-pins", "{}", 0, "")
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(stored.GetString("bunLock")); got != "resolved-by-cron" {
+		t.Errorf("bunLock = %q, want what the safety net resolved", got)
+	}
+}

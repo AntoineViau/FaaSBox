@@ -161,3 +161,128 @@ func TestSyncFunctionRecord_ReadsDirAtEventTime(t *testing.T) {
 		t.Error("function written to the default directory: the hook froze the flag's default")
 	}
 }
+
+// TestEnsureFunctionsCollection_BunLockField covers the field on both paths of the
+// idempotent collection setup, and the explicit Max it must declare: a TextField
+// without one rejects the whole record past 5000 runes, and a lockfile goes past
+// that on the first real dependency.
+func TestEnsureFunctionsCollection_BunLockField(t *testing.T) {
+	assertField := func(t *testing.T, app core.App) {
+		t.Helper()
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		field := col.Fields.GetByName("bunLock")
+		if field == nil {
+			t.Fatal("the collection carries no bunLock field")
+		}
+		tf, ok := field.(*core.TextField)
+		if !ok {
+			t.Fatalf("bunLock is a %T, want a *core.TextField", field)
+		}
+		if tf.Max != maxLockfileSize {
+			t.Errorf("bunLock Max = %d, want the declared cap %d", tf.Max, maxLockfileSize)
+		}
+	}
+
+	t.Run("at creation", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		assertField(t, app)
+	})
+
+	t.Run("on an existing collection", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		col.Fields.RemoveByName("bunLock")
+		if err := app.Save(col); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		assertField(t, app)
+	})
+}
+
+// TestSyncRecordToDisk_Lockfile makes the lockfile an artefact of the record: it is
+// written back like index.ts and package.json, and cleared when the record no
+// longer carries one.
+func TestSyncRecordToDisk_Lockfile(t *testing.T) {
+	functionsDir := t.TempDir()
+	record := core.NewRecord(core.NewBaseCollection(faasboxFunctionsCollection))
+	record.Set("name", "pinned")
+	record.Set("script", "console.log('hi')")
+	record.Set("packageJson", `{"dependencies":{"dayjs":"^1.11.0"}}`)
+	record.Set("bunLock", "resolved")
+
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(functionsDir, "pinned", "bun.lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("bun.lock not restored: %v", err)
+	}
+	if string(data) != "resolved" {
+		t.Errorf("bun.lock = %q, want %q", data, "resolved")
+	}
+
+	// The dependencies were dropped: a leftover lockfile would pin what no longer
+	// exists, and would still count towards the install hash.
+	record.Set("bunLock", "")
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Errorf("bun.lock still on disk with an empty bunLock (stat error: %v)", err)
+	}
+}
+
+// TestSyncDiskFromDB_RestoresLockfile is the point of persisting it: a restart on a
+// fresh filesystem must find the pinning again, not re-resolve every version range.
+func TestSyncDiskFromDB_RestoresLockfile(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	saveTestFunction(t, app, functionsDir, "survivor",
+		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
+	const lock = `{"lockfileVersion":1,"packages":{"dayjs":["dayjs@1.11.13"]}}`
+	setBunLock(app, "survivor", lock)
+
+	// The container is thrown away and comes back with nothing on disk.
+	freshDir := t.TempDir()
+	syncDiskFromDB(app, freshDir)
+
+	data, err := os.ReadFile(filepath.Join(freshDir, "survivor", "bun.lock"))
+	if err != nil {
+		t.Fatalf("bun.lock not restored on a fresh filesystem: %v", err)
+	}
+	if string(data) != lock {
+		t.Errorf("bun.lock = %q, want %q", data, lock)
+	}
+}

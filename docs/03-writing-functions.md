@@ -102,10 +102,20 @@ console.log(
 - FaaSBox automatically detects the `package.json`.
 - **Saving** your function runs `bun install` in its directory, in the background. The save returns immediately — you do not wait for the install.
 - The corollary matters: an edited `package.json` that has not been saved installs **nothing**. The dependency is on your screen and nowhere else, which is why the editor shows a banner until you save.
-- It caches the `node_modules` and only re-installs when `package.json` or `bun.lock` changed. Editing your script alone never triggers an install.
+- It caches the `node_modules` and only re-installs when the dependency spec changed. Editing your script alone never triggers an install.
 - If an invocation arrives before the install is done, it waits for it rather than failing.
 - An invocation still installs on its own when needed — after a restart on a fresh filesystem, for instance. In that case, and only then, the caller waits for the install.
 - **Timeout**: The installation process has a 60-second timeout. Past it the install is stopped and reported as a timeout, in those words — raise nothing, split your dependencies or drop the heaviest one.
+
+### Your Versions Stay Put
+
+`"^1.11.0"` accepts any 1.x release, so the same `package.json` could install a different version tomorrow. It does not: the first install records the exact versions it resolved, and every install after that reuses them.
+
+The pinning **survives a redeployment**. FaaSBox keeps it with your function rather than on the machine, so a restart on a fresh filesystem reinstalls the versions you have been running, not whatever is newest.
+
+A version range is only re-resolved when you **change your `package.json`**. Adding a dependency resolves that one and leaves the others exactly where they were.
+
+There is nothing to do and nothing to look at: no file to commit, no file to edit, no setting. The flip side is that a function stays on its versions until you touch its `package.json` — including for a patch release you would have wanted. Editing the `package.json` and saving is how you ask for a refresh.
 
 ### Following the Installation
 

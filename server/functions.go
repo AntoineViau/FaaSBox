@@ -15,7 +15,8 @@ import (
 const faasboxFunctionsCollection = "faasbox_functions"
 
 // ensureFunctionsCollection creates the faasbox_functions collection if it doesn't exist,
-// or migrates it by adding missing fields (script, packageJson, depsStatus, depsError).
+// or migrates it by adding missing fields (script, packageJson, depsStatus, depsError,
+// bunLock).
 func ensureFunctionsCollection(app core.App) error {
 	col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
 	if err != nil {
@@ -29,6 +30,7 @@ func ensureFunctionsCollection(app core.App) error {
 			&core.TextField{Name: "packageJson"},
 			newDepsStatusField(),
 			newDepsErrorField(),
+			newBunLockField(),
 			&core.AutodateField{Name: "created", OnCreate: true},
 			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 		)
@@ -52,6 +54,10 @@ func ensureFunctionsCollection(app core.App) error {
 	}
 	if col.Fields.GetByName("depsError") == nil {
 		col.Fields.Add(newDepsErrorField())
+		needsSave = true
+	}
+	if col.Fields.GetByName("bunLock") == nil {
+		col.Fields.Add(newBunLockField())
 		needsSave = true
 	}
 	if field := col.Fields.GetByName("env"); field != nil {
@@ -189,7 +195,8 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 }
 
 // syncRecordToDisk writes a single faasbox_functions record to disk.
-// Creates the function directory and writes index.ts (and package.json if non-empty).
+// Creates the function directory and writes index.ts (and package.json and
+// bun.lock if non-empty).
 func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	name := record.GetString("name")
 	if name == "" || !validName.MatchString(name) || len(name) > 64 {
@@ -216,6 +223,18 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 		}
 	} else {
 		os.Remove(pkgPath) // clean up stale file if packageJson was cleared
+	}
+
+	// The lockfile is restored like the rest: it is an artefact of the record, not
+	// of the disk, and that is what makes the pinning survive a rebuilt filesystem.
+	lockPath := filepath.Join(dir, "bun.lock")
+	lock := record.GetString("bunLock")
+	if lock != "" {
+		if err := writeIfChanged(lockPath, []byte(lock), 0o644); err != nil {
+			return fmt.Errorf("failed to write bun.lock for %s: %w", name, err)
+		}
+	} else {
+		os.Remove(lockPath) // no lockfile on the record: do not leave a stale one
 	}
 
 	return nil

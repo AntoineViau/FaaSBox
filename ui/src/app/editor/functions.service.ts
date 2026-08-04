@@ -19,9 +19,25 @@ export class FunctionsService {
   private readonly http = inject(HttpClient);
   private readonly realtime = inject(RealtimeService);
 
+  /**
+   * Every function, with the fields the editor consumes spelled out. The store
+   * calls this on load *and* on every realtime reconnection, so pulling the whole
+   * collection would ship each function's lockfile down the wire on every resumed
+   * connection — a payload nobody looks at. Spelling out what we want also drops
+   * `env` and `plainEnv`: the Environment tab reads the secrets through its own
+   * route.
+   *
+   * The cost of enumerating is that a field added later stays absent here until
+   * someone adds it. PocketBase offers no exclusion, and the alternative is
+   * paying for the lockfiles.
+   */
   list() {
     return this.http.get<FaasboxFunctionListResponse>(BASE_URL, {
-      params: { sort: 'name', perPage: '200' },
+      params: {
+        sort: 'name',
+        perPage: '200',
+        fields: 'id,name,script,packageJson,depsStatus,depsError,created,updated',
+      },
     });
   }
 
