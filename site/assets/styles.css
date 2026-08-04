@@ -406,9 +406,36 @@ code, pre {
 /* The two ways in, marked in the colour each trigger owns everywhere else. */
 .bullets--triggers li:first-child::before { background: var(--http); }
 .bullets--triggers li:last-child::before  { background: var(--cron); }
+
+/* Text on the left, the place it refers to on the right. A grid rather than a
+   table — this is not tabular data — and no rules, so only the pairing shows. */
+.bullets--paired { gap: 2rem; }
+.bullets--paired li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 1.75rem;
+  /* Start, so the marker lines up with the first line of its text; the media
+     centres itself against whichever side is taller. */
+  align-items: start;
+}
+
+.bullet__media {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  align-self: center;
+}
+img.bullet__media { border: 1px solid var(--line-soft); display: block; }
+
+@media (max-width: 760px) {
+  .bullets--paired li { grid-template-columns: 1fr; gap: .9rem; }
+}
 .step__code { grid-column: 3; grid-row: 1; }
 
 .step:not(:has(.step__code)) .step__text { grid-column: 2 / -1; max-width: 68ch; }
+/* A paired row needs the full width: the media column is half of it. Matches
+   the selector above plus one class, so it wins on specificity. */
+.step:not(:has(.step__code)) .step__text:has(.bullets--paired) { max-width: none; }
 
 @media (max-width: 900px) {
   .step { grid-template-columns: 2.5rem minmax(0, 1fr); }

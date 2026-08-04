@@ -36,23 +36,36 @@
   "how": {
     "eyebrow": "Fonctionnement",
     "title": "Trois étapes, et ça tourne.",
-    "codeName": "daily-report",
     "steps": [
       {
         "title": "Écrivez, installez et testez dans le navigateur",
-        "body": "Tout ce qu'il faut à une fonction tient sur un seul écran — aucune chaîne d'outils locale, aucune étape de déploiement.",
         "bullets": [
-          "<strong>Le code.</strong> Votre fonction lit du JSON sur stdin et écrit du JSON sur stdout. Aucun framework, aucune signature de handler à retenir, rien à importer.",
-          "<strong>package.json</strong> — optionnel. Listez vos paquets npm : la sauvegarde les télécharge et les installe pour vous, en tâche de fond. Il n'y a rien d'autre à faire.",
-          "<strong>Run</strong> — un clic exécute la fonction et vous montre son résultat, sa sortie et sa durée, sans quitter l'onglet."
+          {
+            "text": "<strong>Le code.</strong> Votre fonction lit du JSON sur stdin et écrit du JSON sur stdout. Aucun framework, aucune signature de handler à retenir, rien à importer.",
+            "alt": "L'onglet script d'une fonction, avec son code"
+          },
+          {
+            "text": "<strong>package.json</strong> — optionnel. Listez vos paquets npm : la sauvegarde les télécharge et les installe pour vous, en tâche de fond. Il n'y a rien d'autre à faire.",
+            "alt": "L'onglet package.json d'une fonction, avec une dépendance npm"
+          },
+          {
+            "text": "<strong>Run</strong> — un clic exécute la fonction et vous montre son résultat, sa sortie et sa durée, sans quitter l'onglet.",
+            "alt": "La barre du runner et son bouton Run"
+          }
         ]
       },
       {
         "title": "Posez-lui un déclencheur",
         "body": "Deux façons de lancer une exécution, et une fonction peut porter les deux à la fois.",
         "ways": [
-          "<strong>Un appel HTTP.</strong> <code>POST /invoke/{nom}</code> avec une clé d'API. Le corps de la requête devient le stdin de la fonction, et la réponse porte son résultat et sa durée.",
-          "<strong>Une planification cron.</strong> Ajoutée dans l'onglet <strong>Triggers</strong> : quinze expressions toutes faites, un champ libre, et un plafond d'exécutions simultanées. Un changement prend effet immédiatement — rien ne redémarre."
+          {
+            "text": "<strong>Un appel HTTP.</strong> <code>POST /invoke/{nom}</code> avec une clé d'API, créée depuis la page <strong>API keys</strong>. Le corps de la requête devient le stdin de la fonction, et la réponse porte son résultat et sa durée.",
+            "alt": "La page des clés d'API, avec le formulaire de création et le choix de la portée"
+          },
+          {
+            "text": "<strong>Une planification cron.</strong> Ajoutée dans l'onglet <strong>Triggers</strong> : quinze expressions toutes faites, un champ libre, et un plafond d'exécutions simultanées. Un changement prend effet immédiatement — rien ne redémarre.",
+            "alt": "L'onglet Triggers d'une fonction, avec une planification et son payload"
+          }
         ]
       },
       {

@@ -35,9 +35,62 @@ const VIEWPORT = { width: 1440, height: 900 };
 const SCALE = 2;
 const OUTPUT_WIDTH = 2280;
 
-/** What gets photographed. Add an entry to capture more. */
+/** Clicks a tab by its label. The label is a leaf node inside the tab group. */
+const tab = (label) => `[...document.querySelectorAll('z-tab-group *')]
+        .find((el) => el.children.length === 0 && el.textContent.trim() === ${JSON.stringify(label)})?.click();`;
+
+/**
+ * What gets photographed. Each entry names a file and a selector; `before` is
+ * an expression evaluated in the page first, and `maxHeight` crops the shot to
+ * that many CSS pixels from the top — useful for a panel whose header is the
+ * only interesting part.
+ */
+/* Order matters: everything below runs against summarise-events, which has just
+   been run successfully, until the last entry switches functions. */
 const TARGETS = [
   { name: 'editor-full', selector: 'div.mx-auto.flex.h-screen' },
+
+  /* The whole runner: payload on the left, the successful result on the right. */
+  { name: 'runner-run', selector: 'app-runner' },
+
+  /* The script tab and enough of the code to read the stdin/stdout contract. */
+  { name: 'tab-script', selector: 'z-tab-group', maxHeight: 235 },
+
+  {
+    /* summarise-events declares no dependencies and carries no schedule, so
+       both its package.json and Triggers tabs are empty. daily-report has one
+       of each — hence the switch, and why every entry below comes after. */
+    name: 'tab-package',
+    selector: 'z-tab-group',
+    maxHeight: 155,
+    before: `(async () => {
+      [...document.querySelectorAll('app-sidebar div.cursor-pointer')]
+        .find((d) => d.textContent.includes('daily-report'))?.click();
+      await new Promise((r) => setTimeout(r, 700));
+      ${tab('package.json')}
+      return true;
+    })()`,
+  },
+
+  {
+    name: 'tab-triggers',
+    selector: 'z-tab-group',
+    maxHeight: 300,
+    before: `(async () => { ${tab('Triggers')} await new Promise((r) => setTimeout(r, 600)); return true; })()`,
+  },
+
+  {
+    /* Leaves the editor for the API keys page, so it has to come last. */
+    name: 'keys-page',
+    selector: 'app-api-keys',
+    maxHeight: 340,
+    before: `(async () => {
+      [...document.querySelectorAll('app-sidebar a')]
+        .find((a) => a.textContent.includes('API keys'))?.click();
+      await new Promise((r) => setTimeout(r, 1200));
+      return true;
+    })()`,
+  },
 ];
 
 /** The payload typed into the runner before it is run. */
@@ -137,7 +190,7 @@ await send('Emulation.setDeviceMetricsOverride', {
 /* Capture                                                                     */
 /* -------------------------------------------------------------------------- */
 
-async function shoot(name, selector) {
+async function shoot(name, selector, maxHeight) {
   const box = await evaluate(`(() => {
     const el = document.querySelector(${JSON.stringify(selector)});
     if (!el) return null;
@@ -146,6 +199,7 @@ async function shoot(name, selector) {
   })()`);
 
   if (!box || box.width < 2 || box.height < 2) throw new Error(`no box for ${name} (${selector})`);
+  if (maxHeight) box.height = Math.min(box.height, maxHeight);
 
   const { data } = await send('Page.captureScreenshot', {
     format: 'png',
@@ -204,10 +258,15 @@ async function capture(theme) {
   await sleep(700);
 
   const suffix = theme === 'dark' ? '-dark' : '';
-  for (const { name, selector } of TARGETS) {
-    const file = await shoot(`${name}${suffix}`, selector);
+  for (const { name, selector, before, maxHeight } of TARGETS) {
+    if (before) {
+      /* No `, true` appended: an async IIFE must be awaited, not discarded. */
+      await evaluate(before);
+      await sleep(500);
+    }
+    const file = await shoot(`${name}${suffix}`, selector, maxHeight);
     console.log(`  ${theme}: ${name}${suffix}.png`);
-    await install(file, `${name}${suffix}.png`);
+    await install(file, `${name}${suffix}.png`, name === 'editor-full' ? OUTPUT_WIDTH : 1200);
   }
 }
 
@@ -216,11 +275,11 @@ async function capture(theme) {
 /* -------------------------------------------------------------------------- */
 
 /** Downscales and indexes the PNG into assets/shots/, or moves it as-is. */
-function install(file, name) {
+function install(file, name, width = OUTPUT_WIDTH) {
   const target = join(SHOTS, name);
   return new Promise((resolve) => {
     const convert = spawn('convert', [
-      file, '-resize', `${OUTPUT_WIDTH}x`, '-colors', '256', '-strip', `PNG8:${target}`,
+      file, '-resize', `${width}x`, '-colors', '256', '-strip', `PNG8:${target}`,
     ], { stdio: 'ignore' });
 
     convert.on('error', async () => {

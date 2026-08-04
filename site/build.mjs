@@ -115,11 +115,27 @@ const renderers = {
 
   heroShot: (c, ctx) => shotFrame(c.hero.shot, 'shot__media', ctx),
 
-  writeBullets: (c) =>
-    c.how.steps[0].bullets.map((b) => `<li>${b}</li>`).join('\n              '),
+  /* The three rows of step one are written out in the template rather than
+     looped, so each keeps its own capture; these fill their media cells. */
+  shotScript: (c, ctx) =>
+    shotFrame({ src: 'assets/shots/tab-script.png', alt: c.how.steps[0].bullets[0].alt },
+      'bullet__media', ctx),
 
-  triggerWays: (c) =>
-    c.how.steps[1].ways.map((w) => `<li>${w}</li>`).join('\n              '),
+  shotPackage: (c, ctx) =>
+    shotFrame({ src: 'assets/shots/tab-package.png', alt: c.how.steps[0].bullets[1].alt },
+      'bullet__media', ctx),
+
+  shotRunner: (c, ctx) =>
+    shotFrame({ src: 'assets/shots/runner-run.png', alt: c.how.steps[0].bullets[2].alt },
+      'bullet__media', ctx),
+
+  shotKeys: (c, ctx) =>
+    shotFrame({ src: 'assets/shots/keys-page.png', alt: c.how.steps[1].ways[0].alt },
+      'bullet__media', ctx),
+
+  shotTriggers: (c, ctx) =>
+    shotFrame({ src: 'assets/shots/tab-triggers.png', alt: c.how.steps[1].ways[1].alt },
+      'bullet__media', ctx),
 
   cards: (c) =>
     c.inside.cards

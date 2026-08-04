@@ -108,19 +108,23 @@
           <span class="step__n">1</span>
           <div class="step__text">
             <h3>{{how.steps.0.title}}</h3>
-            <p>{{how.steps.0.body}}</p>
-            <ul class="bullets">
-              {{@writeBullets}}
+
+            <!-- Each row pairs what you write with where you write it. Laid out
+                 as a borderless grid, not a table: it is not tabular data. -->
+            <ul class="bullets bullets--paired">
+              <li>
+                <p>{{how.steps.0.bullets.0.text}}</p>
+                {{@shotScript}}
+              </li>
+              <li>
+                <p>{{how.steps.0.bullets.1.text}}</p>
+                {{@shotPackage}}
+              </li>
+              <li>
+                <p>{{how.steps.0.bullets.2.text}}</p>
+                {{@shotRunner}}
+              </li>
             </ul>
-          </div>
-          <div class="code step__code">
-            <div class="code__bar"><span class="code__name">{{how.codeName}}</span></div>
-<pre class="code__body"><code><span class="c-key">const</span> { team } = <span class="c-key">await</span> Bun.stdin.<span class="c-fn">json</span>();
-
-<span class="c-key">const</span> res = <span class="c-key">await</span> <span class="c-fn">fetch</span>(<span class="c-str">`https://api.internal/teams/</span>${team}<span class="c-str">`</span>);
-<span class="c-key">const</span> members = <span class="c-key">await</span> res.<span class="c-fn">json</span>();
-
-<span class="c-fn">console</span>.<span class="c-fn">log</span>(<span class="c-fn">JSON</span>.<span class="c-fn">stringify</span>({ sent: members.length }));</code></pre>
           </div>
         </li>
 
@@ -129,8 +133,15 @@
           <div class="step__text">
             <h3>{{how.steps.1.title}}</h3>
             <p>{{how.steps.1.body}}</p>
-            <ul class="bullets bullets--triggers">
-              {{@triggerWays}}
+            <ul class="bullets bullets--triggers bullets--paired">
+              <li>
+                <p>{{how.steps.1.ways.0.text}}</p>
+                {{@shotKeys}}
+              </li>
+              <li>
+                <p>{{how.steps.1.ways.1.text}}</p>
+                {{@shotTriggers}}
+              </li>
             </ul>
           </div>
         </li>

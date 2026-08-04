@@ -36,23 +36,36 @@
   "how": {
     "eyebrow": "How it works",
     "title": "Three steps, and it runs.",
-    "codeName": "daily-report",
     "steps": [
       {
         "title": "Write, install and test in the browser",
-        "body": "Everything a function needs is on one screen — no local toolchain, no deploy step.",
         "bullets": [
-          "<strong>The code.</strong> Your function reads JSON on stdin and writes JSON on stdout. No framework, no handler signature to memorise, nothing to import.",
-          "<strong>package.json</strong> — optional. List your npm packages and saving downloads and installs them for you, in the background. There is nothing else to set up.",
-          "<strong>Run</strong> — one click executes the function and shows you its result, its output and its duration, without leaving the tab."
+          {
+            "text": "<strong>The code.</strong> Your function reads JSON on stdin and writes JSON on stdout. No framework, no handler signature to memorise, nothing to import.",
+            "alt": "The script tab of a function, with its code"
+          },
+          {
+            "text": "<strong>package.json</strong> — optional. List your npm packages; they are downloaded and installed when you save, in the background. There is nothing else to set up.",
+            "alt": "The package.json tab of a function, listing an npm dependency"
+          },
+          {
+            "text": "<strong>Run</strong> — one click executes the function and shows you its result, its output and its duration, without leaving the tab.",
+            "alt": "The runner toolbar and its Run button"
+          }
         ]
       },
       {
         "title": "Give it a trigger",
         "body": "Two ways to start a run, and a function can carry both at once.",
         "ways": [
-          "<strong>An HTTP call.</strong> <code>POST /invoke/{name}</code> with an API key. The request body becomes the function's stdin, and the response carries its result and duration.",
-          "<strong>A cron schedule.</strong> Added in the <strong>Triggers</strong> tab: fifteen ready-made expressions, a free field, and a cap on concurrent runs. Changes take effect immediately — nothing restarts."
+          {
+            "text": "<strong>An HTTP call.</strong> <code>POST /invoke/{name}</code> with an API key, created on the <strong>API keys</strong> page. The request body becomes the function's stdin, and the response carries its result and duration.",
+            "alt": "The API keys page, with the form that creates a key and sets its scope"
+          },
+          {
+            "text": "<strong>A cron schedule.</strong> Added in the <strong>Triggers</strong> tab: fifteen ready-made expressions, a free field, and a cap on concurrent runs. Changes take effect immediately — nothing restarts.",
+            "alt": "The Triggers tab of a function, showing a schedule and its payload"
+          }
         ]
       },
       {
