@@ -8,10 +8,8 @@ server/faasbox
 server/functions/
 *.log
 .env*
-# Internal (private repo, symlinked in — no trailing slash so symlinks match too)
-CLAUDE.md
-AGENTS.md
-.claude
+# Private working paths, symlinked in from outside this repository.
+# No trailing slash, so the patterns match the symlinks themselves.
 archives
 knowledge
 memory

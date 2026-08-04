@@ -1,9 +1,9 @@
-.git/
+# Hidden entries at the root are tooling, never build input.
+.*
 data/pb_data/
 data/pb_public/
 ui/node_modules/
 ui/.angular/
-.claude
 functions/
 tickets
 knowledge
