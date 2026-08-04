@@ -8,6 +8,13 @@ It allows you to write TypeScript/JavaScript functions, deploy them instantly, i
 
 Under the hood: **Go** and **PocketBase** for the server, **Bun** for function execution, **Angular** for the editor, **SQLite** for everything stored. See [08 - Architecture Deep Dive](docs/08-architecture-deep-dive.md) for how the pieces fit together.
 
+<!-- GitHub honours prefers-color-scheme here, so the capture follows the
+     reader's theme instead of glaring at half of them. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/assets/shots/editor-full-dark.png">
+  <img alt="The FaaSBox editor: the function list, the four tabs of a function, its code, and the runner showing a successful run" src="site/assets/shots/editor-full.png">
+</picture>
+
 ---
 
 ## ⚡ Quick Start
