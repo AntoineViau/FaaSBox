@@ -1,12 +1,10 @@
 {
   "lang": "en",
   "label": "English",
-
   "meta": {
     "title": "FaaSBox — a lightweight FaaS platform for TypeScript",
     "description": "A lightweight functions-as-a-service platform for TypeScript, with zero dependencies. Call a function over HTTP or put it on a cron schedule. One Go binary, one SQLite file, nothing else to install."
   },
-
   "nav": {
     "how": "How it works",
     "storage": "Storage",
@@ -17,7 +15,6 @@
     "toDark": "Switch to dark theme",
     "toLight": "Switch to light theme"
   },
-
   "hero": {
     "eyebrow": "Self-hosted · Open source",
     "titleTop": "A lightweight FaaS platform",
@@ -32,7 +29,6 @@
       "alt": "The FaaSBox editor: the function list, the four tabs of a function, its code, and the runner showing a successful run"
     }
   },
-
   "how": {
     "eyebrow": "How it works",
     "title": "Three steps, and it runs.",
@@ -45,8 +41,8 @@
             "alt": "The script tab of a function, with its code"
           },
           {
-            "text": "<strong>package.json</strong> — optional. List your npm packages; they are downloaded and installed when you save, in the background. There is nothing else to set up.",
-            "alt": "The package.json tab of a function, listing an npm dependency"
+            "text": "<strong>package.json</strong> — optional. List your npm packages and save; the install runs on the server and you watch it from the tab — <em>installing</em>, then <em>ready</em>, or the tail of the failure if npm had something to say. There is nothing else to set up.",
+            "alt": "The package.json tab of a function, listing an npm dependency and showing its install state"
           },
           {
             "text": "<strong>Run</strong> — one click executes the function and shows you its result, its output and its duration, without leaving the tab.",
@@ -74,7 +70,6 @@
       }
     ]
   },
-
   "storage": {
     "eyebrow": "Storage",
     "title": "The database is a single file.",
@@ -92,9 +87,9 @@
     "noteTitle": "Two reasons to turn it on",
     "noteDocker": "<strong>The disk underneath is not permanent.</strong> A container is replaced on every deploy and takes its filesystem with it. Litestream puts the file back before the server starts, so the container stays disposable and your data doesn't.",
     "noteBackup": "<strong>Or simply as a backup.</strong> Even on a server whose disk does survive, the same mirror is an off-site copy that is always current — no dump to schedule, no window during which the last hour is missing.",
-    "noteOff": "Leave it off and nothing else changes: FaaSBox runs from the local file alone, which is what you want on your own machine."
+    "noteOff": "Leave it off and nothing else changes: FaaSBox runs from the local file alone, which is what you want on your own machine.",
+    "noteDeps": "<strong>Your dependencies come back on their own, either way.</strong> <code>node_modules</code> is not in the file — it is a build artifact, and a heavy one. What is stored is the lockfile, so a fresh container reinstalls exactly the versions the old one ran, before the first call arrives rather than during it."
   },
-
   "inside": {
     "eyebrow": "In the box",
     "title": "Everything you need, nothing you have to wire up.",
@@ -125,7 +120,6 @@
       }
     ]
   },
-
   "scope": {
     "eyebrow": "By design",
     "title": "Small enough to hold in your head.",
@@ -138,7 +132,6 @@
       "<strong>One moving part.</strong> No control plane, no registry, no broker, no VPC, no serverless.yml. The platform is the container you started, and that is the whole of it."
     ]
   },
-
   "start": {
     "eyebrow": "Get started",
     "title": "One container, one command.",
@@ -154,18 +147,35 @@
     "ctaPrimary": "GitHub",
     "ctaSecondary": "Getting started"
   },
-
   "footer": {
     "tagline": "FaaSBox — self-hosted functions-as-a-service.",
     "license": "MIT licensed. © 2026 Antoine Viau.",
     "linksLabel": "Documentation",
     "links": [
-      { "text": "Getting started", "doc": "02-getting-started.md" },
-      { "text": "Writing functions", "doc": "03-writing-functions.md" },
-      { "text": "Scheduling", "doc": "05-scheduling-cron.md" },
-      { "text": "API reference", "doc": "09-api-reference.md" },
-      { "text": "Deployment", "doc": "10-deployment.md" },
-      { "text": "Security policy", "doc": "../SECURITY.md" }
+      {
+        "text": "Getting started",
+        "doc": "02-getting-started.md"
+      },
+      {
+        "text": "Writing functions",
+        "doc": "03-writing-functions.md"
+      },
+      {
+        "text": "Scheduling",
+        "doc": "05-scheduling-cron.md"
+      },
+      {
+        "text": "API reference",
+        "doc": "09-api-reference.md"
+      },
+      {
+        "text": "Deployment",
+        "doc": "10-deployment.md"
+      },
+      {
+        "text": "Security policy",
+        "doc": "../SECURITY.md"
+      }
     ]
   }
 }

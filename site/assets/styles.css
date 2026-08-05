@@ -617,6 +617,15 @@ img.shot__media { border: 1px solid var(--line); box-shadow: var(--shadow); }
   padding-top: .9rem;
   border-top: 1px solid var(--line);
 }
+/* Sits outside .storage__note on purpose: dependencies are not one of the two
+   reasons to turn Litestream on, they come back either way. */
+.storage__deps {
+  margin-top: clamp(1.25rem, 2.5vw, 1.75rem);
+  max-width: 74ch;
+  font-size: .95rem;
+  color: var(--muted);
+}
+.storage__deps strong { color: var(--text); font-weight: 600; }
 
 /* --- Cards ----------------------------------------------------------- */
 
