@@ -23,6 +23,10 @@ import { ZardIconComponent } from '@shared/components/icon';
  * Nothing here is written as it is typed: adding, editing and deleting all stay
  * on screen until Save, which reconciles the list with the database. Immediate
  * writes left a refused schedule displayed as if it had been accepted.
+ *
+ * Slightly past the 300-line guideline, deliberately: the overshoot is the
+ * comments carrying the save/switch constraints, and the helpers at the bottom
+ * read nothing but a row.
  */
 @Component({
   selector: 'app-cron-editor',
@@ -91,7 +95,11 @@ export class CronEditorComponent {
 
   private nextKey = 0;
 
-  protected readonly isDirty = computed(() => {
+  /**
+   * Public because the editor asks before switching function: this panel keeps
+   * its rows on screen until Save, so leaving it behind loses them silently.
+   */
+  readonly isDirty = computed(() => {
     const saved = this.saved();
     const rows = this.rows();
     if (rows.length !== saved.size) return true;
@@ -155,6 +163,10 @@ export class CronEditorComponent {
   }
 
   protected async save(): Promise<void> {
+    // Captured once. The writes below are interleaved with awaits, and nothing
+    // stops the user from picking another function in the sidebar meanwhile:
+    // re-reading the input would file the rest of the rows under it.
+    const functionName = this.functionName();
     const rows = this.rows();
 
     // Every payload is parsed first: a malformed document stops the whole save
@@ -197,7 +209,7 @@ export class CronEditorComponent {
       const data: Partial<FaasboxCronJob> = {
         name: row.name,
         schedule: row.schedule,
-        functionName: this.functionName(),
+        functionName,
         payload: payloads.get(row.key),
         active: row.active,
         maxQueue: row.maxQueue,
@@ -218,16 +230,26 @@ export class CronEditorComponent {
       }
     }
 
-    this.saved.set(saved);
     this.saving.set(false);
+
+    // Never before: the sidebar icon must not announce a schedule the database
+    // refused. Not guarded either: the icons are recomputed for every function
+    // at once, and the writes that just landed are real whichever function the
+    // panel is showing by now.
+    if (written) {
+      this.cronCountChange.emit();
+    }
+
+    // Past here everything describes the function this save started on. If the
+    // panel has moved since, load() has already filled it with another one —
+    // its snapshot is not ours to overwrite, and its errors are not ours to
+    // report. The writes above stand; only their echo is dropped.
+    if (this.functionName() !== functionName) return;
+
+    this.saved.set(saved);
 
     if (failures.length) {
       this.errorMessage.set(`Failed to save — ${failures.join(' — ')}`);
-    }
-    // Never before: the sidebar icon must not announce a schedule the database
-    // refused.
-    if (written) {
-      this.cronCountChange.emit();
     }
   }
 

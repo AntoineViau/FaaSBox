@@ -234,6 +234,9 @@ export class EditorComponent implements OnInit {
 
   private readonly runner = viewChild(RunnerComponent);
   private readonly envEditor = viewChild(EnvEditorComponent);
+  // Both resolve from any tab: the tab group hides panels, it does not destroy
+  // them, so what was typed in one is still there while another is on screen.
+  private readonly cronEditor = viewChild(CronEditorComponent);
 
   /** Guards the sync effect below: see why it keys on the id and not the record. */
   private lastSyncedId: string | null = null;
@@ -365,9 +368,13 @@ export class EditorComponent implements OnInit {
   }
 
   protected onSelectFunction(id: string): void {
-    // The Environment tab saves itself, so it is absent from isDirty - but
-    // leaving it behind unsaved loses just as much.
-    const dirty = this.isDirty() || (this.envEditor()?.isDirty() ?? false);
+    // The Environment and Triggers tabs save themselves, so neither is part of
+    // isDirty - but leaving either behind unsaved loses just as much. Triggers
+    // especially: the panel discards its rows as soon as the function changes.
+    const dirty =
+      this.isDirty() ||
+      (this.envEditor()?.isDirty() ?? false) ||
+      (this.cronEditor()?.isDirty() ?? false);
     if (dirty && !confirm('You have unsaved changes. Discard and switch?')) {
       return;
     }

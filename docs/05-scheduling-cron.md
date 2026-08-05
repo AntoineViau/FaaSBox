@@ -26,6 +26,8 @@ This matters because the server can refuse a trigger — an invalid cron express
 
 An invalid JSON payload is the one exception: it stops the save before anything is written at all, rather than saving part of the list.
 
+Because nothing is written until then, switching to another function while the panel holds unsaved triggers asks you to confirm first — the rows are dropped when the panel reloads for the function you picked.
+
 ### The Cron Syntax Fold
 
 Under the schedule field, the **Cron syntax** fold — closed by default — spells out the five columns and lists ready-made expressions. Click one and it fills the field.
