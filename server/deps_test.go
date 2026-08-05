@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -246,6 +247,12 @@ func TestEnsureDeps_TimeoutIsNamed(t *testing.T) {
 	if strings.Contains(err.Error(), "signal: killed") {
 		t.Errorf("error = %q, want the plumbing kept out of the message", err)
 	}
+	// The boundary the qualification rests on: an expired budget is a real
+	// failure and must not slip into the interruption case, which publishes
+	// "still owed" instead of an error.
+	if errors.Is(err, errDepsInterrupted) {
+		t.Errorf("error = %q, want a deadline treated as a failure, not an interruption", err)
+	}
 }
 
 func TestEnsureDeps_KilledFromOutsideIsNamed(t *testing.T) {
@@ -260,6 +267,36 @@ func TestEnsureDeps_KilledFromOutsideIsNamed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "killed by the system") {
 		t.Errorf("error = %q, want it to say the process was killed from outside", err)
+	}
+	if strings.Contains(err.Error(), "timed out") {
+		t.Errorf("error = %q, want it distinct from the deadline message", err)
+	}
+}
+
+// TestEnsureDeps_InterruptionIsNamed covers the third way an install comes back
+// as "signal: killed": we killed it ourselves. A cancelled context — a shutdown,
+// or an HTTP client that hung up — must not be read as an outside kill, or the
+// message blames the memory for this server's own doing.
+func TestEnsureDeps_InterruptionIsNamed(t *testing.T) {
+	dir := depsFixture(t)
+	fakeBun(t, "sleep 5\nexit 0")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+
+	_, err := ensureDeps(ctx, dir)
+	if err == nil {
+		t.Fatal("expected an error when the install is interrupted")
+	}
+	if !errors.Is(err, errDepsInterrupted) {
+		t.Errorf("error = %q, want it qualified as an interruption", err)
+	}
+	if strings.Contains(err.Error(), "killed by the system") {
+		t.Errorf("error = %q, want the memory not blamed for our own kill", err)
 	}
 	if strings.Contains(err.Error(), "timed out") {
 		t.Errorf("error = %q, want it distinct from the deadline message", err)

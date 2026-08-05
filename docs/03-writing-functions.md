@@ -129,12 +129,14 @@ The same information lives on the function record, in two fields:
 | `depsStatus` | Meaning                                                                                   |
 | ------------ | ----------------------------------------------------------------------------------------- |
 | _(empty)_    | The function declares no `package.json`.                                                  |
-| `pending`    | The install has been requested, or was interrupted by a server restart and is still owed. |
+| `pending`    | The install has been requested, or was interrupted before it could finish and is still owed. |
 | `installing` | `bun install` is running.                                                                 |
 | `ready`      | `node_modules` matches the current dependencies.                                          |
 | `error`      | The last install failed — `depsError` says why.                                           |
 
 Both fields are written whichever way the install was triggered: by saving the function, by the startup pass, or by an invocation that had to install on its own. A `ready` left behind by a restart on a fresh filesystem is therefore corrected within seconds of the server coming back, without waiting for anyone to call the function.
+
+An install that never got to finish — the server shut down, or the HTTP call that triggered it was abandoned — goes back to `pending`, never to `error`. Nothing is wrong with the dependencies in that case: the work is simply still owed, and the next call or the next startup does it.
 
 `depsError` opens on one of three things:
 

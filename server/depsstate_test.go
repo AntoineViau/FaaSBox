@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,38 @@ import (
 
 	"github.com/pocketbase/pocketbase/tests"
 )
+
+// TestPublishDepsOutcome_InterruptionLeavesTheInstallOwed is the invocation-path
+// half of what runDepsInstall has always done for the save path. A cancelled
+// context is not a failed install: publishing error would put a diagnosis on the
+// record — and push it live to the open editor — for an HTTP client that merely
+// hung up, and the qualification it would carry accuses the memory.
+func TestPublishDepsOutcome_InterruptionLeavesTheInstallOwed(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	record := saveTestFunction(t, app, functionsDir, "hung-up",
+		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
+	setDepsState(app, record.Id, "hung-up", depsStatusInstalling, "")
+
+	cause := fmt.Errorf("%w: resolving dependencies", errDepsInterrupted)
+	publishDepsOutcome(app, functionsDir, "hung-up", execResult{Err: &errDepsFailed{Cause: cause}})
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusPending {
+		t.Errorf("depsStatus = %q, want %q — the work is still owed", got, depsStatusPending)
+	}
+	if got := stored.GetString("depsError"); got != "" {
+		t.Errorf("depsError = %q, want no diagnosis for an install nobody let finish", got)
+	}
+}
 
 // writeLockfile puts a bun.lock in a function's directory, as a successful install
 // would have.

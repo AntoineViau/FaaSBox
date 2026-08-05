@@ -41,11 +41,6 @@ const (
 	depsStatusError      = "error"      // last install failed, see depsError
 )
 
-// maxDepsError bounds the bun install output kept in depsError. A TextField with
-// no explicit Max rejects the whole record past 5000 runes, and an install failure
-// can print far more than that — the cap and the field size must move together.
-const maxDepsError = 4 << 10
-
 // depsOutputSlack is the room left inside maxDepsError for everything the
 // captured install output gets wrapped in: the longest message prefix built
 // below (91 bytes for the out-of-memory wording), the head marker tailWriter
@@ -59,32 +54,6 @@ const maxDepsError = 4 << 10
 // rampart exactly the bytes that carry the diagnosis. With this margin it never
 // cuts, and remains what it is meant to be: a rampart, not a participant.
 const depsOutputSlack = 256
-
-// maxLockfileSize bounds what a record accepts of a lockfile. A TextField with no
-// explicit Max rejects the whole record past 5000 runes, and a lockfile goes past
-// that threshold on the very first real dependency.
-const maxLockfileSize = 1 << 20 // 1 MB
-
-func newDepsStatusField() *core.SelectField {
-	return &core.SelectField{
-		Name:   "depsStatus",
-		Values: []string{depsStatusPending, depsStatusInstalling, depsStatusReady, depsStatusError},
-	}
-}
-
-func newDepsErrorField() *core.TextField {
-	return &core.TextField{Name: "depsError", Max: maxDepsError + logMarkerSlack}
-}
-
-// newBunLockField declares the column carrying the lockfile a successful install
-// resolved. It is not Hidden, and that is not an oversight: autoResolveRecordsFlags
-// unmasks every hidden field as soon as the request authenticates as superuser,
-// which is what the editor does. Marking it would suggest a protection that does
-// not exist, on a value that is no secret anyway. What the API hands back is kept
-// down by the field selection the editor sends, not by this flag.
-func newBunLockField() *core.TextField {
-	return &core.TextField{Name: "bunLock", Max: maxLockfileSize}
-}
 
 // depsHash returns a hash of package.json and bun.lock (when present).
 // bun.lock is part of the hash because it determines the resolved tree for
@@ -102,6 +71,19 @@ func depsHash(funcDir string) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// errDepsInterrupted qualifies an install cut short because its context was
+// cancelled — a server shutdown, or an HTTP client that hung up while bun was
+// running. It is not a failure: nothing is wrong with the dependencies, the work
+// is simply still owed, and the next invocation reinstalls.
+//
+// Without it the cancellation is indistinguishable from an out-of-memory kill:
+// exec.CommandContext kills through Process.Kill, so the process comes back as
+// "signal: killed" either way, and the qualification below would blame the memory
+// for a process this very server killed. That verdict does not stay in one place —
+// it lands on the record, in faasbox_logs, in the server log and, through the
+// realtime channel, in the open editor.
+var errDepsInterrupted = errors.New("dependency install was interrupted")
 
 // ensureDeps runs "bun install" in funcDir when the dependency spec changed since
 // the last successful install. A per-directory lock prevents concurrent installs
@@ -190,6 +172,19 @@ func ensureDeps(ctx context.Context, funcDir string) (installed bool, err error)
 			return false, fmt.Errorf("dependency install timed out: %s", output)
 		}
 
+		// Cancelled rather than expired: the caller went away. Qualified here, ahead
+		// of the SIGKILL branch that would otherwise accuse the memory — the kill
+		// came from this server.
+		//
+		// The two are distinguishable because neither caller context carries a
+		// deadline of its own: the server lifecycle context has none, and an HTTP
+		// request context is cancelled, never expired. Only the WithTimeout derived
+		// above sets one. So DeadlineExceeded names the install budget, and Canceled
+		// names the caller — there is no overlap to arbitrate.
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return false, fmt.Errorf("%w: %s", errDepsInterrupted, output)
+		}
+
 		// SIGKILL while the deadline still had room: something outside killed the
 		// process. The kernel leaves nothing behind in its victim, so the cause
 		// cannot be named — only ruled out as neither bun nor a timeout.
@@ -271,7 +266,12 @@ func runDepsInstall(ctx context.Context, app core.App, functionsDir, recordId, n
 		// A shutdown interrupted the install, it did not fail: the work is still
 		// owed, and the safety net on the invocation path will do it. Reporting
 		// an error here would outlive the restart and accuse the dependencies.
-		if ctx.Err() != nil {
+		//
+		// Read off the qualified cause rather than ctx.Err(): the same signal the
+		// invocation path reads, so the two cannot drift. It is also the narrower
+		// test — a genuine bun failure that a shutdown happens to follow by a
+		// microsecond is a failure, and stays one.
+		if errors.Is(err, errDepsInterrupted) {
 			setDepsState(app, recordId, name, depsStatusPending, "")
 			return true
 		}

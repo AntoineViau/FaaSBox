@@ -10,9 +10,42 @@ import (
 )
 
 // This file carries what the function record holds of a dependency install —
-// the published state and the resolved lockfile — and how it gets written.
-// deps.go runs the install; here we only record its outcome. Both live in
-// package main, so the split is about responsibility, not visibility.
+// the published state and the resolved lockfile, the columns that carry them,
+// and how they get written. deps.go runs the install; here we only record its
+// outcome. Both live in package main, so the split is about responsibility, not
+// visibility.
+
+// maxDepsError bounds the bun install output kept in depsError. A TextField with
+// no explicit Max rejects the whole record past 5000 runes, and an install failure
+// can print far more than that — the cap and the field size must move together,
+// which is why they are declared side by side.
+const maxDepsError = 4 << 10
+
+// maxLockfileSize bounds what a record accepts of a lockfile. A TextField with no
+// explicit Max rejects the whole record past 5000 runes, and a lockfile goes past
+// that threshold on the very first real dependency.
+const maxLockfileSize = 1 << 20 // 1 MB
+
+func newDepsStatusField() *core.SelectField {
+	return &core.SelectField{
+		Name:   "depsStatus",
+		Values: []string{depsStatusPending, depsStatusInstalling, depsStatusReady, depsStatusError},
+	}
+}
+
+func newDepsErrorField() *core.TextField {
+	return &core.TextField{Name: "depsError", Max: maxDepsError + logMarkerSlack}
+}
+
+// newBunLockField declares the column carrying the lockfile a successful install
+// resolved. It is not Hidden, and that is not an oversight: autoResolveRecordsFlags
+// unmasks every hidden field as soon as the request authenticates as superuser,
+// which is what the editor does. Marking it would suggest a protection that does
+// not exist, on a value that is no secret anyway. What the API hands back is kept
+// down by the field selection the editor sends, not by this flag.
+func newBunLockField() *core.TextField {
+	return &core.TextField{Name: "bunLock", Max: maxLockfileSize}
+}
 
 // publishDepsOutcome records on the function record what the safety net on the
 // invocation path just did.
@@ -29,6 +62,15 @@ import (
 // majority — writes nothing: the state is already right, and a write per
 // invocation would be pure cost.
 func publishDepsOutcome(app core.App, functionsDir, functionName string, res execResult) {
+	// An interrupted install is not a failure — same reading as runDepsInstall, and
+	// deliberately the same published state: the work is still owed. Publishing
+	// error here would put a diagnosis on the record, and push it to the editor,
+	// for a request the caller simply abandoned.
+	if errors.Is(res.Err, errDepsInterrupted) {
+		setDepsStateByName(app, functionName, depsStatusPending, "")
+		return
+	}
+
 	var depsFailed *errDepsFailed
 	if errors.As(res.Err, &depsFailed) {
 		// The cause, not the errDepsFailed wrapper: the field must read the same
