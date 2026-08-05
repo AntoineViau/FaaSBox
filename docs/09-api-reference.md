@@ -101,9 +101,11 @@ Creates a new hashed API key.
     ```json
     {
       "name": "My App",
-      "allowedFunctions": ["echo", "time-now"]
+      "allowedFunctions": ["echo", "time-now"],
+      "expiresAt": "2027-01-01 00:00:00.000Z"
     }
     ```
+- `expiresAt` is optional and RFC3339. Leave it out and the key never expires.
 - **Response**:
     ```json
     {
@@ -112,6 +114,9 @@ Creates a new hashed API key.
       "note": "Store this key securely. It will not be shown again."
     }
     ```
+- **400** if the body is not valid JSON, if `name` is missing or empty, or if `expiresAt` is present but not a valid RFC3339 date. The response names which one: `invalid JSON body`, `"name" is required`, or `"expiresAt" must be an RFC3339 date`.
+- An unreadable `expiresAt` is rejected rather than ignored. Dropping it would hand back a key that never expires when you asked for one that does — widening access instead of narrowing it, silently.
+- **500** if the key cannot be generated.
 
 ---
 
