@@ -18,12 +18,24 @@ import (
 // between a state message and an anonymous client.
 const depsRealtimeTopic = "faasbox_deps"
 
-// depsStateMessage is what a subscriber receives. The function is identified by
-// name and not by record id, because that is what both writers hold: the save
-// path knows the record, but the invocation path never loads it and only ever
-// holds a name. The name column carries a unique index, so it identifies the
-// function just as well.
+// depsStateMessage is what a subscriber receives. It carries two identifiers
+// because the two writers hold different things, and the client must be able to
+// tell which one it got.
+//
+// FunctionId is authoritative when it is set: it survives a rename, which the
+// name does not. A save that renames publishes its state under the new name
+// before the HTTP response carrying that name reaches the client, so a client
+// matching on name alone drops those messages — harmless while an install
+// follows and republishes, permanent when the same save also empties
+// package.json and the only message is the terminal one.
+//
+// It is empty on the invocation path: setDepsStateByName never loaded the
+// record and holds a name only. Resolving the id there would cost a read on
+// every state write to close a window that path does not realistically hit, so
+// the field is left empty and the client falls back to the name. The name
+// column carries a unique index, so that fallback still designates one row.
 type depsStateMessage struct {
+	FunctionId   string `json:"functionId"`
 	FunctionName string `json:"functionName"`
 	DepsStatus   string `json:"depsStatus"`
 	DepsError    string `json:"depsError"`
@@ -35,8 +47,10 @@ type depsStateMessage struct {
 // It is called after the state has been written, never instead of writing it:
 // a client that missed a message re-reads the record on reconnection, so the
 // database stays the source of truth and the channel only saves it a round trip.
-func broadcastDepsState(app core.App, functionName, status, errMsg string) {
+// functionId may be empty; see depsStateMessage for which writer leaves it so.
+func broadcastDepsState(app core.App, functionId, functionName, status, errMsg string) {
 	payload, err := json.Marshal(depsStateMessage{
+		FunctionId:   functionId,
 		FunctionName: functionName,
 		DepsStatus:   status,
 		DepsError:    errMsg,

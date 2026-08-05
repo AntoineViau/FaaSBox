@@ -59,7 +59,7 @@ func TestBroadcastDepsState_ReachesASubscribedClient(t *testing.T) {
 
 	client := registerRealtimeClient(t, app, true, depsRealtimeTopic)
 
-	broadcastDepsState(app, "with-deps", depsStatusInstalling, "")
+	broadcastDepsState(app, "rec123", "with-deps", depsStatusInstalling, "")
 
 	state, ok := receivedState(t, client)
 	if !ok {
@@ -82,7 +82,7 @@ func TestBroadcastDepsState_SkipsUnauthenticatedClients(t *testing.T) {
 
 	anonymous := registerRealtimeClient(t, app, false, depsRealtimeTopic)
 
-	broadcastDepsState(app, "with-deps", depsStatusError, "secret-looking install output")
+	broadcastDepsState(app, "rec123", "with-deps", depsStatusError, "secret-looking install output")
 
 	if state, ok := receivedState(t, anonymous); ok {
 		t.Errorf("an unauthenticated client received %+v, want nothing", state)
@@ -98,7 +98,7 @@ func TestBroadcastDepsState_SkipsClientsWithoutTheSubscription(t *testing.T) {
 
 	other := registerRealtimeClient(t, app, true, "faasbox_logs")
 
-	broadcastDepsState(app, "with-deps", depsStatusReady, "")
+	broadcastDepsState(app, "rec123", "with-deps", depsStatusReady, "")
 
 	if state, ok := receivedState(t, other); ok {
 		t.Errorf("a client subscribed elsewhere received %+v, want nothing", state)
@@ -119,7 +119,8 @@ func TestSetDepsState_BroadcastsEveryTransition(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{}}`)
 	client := registerRealtimeClient(t, app, true, depsRealtimeTopic)
 
-	// By id, the way the save path writes it.
+	// By id, the way the save path writes it. The message must carry that id:
+	// it is what lets a client keep following a function across a rename.
 	setDepsState(app, record.Id, "broadcast-deps", depsStatusInstalling, "")
 	state, ok := receivedState(t, client)
 	if !ok {
@@ -128,8 +129,16 @@ func TestSetDepsState_BroadcastsEveryTransition(t *testing.T) {
 	if state.DepsStatus != depsStatusInstalling {
 		t.Errorf("depsStatus = %q, want %q", state.DepsStatus, depsStatusInstalling)
 	}
+	if state.FunctionId != record.Id {
+		t.Errorf("functionId = %q, want the record id %q", state.FunctionId, record.Id)
+	}
+	if state.FunctionName != "broadcast-deps" {
+		t.Errorf("functionName = %q, want it carried alongside the id", state.FunctionName)
+	}
 
-	// By name, the way the invocation path writes it.
+	// By name, the way the invocation path writes it. The id stays empty on
+	// purpose — resolving it would cost a read per state write — so the client
+	// falls back to matching on the name, which must therefore still be there.
 	setDepsStateByName(app, "broadcast-deps", depsStatusError, "install output")
 	state, ok = receivedState(t, client)
 	if !ok {
@@ -137,5 +146,11 @@ func TestSetDepsState_BroadcastsEveryTransition(t *testing.T) {
 	}
 	if state.DepsStatus != depsStatusError || state.DepsError != "install output" {
 		t.Errorf("message = %+v, want the error status and its message", state)
+	}
+	if state.FunctionId != "" {
+		t.Errorf("functionId = %q, want it empty on the invocation path", state.FunctionId)
+	}
+	if state.FunctionName != "broadcast-deps" {
+		t.Errorf("functionName = %q, want the name to carry the message", state.FunctionName)
 	}
 }

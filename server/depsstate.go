@@ -149,17 +149,19 @@ func setDepsState(app core.App, recordId, name, status, errMsg string) {
 	if !updateDepsState(app, "id", recordId, status, errMsg) {
 		return
 	}
-	broadcastDepsState(app, name, status, errMsg)
+	broadcastDepsState(app, recordId, name, status, errMsg)
 }
 
 // setDepsStateByName is the same write keyed on the function name, which is what
 // the invocation path holds — it never loaded the record. The name column carries
 // a unique index, so it identifies exactly one row.
+// The empty id is deliberate and must stay: resolving it would add a read to
+// every state write on this path. See depsStateMessage.
 func setDepsStateByName(app core.App, name, status, errMsg string) {
 	if !updateDepsState(app, "name", name, status, errMsg) {
 		return
 	}
-	broadcastDepsState(app, name, status, errMsg)
+	broadcastDepsState(app, "", name, status, errMsg)
 }
 
 // updateDepsState writes the two dependency columns through a direct SQL update

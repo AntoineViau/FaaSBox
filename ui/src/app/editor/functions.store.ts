@@ -38,15 +38,24 @@ export const FunctionsStore = signalStore(
      * Writes the two dependency fields on one function and nothing else. The
      * event carries only those two, and replacing the whole record with it would
      * discard a script or a package.json the store holds fresher.
+     *
+     * The record id wins over the name when the message carries one. A save that
+     * renames publishes its state under the new name before the response
+     * carrying that name gets back here, so matching on the name alone loses
+     * those messages — and when the same save empties package.json, the lost
+     * message is the only one there will ever be, leaving a stale state on
+     * screen. The name stays the fallback for the invocation path, which sends
+     * no id.
      */
     const applyDepsState = (state: DepsStateMessage): void => {
+      const matches = (f: FaasboxFunction): boolean =>
+        state.functionId ? f.id === state.functionId : f.name === state.functionName;
+
       patchState(store, {
         functions: store
           .functions()
           .map((f) =>
-            f.name === state.functionName
-              ? { ...f, depsStatus: state.depsStatus, depsError: state.depsError }
-              : f,
+            matches(f) ? { ...f, depsStatus: state.depsStatus, depsError: state.depsError } : f,
           ),
       });
     };

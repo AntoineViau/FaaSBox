@@ -25,8 +25,15 @@ export interface FaasboxFunctionListResponse {
   items: FaasboxFunction[];
 }
 
-/** What the server pushes on the dependency state channel. */
+/**
+ * What the server pushes on the dependency state channel.
+ *
+ * `functionId` is empty when the message comes from the invocation path, which
+ * never loads the record. Match on it when it is set — it survives a rename —
+ * and fall back to `functionName` when it is not.
+ */
 export interface DepsStateMessage {
+  functionId: string;
   functionName: string;
   depsStatus: DepsStatus;
   depsError: string;
