@@ -140,7 +140,64 @@ Returns the decrypted environment variables of a function, as a flat JSON object
 
 ---
 
-## 5. Health Check
+## 5. List a Function's Files
+**Endpoint**: `GET /api/faasbox/functions/{name}/files`
+
+**Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
+
+Returns **one level** of the function's folder on disk. Never recursive.
+
+- **Query Parameter**: `path`, relative to the function folder. Omit it or leave it empty for the root.
+- **Response**:
+    ```json
+    {
+      "path": "",
+      "entries": [
+        { "name": "node_modules", "dir": true,  "entries": 412, "modified": "2026-08-06T09:12:31Z" },
+        { "name": "bun.lock",     "dir": false, "size": 297,    "modified": "2026-08-06T09:12:00Z" },
+        { "name": "index.ts",     "dir": false, "size": 412,    "modified": "2026-08-06T09:12:00Z" }
+      ]
+    }
+    ```
+- Directories come first, then files, each group sorted by name.
+- `size` is carried by files, `entries` by directories. `entries` counts one level of that directory — it is there to tell you what you are about to walk into, and it is never a recursive total.
+- A function whose folder does not exist yet — never invoked, no dependencies — returns `{"path": "", "entries": []}` at the root. Nothing there is not an error.
+- **400** if the name is not a valid function name, if `path` leaves the function folder, or if `path` names a file rather than a directory.
+- **404** if `path` names something that does not exist.
+
+---
+
+## 6. Read a Function's File
+**Endpoint**: `GET /api/faasbox/functions/{name}/files/content`
+
+**Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
+
+Two modes on one endpoint, chosen by `download`.
+
+- **Query Parameters**: `path` (required, relative to the function folder), `download=1` to fetch the file instead of reading it.
+- **Response** without `download`, for a textual file under the view limit:
+    ```json
+    {
+      "path": "index.ts",
+      "size": 412,
+      "content": "const payload = await Bun.stdin.text();\n…"
+    }
+    ```
+- **415** if the file is binary, with `{"error": "binary"}`. The verdict is a NUL byte in the first 8 KB, never the extension — `node_modules` is full of files without one.
+- **413** if the file is larger than `FAASBOX_MAX_FILE_VIEW` (default 256 KB), with `{"error": "too large", "size": 4194304}`.
+- **Response** with `download=1`: the file itself, served as `Content-Disposition: attachment`, **with no size limit**. The limit is on what is rendered inline, not on what can be fetched — displaying 40 MB in a browser is a defect, downloading them is not. `415` and `413` do not apply here.
+- **400** if the name is not a valid function name, if `path` is missing, if `path` names a directory, or if `path` leaves the function folder.
+- **404** if `path` names something that does not exist.
+
+A `path` that leaves the folder is a `400`, never a `404`: the refusal is a rule, not an absence, and answering "not found" would suggest that a different spelling might work.
+
+That refusal covers symbolic links, and that is the point rather than a detail. A function executes arbitrary code with its own folder within reach, so it can drop a link pointing at `/etc/passwd` or at the database and wait for it to be followed. The server therefore resolves links **before** deciding, not after: a check made on the requested path alone would stop a `../..` typed into the URL and let the link through.
+
+Both endpoints are read-only. There is no counterpart that writes, deletes or uploads.
+
+---
+
+## 7. Health Check
 **Endpoint**: `GET /health`
 
 **No Authentication Required.**

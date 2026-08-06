@@ -62,9 +62,10 @@ If you started the server without superuser credentials, open `http://localhost:
 
 `http://localhost:8080/` is the interface you will spend your time in. It covers everything you need to run functions:
 
-- **Write and test.** Four tabs per function — **Script**, **package.json**, **Triggers**, **Environment** — plus a **Runner** to invoke a function on demand and a **Logs** panel to read its history. Both open from the buttons in the header.
+- **Write and test.** Five tabs per function — **Script**, **package.json**, **Triggers**, **Environment**, **Files** — plus a **Runner** to invoke a function on demand and a **Logs** panel to read its history. Both open from the buttons in the header.
 - **Schedule.** Cron triggers are created and edited in the **Triggers** tab, with ready-made expressions and a free field. See [05 - Scheduling (Cron)](05-scheduling-cron.md).
 - **Secrets.** Encrypted environment variables are edited as key/value pairs in the **Environment** tab. See [04 - Environment Variables](04-environment-variables.md).
+- **Look at the disk.** The **Files** tab browses the function's own folder as it exists on the server — `index.ts`, `package.json`, `bun.lock`, `node_modules` and whatever else is in there. Read-only. See [03 - Writing Functions](03-writing-functions.md).
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
 - **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
 

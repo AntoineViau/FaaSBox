@@ -91,12 +91,15 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `FAASBOX_MAX_BODY_SIZE` | Bytes accepted in a request body | `1048576` |
 | `FAASBOX_MAX_LOG_OUTPUT` | Bytes of `stdout` and `stderr` kept in each log record | `8192` |
 | `FAASBOX_MAX_LOG_PAYLOAD` | Bytes of `requestPayload` kept in each log record | `4096` |
+| `FAASBOX_MAX_FILE_VIEW` | Bytes a file may hold and still be shown in the **Files** tab | `262144` |
 
 Every numeric setting behaves the same way: an absent variable uses the default silently, and a value that is unparsable, negative or zero falls back to the default with a message in the server log. A bad setting never prevents startup.
 
 ### Notes on the size limits
 
 `FAASBOX_MAX_OUTPUT_SIZE` applies **per stream**. A single invocation can therefore hold twice that much in memory, `stdout` plus `stderr`.
+
+`FAASBOX_MAX_FILE_VIEW` bounds **display only**. A file past it is not rendered in the Files tab, and its **Download** button still fetches it whole — raising the variable changes what you can read on screen, never what you can retrieve.
 
 Capture limits and log limits are independent. `FAASBOX_MAX_OUTPUT_SIZE` bounds what the engine keeps and returns in the HTTP response; `FAASBOX_MAX_LOG_OUTPUT` bounds the copy written to `faasbox_logs`. Setting the log limit above the capture limit is not an error, it just means no log record is ever trimmed.
 

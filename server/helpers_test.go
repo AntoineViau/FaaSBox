@@ -210,6 +210,14 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	e.Router.GET("/api/faasbox/functions/{name}/env", func(re *core.RequestEvent) error {
 		return functionEnvHandler(re)
 	}).Bind(apis.RequireSuperuserAuth())
+
+	// Function directory browsing (superuser only)
+	e.Router.GET("/api/faasbox/functions/{name}/files", func(re *core.RequestEvent) error {
+		return functionFilesHandler(re, functionsDir)
+	}).Bind(apis.RequireSuperuserAuth())
+	e.Router.GET("/api/faasbox/functions/{name}/files/content", func(re *core.RequestEvent) error {
+		return functionFileContentHandler(re, functionsDir)
+	}).Bind(apis.RequireSuperuserAuth())
 }
 
 // setCronJobDate overwrites a date column PocketBase manages itself (created) or

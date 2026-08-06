@@ -96,7 +96,7 @@
     "cards": [
       {
         "title": "Un éditeur, pas un pipeline",
-        "body": "Quatre onglets par fonction : script, package.json, triggers, secrets. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère."
+        "body": "Cinq onglets par fonction : script, package.json, triggers, secrets, et les fichiers que son dossier porte sur le disque. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère."
       },
       {
         "title": "Deux déclencheurs, un seul moteur",

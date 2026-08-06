@@ -51,6 +51,7 @@ func TestTunableDefaults(t *testing.T) {
 		{"defaultMaxLoggedPayload", defaultMaxLoggedPayload, 4096},
 		{"defaultMaxConcurrency", defaultMaxConcurrency, 4},
 		{"defaultMaxLogRetention", defaultMaxLogRetention, 1000},
+		{"defaultMaxFileView", defaultMaxFileView, 262144},
 	}
 
 	for _, tt := range cases {

@@ -96,7 +96,7 @@
     "cards": [
       {
         "title": "An editor, not a pipeline",
-        "body": "Four tabs per function: script, package.json, triggers, secrets. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it."
+        "body": "Five tabs per function: script, package.json, triggers, secrets, and the files its folder holds on disk. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it."
       },
       {
         "title": "Two triggers, one engine",

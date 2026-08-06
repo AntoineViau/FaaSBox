@@ -19,6 +19,7 @@ import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { CronEditorComponent } from '@/editor/cron-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
 import { EnvEditorComponent } from '@/editor/env-editor.component';
+import { FilesTabComponent } from '@/editor/files-tab.component';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
 import { RunnerComponent } from '@/editor/runner.component';
 import { SidebarComponent } from '@/editor/sidebar.component';
@@ -41,6 +42,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
     CronEditorComponent,
     DepsStatusComponent,
     EnvEditorComponent,
+    FilesTabComponent,
     LogViewerComponent,
     RunnerComponent,
     SidebarComponent,
@@ -173,6 +175,9 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
               </z-tab>
               <z-tab label="Environment">
                 <app-env-editor [functionId]="fn.id" [functionName]="fn.name" />
+              </z-tab>
+              <z-tab label="Files">
+                <app-files-tab [functionName]="fn.name" />
               </z-tab>
             </z-tab-group>
 

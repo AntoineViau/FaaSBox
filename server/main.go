@@ -111,6 +111,16 @@ func main() {
 				return functionEnvHandler(re)
 			}).Bind(apis.RequireSuperuserAuth())
 
+			// One level of a function's directory on disk (superuser only)
+			e.Router.GET("/api/faasbox/functions/{name}/files", func(re *core.RequestEvent) error {
+				return functionFilesHandler(re, functionsDir)
+			}).Bind(apis.RequireSuperuserAuth())
+
+			// Content of one file in that directory (superuser only)
+			e.Router.GET("/api/faasbox/functions/{name}/files/content", func(re *core.RequestEvent) error {
+				return functionFileContentHandler(re, functionsDir)
+			}).Bind(apis.RequireSuperuserAuth())
+
 			// serve static files from pb_public (Angular SPA + assets)
 			if !e.Router.HasRoute(http.MethodGet, "/{path...}") {
 				e.Router.GET("/{path...}", apis.Static(os.DirFS(publicDir()), true))

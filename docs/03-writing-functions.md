@@ -148,6 +148,23 @@ The output kept is the **end** of the install, not its beginning: `bun` prints i
 
 Both fields are also readable from the PocketBase admin UI, in the `faasbox_functions` collection — useful when you want the raw value rather than the editor's rendering.
 
+## What the Function's Folder Holds
+
+Every function has a folder of its own on the server, named after it. FaaSBox writes into it: `index.ts` and `package.json` on every save, `bun.lock` once an install has resolved your versions, and `node_modules/` once `bun install` has run.
+
+The **Files** tab of the editor browses that folder as it is on disk right now. That is its whole point: the other tabs show what the database holds, this one shows what the machine actually has. It is where you look when an install behaved strangely, when you want to know which version of a package really landed, or when you want to read a file out of `node_modules` without opening a shell in the container — which, on an ephemeral host, you may not be able to do at all.
+
+Navigation is what you expect: the current path is shown at the top, a button goes back to the parent folder, and each level lists its folders first and its files after, both by name. A folder line carries how many entries it holds, `node_modules` included — a number worth knowing before you click into it. Clicking a file shows it on the right, with a **Download** button.
+
+The tab is **read-only**. It has no delete, no rename, no upload. Emptying `node_modules` is not something you ask for here; saving a `package.json` is what triggers an install. Editing the managed files stays where it belongs: `index.ts` in the **Script** tab, `package.json` in its own.
+
+Two files are shown differently:
+
+- A **binary** file is not printed. The verdict is a NUL byte in its first kilobytes, not its extension — `node_modules/.bin` is full of files with no extension at all. Download it to inspect it.
+- A file **larger than 256 KB** (`FAASBOX_MAX_FILE_VIEW`) is not printed either, and the message says how big it is. The limit is on what gets displayed, never on what gets downloaded: the **Download** button works whatever the size.
+
+> **Your working directory is the functions root, not your own folder.** A function that writes to a relative path — `Bun.write("cache.json", …)` — creates the file next to its folder, not inside it, so the Files tab will not show it. Build the path from `import.meta.dir`, which is your own folder, if you want the file to land where the tab looks. And remember that nothing written to disk survives a redeployment: only what the database holds is restored.
+
 ## Testing in the Editor
 
 The FaaSBox Editor includes a built-in **Runner** panel that lets you test your function without leaving the browser.
@@ -194,6 +211,7 @@ This is the fastest way to iterate on a function. You can also use `curl` for au
 | Max Stdout/Stderr Stored in Logs   | 8 KB each (`FAASBOX_MAX_LOG_OUTPUT`)  |
 | Max Request Payload Stored in Logs | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`)      |
 | Max Concurrent Executions          | 4 (global, `FAASBOX_MAX_CONCURRENCY`) |
+| Max File Shown in the Files Tab    | 256 KB (`FAASBOX_MAX_FILE_VIEW`)      |
 
 Every limit that names a variable is a **default**, not a hard ceiling: set the variable on the server and restart. See [04 - Environment Variables](04-environment-variables.md).
 
