@@ -134,6 +134,8 @@ await rm(WORK, { recursive: true, force: true });
 await mkdir(WORK, { recursive: true });
 await mkdir(SHOTS, { recursive: true });
 
+await refuseBorrowedBrowser();
+
 const chrome = spawn('google-chrome', [
   '--headless=new',
   `--remote-debugging-port=${PORT}`,
@@ -143,7 +145,14 @@ const chrome = spawn('google-chrome', [
   `--window-size=${VIEWPORT.width},${VIEWPORT.height}`,
   `--user-data-dir=${join(WORK, 'profile')}`,
   'about:blank',
-], { stdio: 'ignore' });
+], {
+  stdio: 'ignore',
+  /* The editor is English and the captures have to be too, whoever runs them.
+     Native widgets follow Chrome's UI language, and on Linux that comes from
+     LANGUAGE — not from --lang, which is silently ignored here. Left to the
+     host, a French machine photographs the expiry date field as "jj/mm/aaaa". */
+  env: { ...process.env, LANGUAGE: 'en_US' },
+});
 
 async function debuggerUrl() {
   for (let i = 0; i < 50; i++) {
@@ -155,6 +164,25 @@ async function debuggerUrl() {
     await sleep(200);
   }
   throw new Error('Chrome did not expose a page target');
+}
+
+/**
+ * Refuses to run against a browser this script did not start. A Chrome left
+ * behind by an earlier run still answers on the port, so the capture would
+ * silently drive that one instead — same pages, but whatever window size,
+ * theme and UI language it happens to carry. The symptom is a screenshot that
+ * quietly stops obeying the settings above, which is a long way to debug.
+ */
+async function refuseBorrowedBrowser() {
+  try {
+    await fetch(`http://127.0.0.1:${PORT}/json/version`, { signal: AbortSignal.timeout(500) });
+  } catch {
+    return; // nothing there, which is what we want
+  }
+  throw new Error(
+    `something already speaks the DevTools protocol on port ${PORT}. Close it, `
+    + 'or pass --cdp-port with a free one.',
+  );
 }
 
 const ws = new WebSocket(await debuggerUrl());
