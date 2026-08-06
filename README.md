@@ -12,7 +12,7 @@ Under the hood: **Go** and **PocketBase** for the server, **Bun** for function e
      reader's theme instead of glaring at half of them. -->
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/assets/shots/editor-full-dark.png">
-  <img alt="The FaaSBox editor: the function list, the four tabs of a function, its code, and the runner showing a successful run" src="site/assets/shots/editor-full.png">
+  <img alt="The FaaSBox editor: the function list, the five tabs of a function, its code, and the runner showing a successful run" src="site/assets/shots/editor-full.png">
 </picture>
 
 ---
@@ -64,7 +64,7 @@ Then open `http://localhost:8080/_/` to create your superuser account on first l
 
 ### 4. Create an API Key
 
-The editor has an **API keys** page (button in the header) that creates, scopes, disables and deletes keys, and reveals the raw value once. To do it from the shell instead:
+The editor has an **API keys** page, reached from the top of the left sidebar, that creates, scopes, disables and deletes keys, and reveals the raw value once. To do it from the shell instead:
 
 ```bash
 # 1. Get a token
@@ -94,7 +94,7 @@ curl -X POST http://localhost:8080/invoke/echo \
 - **Hashed API Keys**: Only SHA-256 hashes of API keys are stored.
 - **Encrypted Secrets**: Custom env vars are encrypted at rest using AES-256-GCM.
 - **Isolated Runtimes**: Functions run in ephemeral subprocesses with minimal environments.
-- **Non-Root Execution**: The Docker container runs as a dedicated `faas` user.
+- **Non-Root Execution**: The Docker container runs as a dedicated `faasbox` user.
 
 Found a vulnerability? **Do not open a public issue.** Report it privately — see [SECURITY.md](SECURITY.md) for the channel, the expected response time, and what is in or out of scope.
 
@@ -114,6 +114,7 @@ Found a vulnerability? **Do not open a public issue.** Report it privately — s
 - [**09 - API Reference**](docs/09-api-reference.md)
 - [**10 - Deployment**](docs/10-deployment.md)
 - [**11 - Development Guide**](docs/11-development-guide.md)
+- [**12 - Lost Password**](docs/12-lost-password.md)
 
 ---
 

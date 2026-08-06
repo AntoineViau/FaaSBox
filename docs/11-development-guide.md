@@ -7,14 +7,19 @@ Welcome! This guide explains how to set up your local environment to contribute 
 ```text
 .
 ├── server/             # Go Backend (PocketBase extension)
+│   └── functions/      # Function folders on disk (rebuilt from the database)
 ├── ui/                 # Angular Frontend (FaaS Editor)
-├── functions/          # Example/Default Functions
+├── site/               # faasbox.net landing page (static generator)
 ├── infra/              # Deployment & Dev scripts
 ├── data/
 │   ├── pb_data/        # SQLite DB & Settings (Local dev)
 │   └── pb_public/      # Static files (Frontend build)
 └── docs/               # Documentation
 ```
+
+The `functions/` directory is a cache, not a source: the database holds the code
+and rewrites the files at startup. Its location follows the `--functionsDir`
+flag, which defaults to `./functions` relative to where the server was started.
 
 ## Prerequisites
 - **Go 1.24+**
@@ -29,7 +34,7 @@ The frontend needs to be built so the Go server can serve it.
 ```bash
 cd ui
 npm install
-npm run build  # This outputs to ../data/pb_public/faasbox
+npm run build  # This outputs to ../data/pb_public
 ```
 
 ### 2. Run the Backend
@@ -52,12 +57,21 @@ SUPERUSER_EMAIL=admin@example.com SUPERUSER_PASSWORD=changeme bash infra/dev/dev
 ```
 
 ## Backend Development (Go)
-The backend is a single package in `server/`.
-- `main.go`: Entry point, route registration, and app bootstrap.
-- `exec.go`: Logic for spawning Bun processes.
-- `apikeys.go`: Middleware and hashing logic.
-- `cron.go`: Synchronization with the cron scheduler.
-- `crypto.go`: AES encryption logic.
+The backend is a single `main` package in `server/`, split one file per domain.
+No sub-packages: the tests live in the same package and reach unexported
+identifiers without ceremony.
+
+- `main.go`: Entry point, hooks, route registration, and app bootstrap.
+- `exec.go`: The shared execution engine — spawning and bounding Bun processes.
+- `invoke.go`: The HTTP path, request body limit and concurrency semaphore.
+- `cron.go` / `cronmissed.go`: The scheduled path, and the report of the runs that came due while the server was down.
+- `deps.go` / `depsstate.go` / `depsstartup.go`: Running `bun install`, recording its outcome on the record, and reinstalling at startup.
+- `functions.go` / `files.go`: The functions collection and disk sync, and the read-only routes that browse a function's folder.
+- `apikeys.go`: Middleware, hashing and scope enforcement.
+- `crypto.go`: AES-256-GCM encryption of the secrets.
+- `logs.go`: Writing and pruning execution logs.
+- `realtime.go`: Pushing the dependency state to subscribed clients.
+- `limitedwriter.go` / `config.go`: Bounded output capture, and reading tunable bounds from the environment.
 
 ### Running Tests
 ```bash
