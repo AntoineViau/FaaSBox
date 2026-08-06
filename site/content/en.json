@@ -26,7 +26,7 @@
     "shot": {
       "src": "assets/shots/editor-full.png",
       "size": "2280 × 1603",
-      "alt": "The FaaSBox editor: the function list, the four tabs of a function, its code, and the runner showing a successful run"
+      "alt": "The FaaSBox editor: the function list, the five tabs of a function, its code, and the runner showing a successful run"
     }
   },
   "how": {
@@ -47,6 +47,10 @@
           {
             "text": "<strong>Run</strong> — one click executes the function and shows you its result, its output and its duration, without leaving the tab.",
             "alt": "The runner toolbar and its Run button"
+          },
+          {
+            "text": "<strong>Files</strong> — the other tabs show what the database holds; this one shows what the machine has. The folder as it is on disk: your files, the lockfile, and the <code>node_modules</code> the install produced. Read-only, and the place to look when a version is not the one you expected.",
+            "alt": "The Files tab of a function, listing its folder on disk"
           }
         ]
       },

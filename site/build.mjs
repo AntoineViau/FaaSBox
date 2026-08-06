@@ -115,7 +115,7 @@ const renderers = {
 
   heroShot: (c, ctx) => shotFrame(c.hero.shot, 'shot__media', ctx),
 
-  /* The three rows of step one are written out in the template rather than
+  /* The four rows of step one are written out in the template rather than
      looped, so each keeps its own capture; these fill their media cells. */
   shotScript: (c, ctx) =>
     shotFrame({ src: 'assets/shots/tab-script.png', alt: c.how.steps[0].bullets[0].alt },
@@ -127,6 +127,10 @@ const renderers = {
 
   shotRunner: (c, ctx) =>
     shotFrame({ src: 'assets/shots/runner-run.png', alt: c.how.steps[0].bullets[2].alt },
+      'bullet__media', ctx),
+
+  shotFiles: (c, ctx) =>
+    shotFrame({ src: 'assets/shots/tab-files.png', alt: c.how.steps[0].bullets[3].alt },
       'bullet__media', ctx),
 
   shotKeys: (c, ctx) =>

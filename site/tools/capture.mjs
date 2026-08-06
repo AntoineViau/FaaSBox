@@ -80,6 +80,19 @@ const TARGETS = [
   },
 
   {
+    /* daily-report again: it is the one whose install has run, so its folder
+       holds a bun.lock and a node_modules to list rather than index.ts alone. */
+    name: 'tab-files',
+    selector: 'z-tab-group',
+    maxHeight: 300,
+    before: `(async () => {
+      ${tab('Files')}
+      await new Promise((r) => setTimeout(r, 900));
+      return true;
+    })()`,
+  },
+
+  {
     /* Leaves the editor for the API keys page, so it has to come last. */
     name: 'keys-page',
     selector: 'app-api-keys',

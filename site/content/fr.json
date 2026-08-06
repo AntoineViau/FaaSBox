@@ -26,7 +26,7 @@
     "shot": {
       "src": "assets/shots/editor-full.png",
       "size": "2280 × 1603",
-      "alt": "L'éditeur FaaSBox : la liste des fonctions, les quatre onglets d'une fonction, son code, et le runner affichant une exécution réussie"
+      "alt": "L'éditeur FaaSBox : la liste des fonctions, les cinq onglets d'une fonction, son code, et le runner affichant une exécution réussie"
     }
   },
   "how": {
@@ -47,6 +47,10 @@
           {
             "text": "<strong>Run</strong> — un clic exécute la fonction et vous montre son résultat, sa sortie et sa durée, sans quitter l'onglet.",
             "alt": "La barre du runner et son bouton Run"
+          },
+          {
+            "text": "<strong>Files</strong> — les autres onglets montrent ce que la base détient ; celui-ci montre ce que la machine a. Le dossier tel qu'il est sur le disque : vos fichiers, le lockfile, et le <code>node_modules</code> que l'installation a produit. En lecture seule, et c'est là qu'on regarde quand une version n'est pas celle qu'on attendait.",
+            "alt": "L'onglet Files d'une fonction, avec le contenu de son dossier sur le disque"
           }
         ]
       },
