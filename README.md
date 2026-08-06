@@ -64,20 +64,12 @@ Then open `http://localhost:8080/_/` to create your superuser account on first l
 
 ### 4. Create an API Key
 
-The editor has an **API keys** page, reached from the top of the left sidebar, that creates, scopes, disables and deletes keys, and reveals the raw value once. To do it from the shell instead:
+**API keys** at the top of the left sidebar. The raw value is revealed once, on creation — see [06 - API Keys & Security](docs/06-api-keys-and-security.md) for the same thing over `curl`.
 
-```bash
-# 1. Get a token
-TOKEN=$(curl -s -X POST http://localhost:8080/api/collections/_superusers/auth-with-password \
-  -H 'Content-Type: application/json' \
-  -d '{"identity":"admin@example.com","password":"yourpassword"}' | jq -r '.token')
-
-# 2. Create a key
-curl -s -X POST http://localhost:8080/api/faasbox/keys \
-  -H "Authorization: $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"my-app","allowedFunctions":["*"]}'
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/assets/shots/keys-page-dark.png">
+  <img alt="The API keys page: the creation form, with the key name, its scope and an optional expiry date" src="site/assets/shots/keys-page.png">
+</picture>
 
 ### 5. Invoke a Function
 ```bash
@@ -86,6 +78,15 @@ curl -X POST http://localhost:8080/invoke/echo \
   -H "Content-Type: application/json" \
   -d '{"hello": "world"}'
 ```
+
+### 6. Or Set Up a Scheduler
+
+The **Triggers** tab of a function: a cron expression — fifteen ready-made ones, or your own — and the JSON payload each run receives. Changes take effect immediately, nothing restarts. See [05 - Scheduling (Cron)](docs/05-scheduling-cron.md).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="site/assets/shots/tab-triggers-dark.png">
+  <img alt="The Triggers tab of a function: a named schedule, its cron expression and the payload its runs receive" src="site/assets/shots/tab-triggers.png">
+</picture>
 
 ---
 
