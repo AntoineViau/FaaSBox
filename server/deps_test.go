@@ -667,6 +667,93 @@ func TestEnsureDeps_ReinstallsAfterNodeModulesRemoved(t *testing.T) {
 	}
 }
 
+// TestEnsureDeps_DropsPackagesTheSpecNoLongerDeclares is why the wipe exists.
+// bun updates the lockfile and even announces "N packages removed", but leaves
+// the directories on disk, importable — so the only way a dependency dropped
+// from package.json actually disappears is for us to clear node_modules first.
+func TestEnsureDeps_DropsPackagesTheSpecNoLongerDeclares(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte(`{"dependencies":{"ms":"2.1.3"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// node_modules as an earlier install left it, back when left-pad was declared.
+	// The marker is stale, so the spec counts as changed and an install runs.
+	for _, pkg := range []string{"ms", "left-pad"} {
+		if err := os.MkdirAll(filepath.Join(dir, "node_modules", pkg), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeDepsMarker(t, dir, "stale-hash")
+
+	// A bun that installs what package.json declares and — like the real one —
+	// never removes what it does not.
+	fakeBun(t, "mkdir -p node_modules/ms\nexit 0")
+
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "node_modules", "left-pad")); !os.IsNotExist(err) {
+		t.Error("left-pad survived an install whose spec no longer declares it")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "node_modules", "ms")); err != nil {
+		t.Errorf("ms is missing after the install: %v", err)
+	}
+}
+
+// TestEnsureDeps_UnchangedSpecKeepsNodeModules is the boundary of the wipe: it
+// belongs to an install, and an unchanged spec never runs one. Clearing on the
+// hash-check exit would have every script-only save throw away a working tree.
+func TestEnsureDeps_UnchangedSpecKeepsNodeModules(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "package.json"),
+		[]byte(`{"dependencies":{"ms":"2.1.3"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	hash, err := depsHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeDepsMarker(t, dir, hash)
+	if err := os.MkdirAll(filepath.Join(dir, "node_modules", "ms"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	runs := installCounter(t)
+
+	if _, err := ensureDeps(context.Background(), dir); err != nil {
+		t.Fatalf("unexpected error on the hash-check exit: %v", err)
+	}
+	if got := runs(); got != 0 {
+		t.Fatalf("expected no install for an unchanged spec, got %d", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "node_modules", "ms")); err != nil {
+		t.Errorf("node_modules was cleared on the hash-check exit: %v", err)
+	}
+}
+
+// TestEnsureDeps_InstallsWithoutNodeModules covers the wipe finding nothing to
+// wipe: os.RemoveAll on a missing path returns nil, so the first install of a
+// function needs no prior check and must not be turned into a failure.
+func TestEnsureDeps_InstallsWithoutNodeModules(t *testing.T) {
+	dir := depsFixture(t)
+	runs := fakeBun(t, "mkdir -p node_modules\nexit 0")
+
+	installed, err := ensureDeps(context.Background(), dir)
+	if err != nil {
+		t.Fatalf("install on a directory without node_modules: %v", err)
+	}
+	if !installed {
+		t.Error("installed = false, want the install to have run")
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected 1 install, got %d", got)
+	}
+}
+
 func TestEnsureDeps_ConcurrentCallsInstallOnce(t *testing.T) {
 	root := t.TempDir()
 	funcDir := filepath.Join(root, "svc")

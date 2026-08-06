@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,8 +87,8 @@ func depsHash(funcDir string) (string, error) {
 var errDepsInterrupted = errors.New("dependency install was interrupted")
 
 // ensureDeps runs "bun install" in funcDir when the dependency spec changed since
-// the last successful install. A per-directory lock prevents concurrent installs
-// for the same function.
+// the last successful install, starting from an emptied node_modules (see below).
+// A per-directory lock prevents concurrent installs for the same function.
 //
 // It owns depsTimeout, and takes it only once the lock is held (see below): the
 // callers hand it their own context, untouched.
@@ -134,6 +135,22 @@ func ensureDeps(ctx context.Context, funcDir string) (installed bool, err error)
 	modulesPath := filepath.Join(funcDir, "node_modules")
 	if got, err := os.ReadFile(filepath.Join(modulesPath, depsHashFile)); err == nil && string(got) == want {
 		return false, nil
+	}
+
+	// bun does not remove from node_modules what package.json no longer declares:
+	// it updates the lockfile, announces "N packages removed", and leaves the
+	// directories in place, importable. The code would then run against a tree its
+	// own spec no longer describes — until a restart on a fresh filesystem, where
+	// the tree is rebuilt from package.json alone and the import breaks. Starting
+	// over is the only remedy: bun exposes no equivalent to `npm prune`, and
+	// neither --force nor --linker=isolated cleans up.
+	//
+	// os.RemoveAll on a missing path returns nil, so the "no node_modules yet"
+	// case needs no prior check.
+	if err := os.RemoveAll(modulesPath); err != nil {
+		// Best effort: failing here would break a function for a reason foreign to
+		// its dependencies. We lose the guarantee, not the install.
+		log.Printf("faasbox: cannot clear %s before install: %v", modulesPath, err)
 	}
 
 	// --ignore-scripts: npm lifecycle scripts would run outside every guard the
