@@ -1,26 +1,91 @@
 # 10 - Deployment Guide
 
-FaaSBox is designed to be easy to deploy. It's essentially a stateless application (the binary/container) with a single stateful requirement: the `pb_data` directory.
+FaaSBox is one binary plus the Bun runtime, and one directory that has to
+survive a restart. This page starts with what the application needs, whatever
+you run it on, then shows the two ways to give it that: a container, which is
+the simple path and comes ready-made, or a server you set up yourself.
 
-## 1. Docker Deployment (Recommended)
+> **In a hurry?** Jump to [2. Docker](#2-docker-the-simple-path). It is the
+> fastest and easiest way to get an instance running — the `Dockerfile` in
+> `infra/production/` already provides everything section 1 describes, and one
+> `docker run` is the whole deployment. Section 1 is worth reading afterwards,
+> when you want to know what that container is actually doing.
 
-The easiest way to deploy is using Docker.
+## 1. What FaaSBox needs
 
-```bash
-docker run -d -p 8080:8080 \
-  -e SUPERUSER_EMAIL=admin@example.com \
-  -e SUPERUSER_PASSWORD=your_secure_password \
-  -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
-  -v faasbox-data:/app/data/pb_data \
-  faasbox
-```
+### The runtime
 
-### Persistence
-The `-v faasbox-data:/app/data/pb_data` flag is critical. It creates a Docker volume that stores your SQLite database, settings, and uploaded files. Without this, you will lose your API keys and logs every time the container restarts.
+Two executables have to be on the host:
 
-### Sizing an Instance
+- **The FaaSBox binary**, built from `server/` — a single static Go binary, no
+  system libraries to install.
+- **[Bun](https://bun.sh/)**, which runs your functions. The server spawns
+  `bun run` for every invocation and resolves it through **its own `PATH`**, so
+  Bun has to be reachable by the account the server runs under.
 
-Four size bounds are set at startup and hold until the next restart. Their defaults suit a general-purpose instance; an instance that serves large exports, or one that only supervises, will want different ones.
+Your functions themselves see a **rebuilt environment**, never the server's:
+`PATH=/usr/local/bin:/usr/bin:/bin`, plus `HOME`, `NODE_ENV` and
+`FUNCTION_NAME`, plus that function's own secrets. A command a function shells
+out to has to live in one of those three directories, and a variable set on the
+server process is invisible to it — that is deliberate, and it is what keeps
+`FAASBOX_ENCRYPTION_KEY` and your S3 credentials out of reach of the code you
+run.
+
+Nothing else is required. There is no database server, no message broker, no
+sidecar.
+
+### The directories
+
+| Directory | What it holds | Must it survive a restart? |
+|---|---|---|
+| `pb_data/` | The SQLite database: functions, schedules, secrets, keys, logs. | **Yes.** This is the whole instance. |
+| `pb_public/` | The built Angular editor, served at `/`. | No — rebuilt from source. |
+| `functions/` | One folder per function on disk, plus its `node_modules`. | No — rewritten from the database at startup. |
+
+Two of the three are derived, and that is the point: the database is the source
+of truth, and the server rebuilds `functions/` from it on every boot. Losing
+that directory costs the time of one dependency install, nothing else.
+
+Where they live:
+
+- `pb_data/` follows the standard PocketBase `--dir` flag.
+- `pb_public/` is **not** configurable: the server derives it as a sibling of
+  the data directory. `--dir=/app/data/pb_data` means the editor is served from
+  `/app/data/pb_public`.
+- `functions/` follows `--functionsDir`, which defaults to `./functions`,
+  relative to the working directory the server was started in.
+
+### The port
+
+One HTTP port, and nothing else listens.
+
+- Started without `--http`, PocketBase binds **`127.0.0.1:8090`** — loopback
+  only, which is what you want behind a reverse proxy on the same host.
+- The container image forces **`0.0.0.0:8080`** and declares `EXPOSE 8080`.
+- Pass `--http=<address>:<port>` to choose. Everything is served from it: the
+  editor at `/`, the PocketBase admin at `/_/`, `/invoke/{name}`, `/functions`
+  and the public `/health`.
+
+### The environment variables
+
+Only one is genuinely required, and only for a feature you may not use:
+
+| Variable | Status | Without it |
+|---|---|---|
+| `FAASBOX_ENCRYPTION_KEY` | **Required to use secrets.** 64 hex characters — `openssl rand -hex 32`. | Secrets are disabled with a warning; everything else runs. A malformed value is fatal at startup, on purpose. |
+| `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. | The step is skipped; create the account at `/_/` on first boot instead. |
+| `LITESTREAM_*` | Optional, see below. | No replication; the database stays local. |
+| `FAASBOX_MAX_*` | Optional sizing, see below. | Defaults apply. |
+
+> ⚠️ Lose `FAASBOX_ENCRYPTION_KEY` and the secrets encrypted with it are gone.
+> Change it, and existing secrets stop being readable — the Environment tab
+> answers `500` rather than showing you an empty set you would then overwrite.
+
+#### Sizing an instance
+
+Four size bounds are read at startup and hold until the next restart. Their
+defaults suit a general-purpose instance; one that serves large exports, or one
+that only supervises, will want different ones.
 
 | Variable | Default | Bounds |
 |----------|---------|--------|
@@ -29,30 +94,68 @@ Four size bounds are set at startup and hold until the next restart. Their defau
 | `FAASBOX_MAX_LOG_OUTPUT` | `8192` | Bytes of `stdout`/`stderr` kept per log record. |
 | `FAASBOX_MAX_LOG_PAYLOAD` | `4096` | Bytes of `requestPayload` kept per log record. |
 
-An invalid, negative or zero value falls back to the default with a message in the server log; it never blocks startup. See [04 - Environment Variables](04-environment-variables.md) for the full list of server settings and for the caveat on raising `FAASBOX_MAX_LOG_OUTPUT` against an existing database.
+An invalid, negative or zero value falls back to the default with a message in
+the server log; it never blocks startup. See
+[04 - Environment Variables](04-environment-variables.md) for the full list,
+and for the caveat on raising `FAASBOX_MAX_LOG_OUTPUT` against a database that
+already exists.
 
-## 2. Litestream Replication (Optional)
+`.env.example` at the repository root lists everything with its default.
 
-For ephemeral environments (containers that lose their filesystem on restart), FaaSBox includes [Litestream](https://litestream.io/) to continuously replicate the SQLite database to any S3-compatible storage.
+## 2. Docker (the simple path)
 
-**Litestream is entirely optional.** If the environment variables below are not set, FaaSBox starts normally without replication.
+Everything above is already wired in a **ready-to-use Dockerfile at
+`infra/production/Dockerfile`**. It is the recommended way to deploy, and the
+way the project is deployed itself.
 
-### How it works
+```bash
+docker build -f infra/production/Dockerfile -t faasbox .
 
-1. On startup, Litestream restores the database from S3 (skipped if no backup exists yet).
-2. FaaSBox starts and Litestream continuously replicates changes in the background.
-3. Function code is stored in the database and restored to disk automatically on boot via `syncDiskFromDB`.
+docker run -d -p 8080:8080 \
+  -e SUPERUSER_EMAIL=admin@example.com \
+  -e SUPERUSER_PASSWORD=your_secure_password \
+  -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -v faasbox-data:/app/data/pb_data \
+  faasbox
+```
 
-### Configuration
+What the image already does for you:
 
-Set these environment variables to enable replication:
+- **Builds both halves** — the Go binary and the Angular editor — in separate
+  stages, so the runtime image carries neither toolchain.
+- **Ships Bun** as its base (`oven/bun`), so the function runtime is there and
+  its version is pinned along with everything else.
+- **Runs as a non-privileged `faasbox` user**, with `tini` as PID 1 so the
+  subprocess of every invocation is reaped instead of piling up as a zombie.
+- **Creates the three directories** and starts the server on `0.0.0.0:8080`
+  with `--dir=/app/data/pb_data --functionsDir=/app/functions`.
+- **Declares a healthcheck** that polls `/health` every 30 seconds.
+
+### Persistence
+
+`-v faasbox-data:/app/data/pb_data` is the one flag you cannot omit. It is the
+directory from the table above that has to survive: without it, every restart
+starts an empty instance — no functions, no keys, no logs.
+
+The other two directories are deliberately left inside the container. There is
+nothing to mount for them, and mounting `functions/` would only pin a cache the
+server rebuilds anyway.
+
+## 3. Litestream replication (optional)
+
+For hosts whose filesystem does not survive a redeploy, the image bundles
+[Litestream](https://litestream.io/) to replicate the SQLite file continuously
+to any S3-compatible storage.
+
+**It is entirely optional.** Leave the variables unset and FaaSBox starts
+normally, from the local file alone.
 
 | Variable | Description |
 |----------|-------------|
 | `LITESTREAM_REPLICA_ENDPOINT` | S3 endpoint (e.g. `s3.amazonaws.com`, `storage.googleapis.com`) |
-| `LITESTREAM_REPLICA_BUCKET` | S3 bucket name |
-| `LITESTREAM_ACCESS_KEY_ID` | S3 access key |
-| `LITESTREAM_SECRET_ACCESS_KEY` | S3 secret key |
+| `LITESTREAM_REPLICA_BUCKET` | Bucket name — its presence is what turns replication on |
+| `LITESTREAM_ACCESS_KEY_ID` | Access key |
+| `LITESTREAM_SECRET_ACCESS_KEY` | Secret key |
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -66,37 +169,68 @@ docker run -d -p 8080:8080 \
   faasbox
 ```
 
-The Litestream configuration is in `infra/production/litestream.yml`.
+The startup sequence becomes:
 
-## 3. Manual Deployment (Linux Server)
+1. `litestream restore -if-replica-exists` puts the database back before
+   anything reads it. A first boot with no replica passes silently.
+2. The superuser is created or updated, if credentials were given.
+3. Litestream starts the server as its **child** (`replicate -exec`) and
+   mirrors every write as it happens. A clean shutdown of the server triggers a
+   last sync.
+4. The server rebuilds `functions/` from the database it just restored, then
+   reinstalls the dependencies that the fresh filesystem does not have.
 
-If you prefer not to use Docker:
+Together those two facts are what make the container disposable: the database
+comes back from S3, and everything else comes back from the database. The
+configuration lives in `infra/production/litestream.yml`.
 
-1.  Install **Go 1.24+** and **Bun**.
+## 4. Manual deployment (Linux server)
+
+If you would rather not use Docker, you are providing by hand what section 1
+lists.
+
+1.  Install **Go 1.24+**, **Node.js** (to build the editor) and **Bun**. Bun
+    must be on the `PATH` of the account that will run the server.
 2.  Clone the repository.
 3.  Build the backend:
     ```bash
     cd server && go build -o ../faasbox .
     ```
-4.  Build the frontend:
+4.  Build the editor. It writes to `data/pb_public`, which is where the server
+    expects it — a sibling of the data directory:
     ```bash
-    cd ui && npm install && npm run build
+    cd ui && npm ci && npm run build
     ```
-5.  Run the server:
+5.  Run the server, choosing the port explicitly:
     ```bash
+    export FAASBOX_ENCRYPTION_KEY=your_64_char_hex_string
     ./faasbox serve --http=0.0.0.0:8080 --dir=./data/pb_data
     ```
 
-## Backup Strategy
+Put it behind a service manager — systemd or equivalent — so the process is
+restarted if it dies. Process reaping is not a concern here: `tini` is in the
+image because a container's PID 1 has that duty and the shell entrypoint would
+not do it, which is not your situation on a normal init system.
 
-Since everything is in SQLite, backups are easy:
+## Backup strategy
 
-1.  **Snapshot**: Copy the `data.db` file from `pb_data`. PocketBase supports vacuum into a backup file.
-2.  **PocketBase Backups**: You can use the built-in backup system in the Admin UI (`Settings` -> `Backups`) to create zip archives of your entire data directory.
+Everything is in SQLite, so a backup is a file:
+
+1.  **Snapshot**: copy `data.db` out of `pb_data`. PocketBase can vacuum into a
+    backup file.
+2.  **PocketBase backups**: the admin UI at `/_/` (`Settings` → `Backups`) zips
+    the whole data directory.
+3.  **Litestream**: the mirror described above is always current, which is a
+    different guarantee from a periodic dump — there is no window during which
+    the last hour is missing.
 
 ## Updating FaaSBox
 
-To update to a new version:
-1.  Pull the latest code/image.
-2.  Restart the container/service.
-3.  PocketBase will automatically handle any database migrations on startup.
+1.  Pull the latest code or image.
+2.  Rebuild and restart the container or service.
+3.  PocketBase applies its own migrations at startup. FaaSBox creates its four
+    collections if they are absent, and adds missing fields to
+    `faasbox_functions` and `faasbox_cron_jobs`. It never modifies or removes a
+    field that already exists — which is why raising `FAASBOX_MAX_LOG_OUTPUT`
+    against an existing database does not widen the stored column
+    (see [04 - Environment Variables](04-environment-variables.md)).
