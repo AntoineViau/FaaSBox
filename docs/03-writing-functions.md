@@ -47,6 +47,8 @@ const result = {
 console.log(JSON.stringify(result));
 ```
 
+You do not have to type that skeleton from memory: in the **Script** tab, type `faasbox` and the completion popup offers it as `faasbox-handler`. The individual steps are there too — `faasbox-input` to read the payload, `faasbox-output` to return a JSON result, `faasbox-log` to write to stderr, and `faasbox-env` to read a secret.
+
 ## Input and Output
 
 - **Input**: Passed as a JSON string to `stdin`. Access it via `Bun.stdin.text()`.

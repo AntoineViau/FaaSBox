@@ -69,6 +69,26 @@ If you started the server without superuser credentials, open `http://localhost:
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
 - **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
 
+#### Keyboard shortcuts
+
+These work in the **Script** and **package.json** code panels. On macOS, use `Cmd` wherever the table says `Ctrl` — except for `Ctrl+Space`, which is `Ctrl` on every platform, and for the row that names its own macOS key.
+
+| Shortcut                          | What it does                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------- |
+| `Tab` / `Shift+Tab`               | Indent or unindent the current line or selection, by two spaces.                |
+| `Tab` (completion open)           | Accept the highlighted proposal instead of indenting.                           |
+| `Ctrl+Space`                      | Open the completion popup.                                                      |
+| `Ctrl+/`                          | Comment or uncomment every line of the selection.                               |
+| `Shift+Alt+A`                     | Wrap the selection in a block comment. See the macOS note below.                |
+| `Ctrl+F`                          | Open the search panel.                                                          |
+| `Ctrl+Shift+M`                    | Open the diagnostics panel — where a `package.json` error is spelled out.       |
+| `Ctrl+S`                          | Save the function.                                                              |
+| `Ctrl+M` (`Shift+Alt+M` on macOS) | Hand `Tab` back to keyboard navigation. Press it again to get indentation back. |
+
+That last one is not a curiosity. Because `Tab` indents, it no longer moves focus out of the code panel — so if you navigate with the keyboard, `Ctrl+M` is how you leave the editor. It toggles: the setting stays until you press it again.
+
+**Block comments on macOS.** `Shift+Alt+A` does not reach the editor there. `Option` composes characters on macOS, so the browser reports `Å` instead of `A` and the binding never matches — CodeMirror skips its usual fallback for `Alt` combinations on that platform, on purpose. Use `Cmd+/` over the selected lines instead; it comments the same block, one `//` per line.
+
 ### PocketBase Admin (`/_/`) — the collections underneath
 
 `http://localhost:8080/_/` is the standard PocketBase dashboard. You no longer need it for day-to-day work; it is there when you want the raw data:
