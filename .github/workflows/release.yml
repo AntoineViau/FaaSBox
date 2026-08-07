@@ -1,0 +1,77 @@
+name: Release
+
+# Builds the production image from a `v*` tag, pushes it to GHCR, attaches a
+# signed provenance attestation and opens the matching GitHub release. It does
+# not verify anything: that stays the job of ci.yml, on master and on pull
+# requests.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write       # create the release
+  packages: write       # push to GHCR
+  id-token: write       # OIDC, so the attestation is signed without a key
+  attestations: write   # attach the provenance attestation
+
+jobs:
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    # The image builds both halves from scratch — Go and Angular — so it is
+    # slower than either CI job.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # build-push-action needs a builder, and the digest the attestation step
+      # reads is one of its outputs.
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Lowercase throughout: GHCR rejects capitals, and the owner is
+          # spelled AntoineViau.
+          images: ghcr.io/antoineviau/faasbox
+          # `latest` moves only on a plain release. A prerelease — v0.1.0-rc1,
+          # or the throwaway tag used to rehearse this workflow — publishes its
+          # own tag and leaves `latest` on the last real version.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/production/Dockerfile
+          # amd64 only, deliberately. The Dockerfile fetches a Litestream
+          # release pinned to linux-x86_64, so an arm64 image would carry a
+          # binary it cannot run and would die as soon as replication is turned
+          # on. Going multi-arch means picking that archive from
+          # TARGETPLATFORM first.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Binds the pushed digest to this commit and this workflow run. It states
+      # where the image comes from, not that what it contains is sound.
+      - uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ghcr.io/antoineviau/faasbox
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

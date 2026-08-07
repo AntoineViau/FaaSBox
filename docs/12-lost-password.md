@@ -11,7 +11,7 @@ docker run -d -p 8080:8080 \
   -e SUPERUSER_EMAIL=admin@example.com \
   -e SUPERUSER_PASSWORD=yournewpassword \
   -v faasbox-data:/app/data/pb_data \
-  faasbox
+  ghcr.io/antoineviau/faasbox:latest
 ```
 
 The entrypoint runs `faasbox superuser upsert` on every startup, so the password is updated automatically. Your data, functions, and API keys are preserved — only the password changes.

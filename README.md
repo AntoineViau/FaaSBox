@@ -20,16 +20,29 @@ Under the hood: **Go** and **PocketBase** for the server, **Bun** for function e
 ## ⚡ Quick Start
 
 ### 1. Run with Docker
-```bash
-docker build -f infra/production/Dockerfile -t faasbox .
 
+Every release is published to GitHub Container Registry, `linux/amd64` only:
+
+```bash
 docker run -d -p 8080:8080 \
   -e SUPERUSER_EMAIL=admin@example.com \
   -e SUPERUSER_PASSWORD=yourpassword \
   -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
   -e FAASBOX_MAX_CONCURRENCY=4 \
   -v faasbox-data:/app/data/pb_data \
-  faasbox
+  ghcr.io/antoineviau/faasbox:latest
+```
+
+Nothing asks you to take that image on trust. It is built by a public workflow, and the attestation it carries ties it back to the commit and the run that produced it:
+
+```bash
+gh attestation verify oci://ghcr.io/antoineviau/faasbox:latest --repo AntoineViau/FaaSBox
+```
+
+Prefer to build it yourself? The `Dockerfile` is the one the workflow uses:
+
+```bash
+docker build -f infra/production/Dockerfile -t faasbox .
 ```
 
 ### 2. Run locally (without Docker)

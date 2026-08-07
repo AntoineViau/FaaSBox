@@ -9,7 +9,8 @@ This guide will help you get your first function running on FaaSBox.
 
 ## 1. Quick Start with Docker
 
-The fastest way to start is using the official Docker image:
+The fastest way to start is the published image. There is nothing to clone and
+nothing to build:
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -17,8 +18,14 @@ docker run -d -p 8080:8080 \
   -e SUPERUSER_PASSWORD=yourpassword \
   -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
   -v faasbox-data:/app/data/pb_data \
-  faasbox
+  ghcr.io/antoineviau/faasbox:latest
 ```
+
+`latest` follows the newest release. Pin a version — `:0.1.0`, or `:0.1` to
+follow its patches — for anything you intend to keep running. The image is
+built for `linux/amd64` only; see
+[10 - Deployment](10-deployment.md#2-docker-the-simple-path) for that, and for
+how to check where the image came from before you run it.
 
 ### Environment Variables:
 

@@ -6,10 +6,10 @@ you run it on, then shows the two ways to give it that: a container, which is
 the simple path and comes ready-made, or a server you set up yourself.
 
 > **In a hurry?** Jump to [2. Docker](#2-docker-the-simple-path). It is the
-> fastest and easiest way to get an instance running — the `Dockerfile` in
-> `infra/production/` already provides everything section 1 describes, and one
-> `docker run` is the whole deployment. Section 1 is worth reading afterwards,
-> when you want to know what that container is actually doing.
+> fastest and easiest way to get an instance running — a published image
+> already provides everything section 1 describes, and one `docker run` is the
+> whole deployment. Section 1 is worth reading afterwards, when you want to
+> know what that container is actually doing.
 
 ## 1. What FaaSBox needs
 
@@ -104,22 +104,62 @@ already exists.
 
 ## 2. Docker (the simple path)
 
-Everything above is already wired in a **ready-to-use Dockerfile at
-`infra/production/Dockerfile`**. It is the recommended way to deploy, and the
-way the project is deployed itself.
+Everything above is already wired in an image published for every release. It
+is the recommended way to deploy, and the way the project is deployed itself.
 
 ```bash
-docker build -f infra/production/Dockerfile -t faasbox .
-
 docker run -d -p 8080:8080 \
   -e SUPERUSER_EMAIL=admin@example.com \
   -e SUPERUSER_PASSWORD=your_secure_password \
   -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
   -v faasbox-data:/app/data/pb_data \
-  faasbox
+  ghcr.io/antoineviau/faasbox:latest
 ```
 
-What the image already does for you:
+### Which tag to run
+
+Each release lands under three names on GitHub Container Registry:
+
+| Tag | Follows |
+|---|---|
+| `:0.1.0` | That exact release, and never moves. |
+| `:0.1` | The newest patch of that minor version. |
+| `:latest` | The newest release. Prereleases never take it. |
+
+For an instance you intend to keep running, pin `:0.1.0` or `:0.1` and update
+on purpose. `:latest` is for trying it out.
+
+### Checking where the image came from
+
+You are being asked to run a binary you did not build, so do not take it on
+trust — check it. Every published image carries a **provenance attestation**
+signed during the build, which ties it to the commit and the workflow run that
+produced it:
+
+```bash
+gh attestation verify oci://ghcr.io/antoineviau/faasbox:0.1.0 --repo AntoineViau/FaaSBox
+```
+
+A successful verification names the repository, the commit and the workflow.
+Be clear on what that buys you: it proves the image is what this repository's
+public workflow built from that commit — it says nothing about whether the code
+at that commit is any good. It answers *"is this really what I can read in the
+repository?"*, not *"is this safe?"*.
+
+### One architecture
+
+The published image is **`linux/amd64` only**. The `Dockerfile` downloads a
+Litestream release pinned to `linux-x86_64`, so an `arm64` image would carry a
+binary it cannot execute and would fail the moment replication was turned on.
+That is why the workflow does not build one — and why building the same
+`Dockerfile` on an ARM host would not help you either.
+
+On ARM — an Apple Silicon Mac, a Graviton instance — either run the image
+emulated (`docker run --platform linux/amd64 …`, at a cost in speed) or follow
+[section 4](#4-manual-deployment-linux-server) and provide the runtime
+yourself: the Go binary and Bun both build and install natively there.
+
+### What the image does for you
 
 - **Builds both halves** — the Go binary and the Angular editor — in separate
   stages, so the runtime image carries neither toolchain.
@@ -130,6 +170,17 @@ What the image already does for you:
 - **Creates the three directories** and starts the server on `0.0.0.0:8080`
   with `--dir=/app/data/pb_data --functionsDir=/app/functions`.
 - **Declares a healthcheck** that polls `/health` every 30 seconds.
+
+### Building it yourself
+
+The `Dockerfile` the release workflow uses is in the repository, so you can run
+the same build locally and skip the registry entirely:
+
+```bash
+docker build -f infra/production/Dockerfile -t faasbox .
+```
+
+Then use `faasbox` in place of the image name in the commands above.
 
 ### Persistence
 
@@ -166,7 +217,7 @@ docker run -d -p 8080:8080 \
   -e LITESTREAM_REPLICA_BUCKET=my-faasbox-backup \
   -e LITESTREAM_ACCESS_KEY_ID=your_access_key \
   -e LITESTREAM_SECRET_ACCESS_KEY=your_secret_key \
-  faasbox
+  ghcr.io/antoineviau/faasbox:latest
 ```
 
 The startup sequence becomes:
