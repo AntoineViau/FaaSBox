@@ -2,8 +2,8 @@
   "lang": "en",
   "label": "English",
   "meta": {
-    "title": "FaaSBox — a lightweight FaaS platform for TypeScript",
-    "description": "A lightweight functions-as-a-service platform for TypeScript, with zero dependencies. Call a function over HTTP or put it on a cron schedule. One Go binary, one SQLite file, nothing else to install."
+    "title": "FaaSBox — a lightweight Function-as-a-Service platform for TypeScript",
+    "description": "A lightweight Function-as-a-Service platform for TypeScript, with zero dependencies. Call a function over HTTP or put it on a cron schedule. One Go binary, one SQLite file, nothing else to install."
   },
   "nav": {
     "how": "How it works",
@@ -17,7 +17,8 @@
   },
   "hero": {
     "eyebrow": "Self-hosted · Open source",
-    "titleTop": "A lightweight FaaS platform",
+    "titleClaim": "Lambda without the complexity",
+    "titleTop": "A lightweight Function-as-a-Service platform",
     "titleBottom": "for TypeScript. Zero dependencies.",
     "lead": "Write your functions in the browser, then call them over HTTP or put them on a cron schedule. Deploys as a single Docker container: one Go binary, one SQLite file, nothing else to install.",
     "ctaPrimary": "Run it in one command",
@@ -152,7 +153,7 @@
     "ctaSecondary": "Getting started"
   },
   "footer": {
-    "tagline": "FaaSBox — self-hosted functions-as-a-service.",
+    "tagline": "FaaSBox — self-hosted Function-as-a-Service.",
     "license": "MIT licensed. © 2026 Antoine Viau.",
     "linksLabel": "Documentation",
     "links": [

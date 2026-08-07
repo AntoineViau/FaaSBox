@@ -264,6 +264,20 @@ code, pre {
   letter-spacing: -.035em;
   margin-bottom: 1.5rem;
 }
+
+/* The claim leads, the definition follows it inside the same heading — a
+   notch smaller and quieter, so the two are read in order rather than
+   competing at the same weight. Its own line-height: the heading's 1.06 is
+   cut for one display line, too tight for the two this block wraps onto. */
+.hero__title-sub {
+  display: block;
+  margin-top: .5rem;
+  font-size: .55em;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  color: var(--muted);
+}
+
 .hero .lead { max-width: 54ch; }
 
 .hero__cta { display: flex; flex-wrap: wrap; justify-content: center; gap: .75rem; margin-top: 2rem; }
