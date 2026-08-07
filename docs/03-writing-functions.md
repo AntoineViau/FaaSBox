@@ -4,7 +4,7 @@ FaaSBox uses **Bun** as its runtime, which means you can write modern TypeScript
 
 ## Naming Rules
 
-The folder name is the function name. It must follow these rules:
+A function's name is what callers put in the URL — `POST /invoke/my-function`. It therefore has to be a clean URL path segment, and must follow these rules:
 
 - **Allowed characters**: letters (`a-z`, `A-Z`), digits (`0-9`), and hyphens (`-`).
 - **Must start and end** with a letter or digit (not a hyphen).
@@ -23,10 +23,10 @@ Examples:
 
 ## Basic Structure
 
-A function is a folder containing an `index.ts`.
+A function is an `index.ts`, written in the **Script** tab of the editor.
 
 ```typescript
-// functions/my-function/index.ts
+// index.ts
 
 // 1. Read input from stdin (JSON)
 const payload = await Bun.stdin.text();
@@ -67,13 +67,11 @@ Free-text output is not affected as long as it fits under the limit: it comes ba
 
 ## Handling Dependencies
 
-To use npm packages, add a `package.json` file in your function's folder.
+To use npm packages, give your function a `package.json` — the **package.json** tab of the editor, next to the script. A function that uses dependencies is therefore two files:
 
 ```text
-functions/
-  └── use-moment/
-      ├── index.ts
-      └── package.json
+index.ts        your code
+package.json    your dependencies
 ```
 
 **package.json example:**
@@ -154,7 +152,7 @@ Both fields are also readable from the PocketBase admin UI, in the `faasbox_func
 
 ## What the Function's Folder Holds
 
-Every function has a folder of its own on the server, named after it. FaaSBox writes into it: `index.ts` and `package.json` on every save, `bun.lock` once an install has resolved your versions, and `node_modules/` once `bun install` has run.
+Every function has a folder of its own on the server. FaaSBox writes into it: `index.ts` and `package.json` on every save, `bun.lock` once an install has resolved your versions, and `node_modules/` once `bun install` has run.
 
 The **Files** tab of the editor browses that folder as it is on disk right now. That is its whole point: the other tabs show what the database holds, this one shows what the machine actually has. It is where you look when an install behaved strangely, when you want to know which version of a package really landed, or when you want to read a file out of `node_modules` without opening a shell in the container — which, on an ephemeral host, you may not be able to do at all.
 

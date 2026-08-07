@@ -43,15 +43,18 @@ The Go binary is the orchestrator. It extends PocketBase with custom routes and 
 
 ### 2. The Execution Flow
 When `/invoke/{name}` is called:
-1.  **Auth**: Middleware checks the API key.
-2.  **Lookup**: Server verifies that `functions/{name}/index.ts` exists.
-3.  **Dependencies**: `deps.go` checks whether `node_modules` matches the current spec. It normally does — the install already ran when the function was saved — so this is a fingerprint comparison and nothing more.
-4.  **Secrets**: Decrypts any secrets configured for this function.
-5.  **Spawn**: Starts `bun run functions/{name}/index.ts`.
-6.  **Pipe**: Writes the HTTP request body to the subprocess's `stdin`.
-7.  **Monitor**: Waits for the process to finish or hit a 30s timeout. On timeout, the entire process group is killed (not just the main process), preventing zombie subprocesses.
-8.  **Record**: Saves the result, duration, and logs to `faasbox_logs`.
-9.  **Respond**: Returns the JSON result to the client.
+1.  **Auth**: Middleware checks the API key, and its scope if it has one.
+2.  **Read**: Reads the request body, refusing anything past the body limit.
+3.  **Admit**: Takes a slot in the global concurrency semaphore, or answers `429` straight away rather than queueing.
+4.  **Resolve**: Reads the one function record the path segment designates — by id or by name. Everything the rest of the flow needs comes off that row: the **id**, which names the directory on disk, the **name**, and the **encrypted secrets**. An unknown segment stops here with a `404`, and nothing is recorded because nothing ran.
+5.  **Secrets**: Decrypts the `env` blob carried by the record just read. No second lookup.
+6.  **Lookup**: Verifies that the function's `index.ts` exists on disk.
+7.  **Dependencies**: `deps.go` checks whether `node_modules` matches the current spec. It normally does — the install already ran when the function was saved — so this is a fingerprint comparison and nothing more.
+8.  **Spawn**: Starts `bun run` on the function's `index.ts`, with the functions root as the working directory.
+9.  **Pipe**: Writes the HTTP request body to the subprocess's `stdin`.
+10. **Monitor**: Waits for the process to finish or hit a 30s timeout. On timeout, the entire process group is killed (not just the main process), preventing zombie subprocesses.
+11. **Record**: Saves the result, duration, and logs to `faasbox_logs`.
+12. **Respond**: Returns the JSON result to the client.
 
 ### 3. Dependency Installation
 Installing happens when a function is **saved**, in the background: the save returns straight away, and the `depsStatus` field on the record reports where the install stands.
@@ -99,15 +102,17 @@ This means you never need to manage files manually. Whether you edit code in the
 
 ```text
 /app/
-├── faasbox          # The compiled Go binary
+├── faasbox              # The compiled Go binary
 ├── functions/           # The folder containing your TypeScript code
-│   └── my-func/
+│   └── k9m2xq7p4wz1n3v/
 │       ├── index.ts
 │       └── package.json
 └── data/
     ├── pb_data/         # Persistent SQLite database & settings
     └── pb_public/       # Static files for the Editor (the Admin UI is embedded in the binary)
 ```
+
+Those directory names are **record ids**, not function names — which is why a shell in the container shows `k9m2xq7p4wz1n3v/` where you expected `my-func/`. An id never changes, so renaming a function leaves its directory and its `node_modules` exactly where they are, and no path is ever built from a string a user can edit. To find a function's directory, read its id in the `faasbox_functions` collection.
 
 ## Compilation & Build
 The Go binary is compiled with hardening flags:

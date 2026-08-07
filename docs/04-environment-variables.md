@@ -59,7 +59,7 @@ A record saved without touching `plainEnv` keeps its secrets — editing a scrip
 Secrets are injected into the function's environment and are available via `process.env`.
 
 ```typescript
-// functions/my-secure-func/index.ts
+// index.ts
 const apiKey = process.env.STRIPE_KEY;
 
 if (!apiKey) {

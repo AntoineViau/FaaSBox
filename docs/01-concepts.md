@@ -14,21 +14,16 @@ FaaSBox uses a **Stdin/Stdout** execution model. This is a classic Unix philosop
 
 This model makes functions extremely easy to test locally: `echo '{"name": "Alice"}' | bun index.ts`.
 
-## Functions as Folders
+## What a Function Is
 
-In FaaSBox, a "function" is simply a directory inside the `functions/` folder. 
-- The **directory name** is the **function name**.
-- The **entry point** is always `index.ts`.
-- An optional `package.json` defines dependencies.
+In FaaSBox, a function is a **record**, not a folder you create. You write it in the editor, and what it holds is:
 
-```text
-functions/
-  ├── my-logic/
-  │   ├── index.ts
-  │   └── package.json
-  └── simple-echo/
-      └── index.ts
-```
+- A **name**, which is what `POST /invoke/{name}` addresses.
+- An **entry point**, always `index.ts` — the code you edit in the **Script** tab.
+- An optional **`package.json`** declaring npm dependencies.
+- Any **secrets** it needs, encrypted at rest.
+
+There is nothing to upload and no directory to lay out. The server does keep those files on disk to run them, but that copy is a cache it rebuilds from the database at every boot — see [Data Persistence](#data-persistence) below, and [10 - Deployment](10-deployment.md) for what that means for the directories you mount.
 
 ## Security Model
 
