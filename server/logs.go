@@ -35,18 +35,18 @@ var maxLogRetention = envInt("FAASBOX_MAX_LOG_RETENTION", defaultMaxLogRetention
 
 // maxLoggedOutput and maxLoggedPayload bound what a log record stores.
 //
-// Raising them only takes effect on a database whose faasbox_logs collection
-// does not exist yet: ensureLogsCollection derives the declared field size
-// from these values and never revisits an existing collection. Raising the
-// output cap on an established database would let recordExecution build a
-// value the declared Max rejects, and the record would be dropped. Reset the
-// database after changing them (cf. AGENTS.md, "Stade du projet").
+// maxLoggedOutput also sets the declared size of the stdout and stderr fields,
+// and ensureLogsCollection realigns them on every start: a raised setting
+// widens the stored schema before recordExecution can build a value it would
+// reject.
 var (
 	maxLoggedOutput  = envInt("FAASBOX_MAX_LOG_OUTPUT", defaultMaxLoggedOutput)
 	maxLoggedPayload = envInt("FAASBOX_MAX_LOG_PAYLOAD", defaultMaxLoggedPayload)
 )
 
-// ensureLogsCollection creates the faasbox_logs collection if it doesn't exist.
+// ensureLogsCollection creates the faasbox_logs collection if it doesn't exist,
+// and otherwise makes the declared size of stdout and stderr follow the current
+// FAASBOX_MAX_LOG_OUTPUT setting.
 //
 // It carries both a relation and a name, and that denormalisation is deliberate.
 // The relation is what filtering and cascade deletion need — a log follows its
@@ -56,38 +56,64 @@ var (
 //
 // It requires faasbox_functions to exist already: OnServe creates it first.
 func ensureLogsCollection(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId(faasboxLogsCollection); err == nil {
-		return nil
-	}
+	// Creation and realignment read the wanted size from the same place. Two
+	// spellings of the same sum would make the comparison below miss and save
+	// the collection at every boot.
+	wantedOutputMax := maxLoggedOutput + logMarkerSlack
 
-	functions, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
 	if err != nil {
-		return fmt.Errorf("collection %s not found: %w", faasboxFunctionsCollection, err)
+		functions, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			return fmt.Errorf("collection %s not found: %w", faasboxFunctionsCollection, err)
+		}
+
+		col = core.NewBaseCollection(faasboxLogsCollection)
+
+		col.Fields.Add(
+			&core.RelationField{
+				Name:          "function",
+				MaxSelect:     1,
+				CascadeDelete: true,
+				CollectionId:  functions.Id,
+			},
+			&core.TextField{Name: "functionName", Required: true},
+			&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron"}},
+			&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
+			&core.NumberField{Name: "duration"},
+			&core.TextField{Name: "stdout", Max: wantedOutputMax},
+			&core.TextField{Name: "stderr", Max: wantedOutputMax},
+			&core.JSONField{Name: "requestPayload"},
+			&core.NumberField{Name: "exitCode"},
+			&core.BoolField{Name: "truncated"},
+			&core.AutodateField{Name: "created", OnCreate: true},
+			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
+		)
+
+		return app.Save(col)
 	}
 
-	col := core.NewBaseCollection(faasboxLogsCollection)
-
-	col.Fields.Add(
-		&core.RelationField{
-			Name:          "function",
-			MaxSelect:     1,
-			CascadeDelete: true,
-			CollectionId:  functions.Id,
-		},
-		&core.TextField{Name: "functionName", Required: true},
-		&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron"}},
-		&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
-		&core.NumberField{Name: "duration"},
-		&core.TextField{Name: "stdout", Max: maxLoggedOutput + logMarkerSlack},
-		&core.TextField{Name: "stderr", Max: maxLoggedOutput + logMarkerSlack},
-		&core.JSONField{Name: "requestPayload"},
-		&core.NumberField{Name: "exitCode"},
-		&core.BoolField{Name: "truncated"},
-		&core.AutodateField{Name: "created", OnCreate: true},
-		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
-	)
-
-	return app.Save(col)
+	// The collection exists: realign the declared size on the current setting.
+	// Left frozen at its creation-day value, a raised FAASBOX_MAX_LOG_OUTPUT
+	// would have recordExecution build a value the stored schema rejects, and
+	// the whole row would vanish while the invocation reports success.
+	//
+	// A field that is absent — or is not a TextField — yields nil, false and is
+	// skipped: it belongs to a collection this code did not create, and there is
+	// nothing here to reconcile.
+	needsSave := false
+	for _, name := range []string{"stdout", "stderr"} {
+		field, ok := col.Fields.GetByName(name).(*core.TextField)
+		if !ok || field.Max == wantedOutputMax {
+			continue
+		}
+		field.Max = wantedOutputMax
+		needsSave = true
+	}
+	if needsSave {
+		return app.Save(col)
+	}
+	return nil
 }
 
 type logEntry struct {

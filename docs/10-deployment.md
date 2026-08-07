@@ -96,9 +96,7 @@ that only supervises, will want different ones.
 
 An invalid, negative or zero value falls back to the default with a message in
 the server log; it never blocks startup. See
-[04 - Environment Variables](04-environment-variables.md) for the full list,
-and for the caveat on raising `FAASBOX_MAX_LOG_OUTPUT` against a database that
-already exists.
+[04 - Environment Variables](04-environment-variables.md) for the full list.
 
 `.env.example` at the repository root lists everything with its default.
 
@@ -280,8 +278,8 @@ Everything is in SQLite, so a backup is a file:
 1.  Pull the latest code or image.
 2.  Rebuild and restart the container or service.
 3.  PocketBase applies its own migrations at startup. FaaSBox creates its four
-    collections if they are absent, and adds missing fields to
-    `faasbox_functions` and `faasbox_cron_jobs`. It never modifies or removes a
-    field that already exists — which is why raising `FAASBOX_MAX_LOG_OUTPUT`
-    against an existing database does not widen the stored column
-    (see [04 - Environment Variables](04-environment-variables.md)).
+    collections if they are absent, adds missing fields to `faasbox_functions`
+    and `faasbox_cron_jobs`, and resizes the `stdout` and `stderr` fields of
+    `faasbox_logs` to match the current `FAASBOX_MAX_LOG_OUTPUT`
+    (see [04 - Environment Variables](04-environment-variables.md)). It never
+    removes or renames a field.
