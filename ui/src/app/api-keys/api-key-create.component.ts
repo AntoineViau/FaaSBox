@@ -8,7 +8,10 @@ import {
   signal,
 } from '@angular/core';
 
-import { FunctionScopeComponent } from '@/api-keys/function-scope.component';
+import {
+  FunctionScopeComponent,
+  type ScopeFunction,
+} from '@/api-keys/function-scope.component';
 import { ZardAlertComponent } from '@shared/components/alert';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -16,6 +19,7 @@ import { ZardInputDirective } from '@shared/components/input';
 
 export interface ApiKeyCreateRequest {
   name: string;
+  /** Function ids, or ["*"] for every function. */
   allowedFunctions: string[];
   /** RFC3339 date, or an empty string when the key never expires. */
   expiresAt: string;
@@ -102,8 +106,8 @@ export interface ApiKeyCreateRequest {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ApiKeyCreateComponent {
-  /** Function names the new key can be scoped to. */
-  readonly functions = input.required<string[]>();
+  /** Functions the new key can be scoped to. */
+  readonly functions = input.required<ScopeFunction[]>();
   /** Raw key returned by the last creation, or null when there is none to show. */
   readonly createdKey = input<string | null>(null);
 

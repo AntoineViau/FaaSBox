@@ -169,15 +169,16 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
               </z-tab>
               <z-tab label="Triggers">
                 <app-cron-editor
+                  [functionId]="fn.id"
                   [functionName]="fn.name"
                   (cronCountChange)="loadCronFunctions()"
                 />
               </z-tab>
               <z-tab label="Environment">
-                <app-env-editor [functionId]="fn.id" [functionName]="fn.name" />
+                <app-env-editor [functionId]="fn.id" />
               </z-tab>
               <z-tab label="Files">
-                <app-files-tab [functionName]="fn.name" />
+                <app-files-tab [functionId]="fn.id" [functionName]="fn.name" />
               </z-tab>
             </z-tab-group>
 
@@ -197,7 +198,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
             <!-- Logs panel -->
             @if (showLogs()) {
               <div class="h-64 shrink-0 border-t border-border">
-                <app-log-viewer [functionName]="fn.name" />
+                <app-log-viewer [functionId]="fn.id" />
               </div>
             }
           } @else {
@@ -235,6 +236,7 @@ export class EditorComponent implements OnInit {
   protected readonly showRunner = signal(true);
   protected readonly showLogs = signal(true);
   protected readonly running = signal(false);
+  /** Ids of the functions carrying at least one active trigger. */
   protected readonly cronFunctions = signal<Set<string>>(new Set());
 
   private readonly runner = viewChild(RunnerComponent);
@@ -296,13 +298,13 @@ export class EditorComponent implements OnInit {
 
   protected async loadCronFunctions(): Promise<void> {
     const res = await firstValueFrom(this.cronService.listAll());
-    const names = new Set<string>();
+    const ids = new Set<string>();
     for (const cron of res.items) {
       if (cron.active) {
-        names.add(cron.functionName);
+        ids.add(cron.function);
       }
     }
-    this.cronFunctions.set(names);
+    this.cronFunctions.set(ids);
   }
 
   @HostListener('window:keydown', ['$event'])

@@ -47,14 +47,33 @@ var (
 )
 
 // ensureLogsCollection creates the faasbox_logs collection if it doesn't exist.
+//
+// It carries both a relation and a name, and that denormalisation is deliberate.
+// The relation is what filtering and cascade deletion need — a log follows its
+// function through a rename, and goes away with it. The name is a trace: a log
+// says what the function was called *at that moment*, which is the only reading
+// that makes an old entry mean anything after a rename.
+//
+// It requires faasbox_functions to exist already: OnServe creates it first.
 func ensureLogsCollection(app core.App) error {
 	if _, err := app.FindCollectionByNameOrId(faasboxLogsCollection); err == nil {
 		return nil
 	}
 
+	functions, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	if err != nil {
+		return fmt.Errorf("collection %s not found: %w", faasboxFunctionsCollection, err)
+	}
+
 	col := core.NewBaseCollection(faasboxLogsCollection)
 
 	col.Fields.Add(
+		&core.RelationField{
+			Name:          "function",
+			MaxSelect:     1,
+			CascadeDelete: true,
+			CollectionId:  functions.Id,
+		},
 		&core.TextField{Name: "functionName", Required: true},
 		&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron"}},
 		&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
@@ -72,6 +91,9 @@ func ensureLogsCollection(app core.App) error {
 }
 
 type logEntry struct {
+	// FunctionId ties the entry to the record; FunctionName says what that
+	// record was called when the entry was written. See ensureLogsCollection.
+	FunctionId     string
 	FunctionName   string
 	Trigger        string // "http" or "cron"
 	Status         string // "success", "error", "timeout", "missed"
@@ -111,6 +133,7 @@ func recordExecution(app core.App, entry logEntry) {
 	truncated := stdoutCut || stderrCut
 
 	record := core.NewRecord(col)
+	record.Set("function", entry.FunctionId)
 	record.Set("functionName", entry.FunctionName)
 	record.Set("trigger", entry.Trigger)
 	record.Set("status", entry.Status)

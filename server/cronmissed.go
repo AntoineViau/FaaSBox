@@ -62,10 +62,20 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 		}
 
 		expr := record.GetString("schedule")
-		name := record.GetString("functionName")
-		if expr == "" || name == "" {
+		functionId := record.GetString("function")
+		if expr == "" || functionId == "" {
 			continue
 		}
+
+		// Same resolution as the scheduler: the relation says which function, the
+		// record says what it is called right now.
+		fn, err := app.FindRecordById(faasboxFunctionsCollection, functionId)
+		if err != nil {
+			app.Logger().Error("faasbox cron: cron job points at no function, skipping missed run detection",
+				"recordId", record.Id, "functionId", functionId, "error", err)
+			continue
+		}
+		name := fn.GetString("name")
 
 		schedule, err := cron.NewSchedule(expr)
 		if err != nil {
@@ -114,6 +124,7 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 			"since", from, "countedFrom", countedFrom, "capped", capped)
 
 		recordExecution(app, logEntry{
+			FunctionId:   fn.Id,
 			FunctionName: name,
 			Trigger:      "cron",
 			Status:       "missed",

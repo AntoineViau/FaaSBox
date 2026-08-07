@@ -41,14 +41,14 @@ func installMissingDeps(ctx context.Context, app core.App, functionsDir string) 
 			return
 		}
 
-		name := record.GetString("name")
-		if name == "" || !validName.MatchString(name) || len(name) > 64 {
+		if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 			continue
 		}
+		name := record.GetString("name")
 		if record.GetString("packageJson") == "" {
 			continue
 		}
-		if depsUpToDate(filepath.Join(functionsDir, name)) {
+		if depsUpToDate(filepath.Join(functionsDir, record.Id)) {
 			continue
 		}
 

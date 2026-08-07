@@ -76,6 +76,9 @@ import { ZardIconComponent } from '@shared/components/icon';
 export class CronEditorComponent {
   private readonly cronService = inject(CronService);
 
+  /** What a trigger points at, and what the panel loads and writes on. */
+  readonly functionId = input.required<string>();
+  /** Only seeds the default name of a new trigger; never written as a reference. */
   readonly functionName = input.required<string>();
   readonly cronCountChange = output<void>();
 
@@ -112,21 +115,23 @@ export class CronEditorComponent {
   protected readonly canSave = computed(() => !this.saving() && this.isDirty());
 
   constructor() {
+    // Keyed on the id: renaming the open function moves no trigger, so the panel
+    // has nothing to reload and no reason to drop what is on screen.
     effect(() => {
-      const name = this.functionName();
-      if (name) {
-        this.load(name);
+      const id = this.functionId();
+      if (id) {
+        this.load(id);
       }
     });
   }
 
-  private async load(functionName: string): Promise<void> {
+  private async load(functionId: string): Promise<void> {
     this.isLoading.set(true);
     this.errorMessage.set('');
     try {
-      const res = await firstValueFrom(this.cronService.list(functionName));
+      const res = await firstValueFrom(this.cronService.list(functionId));
       // A slow answer must not land on the function the user switched to.
-      if (this.functionName() !== functionName) return;
+      if (this.functionId() !== functionId) return;
       this.rows.set(res.items.map((item) => this.toRow(item)));
       this.snapshot();
     } catch (e) {
@@ -166,7 +171,7 @@ export class CronEditorComponent {
     // Captured once. The writes below are interleaved with awaits, and nothing
     // stops the user from picking another function in the sidebar meanwhile:
     // re-reading the input would file the rest of the rows under it.
-    const functionName = this.functionName();
+    const functionId = this.functionId();
     const rows = this.rows();
 
     // Every payload is parsed first: a malformed document stops the whole save
@@ -209,7 +214,7 @@ export class CronEditorComponent {
       const data: Partial<FaasboxCronJob> = {
         name: row.name,
         schedule: row.schedule,
-        functionName,
+        function: functionId,
         payload: payloads.get(row.key),
         active: row.active,
         maxQueue: row.maxQueue,
@@ -244,7 +249,7 @@ export class CronEditorComponent {
     // panel has moved since, load() has already filled it with another one —
     // its snapshot is not ours to overwrite, and its errors are not ours to
     // report. The writes above stand; only their echo is dropped.
-    if (this.functionName() !== functionName) return;
+    if (this.functionId() !== functionId) return;
 
     this.saved.set(saved);
 

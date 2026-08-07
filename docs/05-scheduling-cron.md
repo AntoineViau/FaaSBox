@@ -18,6 +18,13 @@ The easiest way to manage cron jobs is directly from the FaaSBox Editor:
 
 You can toggle triggers on/off, edit their schedule, payload and max queue, or delete them — all from this panel. Once saved, the scheduler picks the changes up in real time, no restart needed.
 
+### A Trigger Follows Its Function
+
+A trigger points at the function itself, not at its name. Two consequences, both of them things you no longer have to think about:
+
+- **Renaming a function leaves its triggers running.** They keep firing on schedule, and the log entries they write carry the new name. Nothing to re-point, nothing to re-save.
+- **Deleting a function deletes its triggers.** They go with it, in the same operation. There is no such thing as a leftover schedule firing into the void.
+
 ### Nothing Is Written Before You Save
 
 Adding, editing and deleting a trigger all stay on screen until you click **Save**, which writes the whole list at once. The button is disabled while nothing has changed.
@@ -53,7 +60,7 @@ You never need this — the Triggers tab covers everything below. It is here for
 3.  Create a new record with the following fields:
     - **Name**: A descriptive name (e.g., "Daily Cleanup").
     - **Schedule**: A standard cron expression (see below).
-    - **FunctionName**: The name of the function to execute.
+    - **Function**: the function to execute, picked from the `faasbox_functions` collection. It is a relation and it is required — a trigger with nothing to fire has no reason to exist.
     - **Payload**: A JSON string to be passed as input to the function.
     - **Active**: Toggle this to `true` to enable the task.
     - **MaxQueue** *(optional)*: Maximum number of simultaneous executions (waiting + running) allowed for this cron job. Same setting as **Max queue** in the Editor, described above. Set to `0` or leave empty for no limit (default).

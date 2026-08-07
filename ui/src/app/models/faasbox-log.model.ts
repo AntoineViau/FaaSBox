@@ -1,5 +1,8 @@
 export interface FaasboxLog {
   id: string;
+  /** Id of the function the entry belongs to. Filtering and grouping key. */
+  function: string;
+  /** What that function was called when the entry was written, not its current name. */
   functionName: string;
   trigger: 'http' | 'cron';
   status: 'success' | 'error' | 'timeout' | 'missed';

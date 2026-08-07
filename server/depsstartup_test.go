@@ -85,10 +85,14 @@ func TestInstallMissingDeps_PublishesInstallingFirst(t *testing.T) {
 	<-done
 }
 
-// TestInstallMissingDeps_SkipsWhatDoesNotNeedIt covers the three exits taken
+// TestInstallMissingDeps_SkipsWhatDoesNotNeedIt covers the two exits taken
 // before anything is engaged. The one that matters on every warm restart is the
 // fingerprint: without it each function would be published installing then ready
 // for nothing, flickering in an open editor.
+//
+// A third exit used to sit here, on the shape of the name. It is gone with the
+// reason for it: the name no longer builds a path, so a function called anything
+// at all installs like every other one.
 func TestInstallMissingDeps_SkipsWhatDoesNotNeedIt(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -102,10 +106,8 @@ func TestInstallMissingDeps_SkipsWhatDoesNotNeedIt(t *testing.T) {
 	const pkg = `{"dependencies":{"left-pad":"1.0.0"}}`
 	upToDate := saveTestFunction(t, app, functionsDir, "warm", "console.log('hi')", pkg)
 	noDeps := saveTestFunction(t, app, functionsDir, "bare", "console.log('hi')", "")
-	// A name that never built a directory: the pass must not go looking for one.
-	badName := saveTestFunction(t, app, functionsDir, "not a name", "console.log('hi')", pkg)
 
-	warmDir := filepath.Join(functionsDir, "warm")
+	warmDir := filepath.Join(functionsDir, upToDate.Id)
 	hash, err := depsHash(warmDir)
 	if err != nil {
 		t.Fatal(err)
@@ -120,7 +122,6 @@ func TestInstallMissingDeps_SkipsWhatDoesNotNeedIt(t *testing.T) {
 	}{
 		{"up to date", upToDate},
 		{"without package.json", noDeps},
-		{"with an invalid name", badName},
 	} {
 		if got := depsStatusOf(t, app, tc.record.Id); got != "" {
 			t.Errorf("%s: depsStatus = %q, want the record left alone", tc.label, got)

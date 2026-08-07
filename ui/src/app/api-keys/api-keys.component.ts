@@ -4,7 +4,12 @@ import { firstValueFrom } from 'rxjs';
 
 import { ApiKeyCreateComponent, type ApiKeyCreateRequest } from '@/api-keys/api-key-create.component';
 import { ApiKeysService } from '@/api-keys/api-keys.service';
-import { FunctionScopeComponent, isUnrestrictedScope } from '@/api-keys/function-scope.component';
+import {
+  describeScopeEntry,
+  FunctionScopeComponent,
+  isUnrestrictedScope,
+  type ScopeFunction,
+} from '@/api-keys/function-scope.component';
 import { FunctionsService } from '@/editor/functions.service';
 import type { FaasboxApiKey } from '@/models/faasbox-api-key.model';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
@@ -61,7 +66,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
         }
 
         <app-api-key-create
-          [functions]="functionNames()"
+          [functions]="functions()"
           [createdKey]="createdKey()"
           (create)="onCreate($event)"
           (dismiss)="createdKey.set(null)"
@@ -92,7 +97,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
                     <div class="mt-2">
                       <app-function-scope
                         [groupName]="'scope-' + key.id"
-                        [functions]="functionNames()"
+                        [functions]="functions()"
                         [value]="key.allowedFunctions"
                         (valueChange)="onScopeChange(key, $event)"
                       />
@@ -134,14 +139,15 @@ export class ApiKeysComponent implements OnInit {
   private readonly functionsService = inject(FunctionsService);
 
   protected readonly keys = signal<ApiKeyRow[]>([]);
-  protected readonly functionNames = signal<string[]>([]);
+  /** Every function the scopes can point at: recorded by id, shown by name. */
+  protected readonly functions = signal<ScopeFunction[]>([]);
   protected readonly createdKey = signal<string | null>(null);
   protected readonly isLoading = signal(false);
   protected readonly errorMessage = signal('');
 
   ngOnInit(): void {
     this.loadKeys();
-    this.loadFunctionNames();
+    this.loadFunctions();
   }
 
   private async loadKeys(): Promise<void> {
@@ -156,11 +162,11 @@ export class ApiKeysComponent implements OnInit {
     }
   }
 
-  private async loadFunctionNames(): Promise<void> {
+  private async loadFunctions(): Promise<void> {
     // The editor runs as superuser, so the scope picker always sees every
     // function, whatever scope the keys themselves declare.
     const res = await firstValueFrom(this.functionsService.list());
-    this.functionNames.set(res.items.map((fn) => fn.name));
+    this.functions.set(res.items.map((fn) => ({ id: fn.id, name: fn.name })));
   }
 
   protected async onCreate(request: ApiKeyCreateRequest): Promise<void> {
@@ -210,8 +216,10 @@ export class ApiKeysComponent implements OnInit {
     }
   }
 
+  /** The stored scope is a list of ids; the summary line reads in names. */
   protected describeScope(allowed: string[]): string {
-    return isUnrestrictedScope(allowed) ? 'all functions' : allowed.join(', ');
+    if (isUnrestrictedScope(allowed)) return 'all functions';
+    return allowed.map((id) => describeScopeEntry(this.functions(), id)).join(', ');
   }
 
   /** PocketBase dates read "YYYY-MM-DD HH:MM:SS.sssZ"; the day is what matters here. */

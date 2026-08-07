@@ -19,14 +19,31 @@ import (
 // Pre-signed superuser JWT from PocketBase's default test data.
 const superuserToken = "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY"
 
-// setupFaaSCollections creates the faasbox_api_keys and faasbox_cron_jobs collections on the test app.
+// setupFaaSCollections creates the four FaaSBox collections on the test app, in
+// the order OnServe uses: functions first, since the cron jobs and the logs
+// carry a relation to it.
 func setupFaaSCollections(t testing.TB, app core.App) {
 	t.Helper()
+	if err := ensureFunctionsCollection(app); err != nil {
+		t.Fatalf("failed to create functions collection: %v", err)
+	}
 	if err := ensureAPIKeysCollection(app); err != nil {
 		t.Fatalf("failed to create API keys collection: %v", err)
 	}
 	if err := ensureCronJobsCollection(app); err != nil {
 		t.Fatalf("failed to create cron jobs collection: %v", err)
+	}
+	if err := ensureLogsCollection(app); err != nil {
+		t.Fatalf("failed to create logs collection: %v", err)
+	}
+}
+
+// setupLogsCollection creates faasbox_logs together with the functions
+// collection its relation points at, in the order OnServe uses.
+func setupLogsCollection(t testing.TB, app core.App) {
+	t.Helper()
+	if err := ensureFunctionsCollection(app); err != nil {
+		t.Fatalf("failed to create functions collection: %v", err)
 	}
 	if err := ensureLogsCollection(app); err != nil {
 		t.Fatalf("failed to create logs collection: %v", err)
@@ -64,8 +81,32 @@ func createTestAPIKeyWithOptions(t testing.TB, app core.App, name string, allowe
 	return rawKey
 }
 
-// setupTestFunctionsDir creates a temp directory with function stubs.
-// funcs maps function name to index.ts content (empty string = minimal stub).
+// defaultTestScript is the echo stub the fixtures fall back on.
+const defaultTestScript = `const payload = await Bun.stdin.text(); console.log(JSON.stringify({echo: payload}));`
+
+// setupTestFunctions saves one record per entry and mirrors each to disk, under
+// its id, the way a save does. It is what any test going through the routes
+// needs: they resolve the record before they ever build a path.
+//
+// funcs maps the function name to its index.ts (empty string = the echo stub).
+// It returns the functions directory and the records, keyed by name.
+func setupTestFunctions(t testing.TB, app core.App, funcs map[string]string) (string, map[string]*core.Record) {
+	t.Helper()
+	dir := t.TempDir()
+	records := make(map[string]*core.Record, len(funcs))
+	for name, content := range funcs {
+		if content == "" {
+			content = defaultTestScript
+		}
+		records[name] = saveTestFunction(t, app, dir, name, content, "")
+	}
+	return dir, records
+}
+
+// setupTestFunctionsDir creates a temp directory with function stubs, keyed by
+// the directory name — which is the *id* on disk. It serves the engine-level
+// tests, which call executeFunction directly and know nothing of the database.
+// Anything going through a route wants setupTestFunctions instead.
 func setupTestFunctionsDir(t testing.TB, funcs map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -84,10 +125,23 @@ func setupTestFunctionsDir(t testing.TB, funcs map[string]string) string {
 	return dir
 }
 
+// testFunctionId is the id the API scenarios point their triggers at. It has to
+// be fixed: a scenario's request body is written before the app exists, so the
+// relation it names cannot be a generated value.
+const testFunctionId = "echofunction001"
+
 // saveTestFunction stores a faasbox_functions record and mirrors it to disk,
 // reproducing what the create/update hooks do before the dependency install is
 // scheduled. An empty pkg means the function declares no dependencies.
 func saveTestFunction(t testing.TB, app core.App, functionsDir, name, script, pkg string) *core.Record {
+	t.Helper()
+	return saveTestFunctionAs(t, app, functionsDir, "", name, script, pkg)
+}
+
+// saveTestFunctionAs is saveTestFunction with the record id chosen up front. An
+// empty id lets PocketBase generate one, which is what every test wants except
+// those whose fixture has to name the id in advance.
+func saveTestFunctionAs(t testing.TB, app core.App, functionsDir, id, name, script, pkg string) *core.Record {
 	t.Helper()
 	if err := ensureFunctionsCollection(app); err != nil {
 		t.Fatalf("failed to create functions collection: %v", err)
@@ -100,6 +154,9 @@ func saveTestFunction(t testing.TB, app core.App, functionsDir, name, script, pk
 	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
 	if err != nil {
 		record = core.NewRecord(col)
+		if id != "" {
+			record.Id = id
+		}
 		record.Set("name", name)
 	}
 	record.Set("script", script)
@@ -235,8 +292,9 @@ func setCronJobDate(t testing.TB, app core.App, recordId, column string, at time
 	}
 }
 
-// createTestCronJob saves a cron job record and returns it.
-func createTestCronJob(t testing.TB, app core.App, name, schedule, functionName string, active bool) *core.Record {
+// createTestCronJob saves a cron job record pointing at a function id, and
+// returns it.
+func createTestCronJob(t testing.TB, app core.App, name, schedule, functionId string, active bool) *core.Record {
 	t.Helper()
 	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
 	if err != nil {
@@ -246,7 +304,7 @@ func createTestCronJob(t testing.TB, app core.App, name, schedule, functionName 
 	record := core.NewRecord(col)
 	record.Set("name", name)
 	record.Set("schedule", schedule)
-	record.Set("functionName", functionName)
+	record.Set("function", functionId)
 	record.Set("active", active)
 	if err := app.Save(record); err != nil {
 		t.Fatalf("failed to create cron record %q: %v", name, err)

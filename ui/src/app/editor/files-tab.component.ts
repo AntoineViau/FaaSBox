@@ -123,6 +123,9 @@ import { ZardIconComponent } from '@shared/components/icon';
 export class FilesTabComponent {
   private readonly filesService = inject(FilesService);
 
+  /** What every request is keyed on: the directory on disk is named by it. */
+  readonly functionId = input.required<string>();
+  /** Shown in the breadcrumb, never sent: the header must read like the sidebar. */
   readonly functionName = input.required<string>();
 
   /** Current directory, relative to the function root. Empty means the root. */
@@ -142,12 +145,14 @@ export class FilesTabComponent {
 
   constructor() {
     // Only depends on the function: navigating writes the signals below and
-    // loads on its own, so re-running here would fight the navigation.
+    // loads on its own, so re-running here would fight the navigation. Keyed on
+    // the id, so renaming the open function does not send the tab back to its
+    // root for a change that moved nothing.
     effect(() => {
-      const name = this.functionName();
+      const id = this.functionId();
       this.path.set('');
       this.clearPane();
-      this.loadLevel(name, '');
+      this.loadLevel(id, '');
     });
   }
 
@@ -166,7 +171,7 @@ export class FilesTabComponent {
   }
 
   protected reload(): void {
-    this.loadLevel(this.functionName(), this.path());
+    this.loadLevel(this.functionId(), this.path());
   }
 
   /** Joins a name onto the current directory. Public to the template only. */
@@ -177,7 +182,7 @@ export class FilesTabComponent {
   private enter(path: string): void {
     this.path.set(path);
     this.clearPane();
-    this.loadLevel(this.functionName(), path);
+    this.loadLevel(this.functionId(), path);
   }
 
   private clearPane(): void {
@@ -186,16 +191,16 @@ export class FilesTabComponent {
     this.notice.set('');
   }
 
-  private async loadLevel(name: string, path: string): Promise<void> {
+  private async loadLevel(functionId: string, path: string): Promise<void> {
     this.loading.set(true);
     this.listError.set('');
     try {
-      const listing = await firstValueFrom(this.filesService.list(name, path));
+      const listing = await firstValueFrom(this.filesService.list(functionId, path));
       // A slow answer must not land on the function the user switched to.
-      if (this.functionName() !== name || this.path() !== path) return;
+      if (this.functionId() !== functionId || this.path() !== path) return;
       this.entries.set(listing.entries);
     } catch (e) {
-      if (this.functionName() !== name || this.path() !== path) return;
+      if (this.functionId() !== functionId || this.path() !== path) return;
       this.entries.set([]);
       this.listError.set(readServerMessage(e, 'Could not read this directory.'));
     } finally {
@@ -209,7 +214,7 @@ export class FilesTabComponent {
     this.notice.set('');
     this.fileLoading.set(true);
     try {
-      const file = await firstValueFrom(this.filesService.read(this.functionName(), path));
+      const file = await firstValueFrom(this.filesService.read(this.functionId(), path));
       if (this.selected() !== path) return;
       this.content.set(file.content);
     } catch (e) {
@@ -224,7 +229,7 @@ export class FilesTabComponent {
     const path = this.selected();
     if (!path) return;
     try {
-      const blob = await firstValueFrom(this.filesService.download(this.functionName(), path));
+      const blob = await firstValueFrom(this.filesService.download(this.functionId(), path));
       // The route is superuser-only, so the file is fetched with the session
       // token and handed to the browser from memory; a plain link would go out
       // unauthenticated and come back a 401.

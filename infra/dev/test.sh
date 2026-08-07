@@ -44,11 +44,19 @@ KEY=$(curl -sf -X POST "$BASE_URL/api/faasbox/keys" \
 echo -e "  ${GREEN}PASS${NC} Key: ${KEY:0:20}..."
 
 echo -e "${CYAN}3. Create scoped API key (echo only)${NC}"
+# A scope lists function ids, not names: a name stops designating anything the
+# day the function is renamed. GET /functions is where the id comes from.
+ECHO_ID=$(curl -sf "$BASE_URL/functions" -H "X-API-Key: $KEY" \
+  | jq -r '.functions[] | select(.name == "echo") | .id')
+if [ -z "$ECHO_ID" ] || [ "$ECHO_ID" = "null" ]; then
+  echo -e "  ${RED}FAIL${NC} No function named \"echo\" to scope the key on"
+  exit 1
+fi
 SCOPED_KEY=$(curl -sf -X POST "$BASE_URL/api/faasbox/keys" \
   -H "Authorization: $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"test-scoped","allowedFunctions":["echo"]}' | jq -r '.key')
-echo -e "  ${GREEN}PASS${NC} Key: ${SCOPED_KEY:0:20}..."
+  -d "{\"name\":\"test-scoped\",\"allowedFunctions\":[\"$ECHO_ID\"]}" | jq -r '.key')
+echo -e "  ${GREEN}PASS${NC} Key: ${SCOPED_KEY:0:20}... (scoped on $ECHO_ID)"
 
 # --- Health check ---
 
@@ -101,6 +109,11 @@ STATUS=$(curl -so /dev/null -w '%{http_code}' -X POST "$BASE_URL/invoke/time-now
   -H "X-API-Key: $SCOPED_KEY" -d '{}')
 check "returns 403" "403" "$STATUS"
 
+echo -e "${CYAN}10b. Invoke echo by its id (expect 200)${NC}"
+STATUS=$(curl -so /dev/null -w '%{http_code}' -X POST "$BASE_URL/invoke/$ECHO_ID" \
+  -H "X-API-Key: $SCOPED_KEY" -d '{}')
+check "the id reaches the same function" "200" "$STATUS"
+
 # --- Dependencies (ticket 04) ---
 
 echo ""
@@ -123,8 +136,10 @@ check "stderr captured separately" "true" "$(echo "$STDERR_RESULT" | jq 'has("st
 check "stderr contains debug log" "true" "$(echo "$STDERR_RESULT" | jq '.stderr | contains("debug:")')"
 
 echo -e "${CYAN}13. Test list functions${NC}"
-COUNT=$(curl -sf "$BASE_URL/functions" -H "X-API-Key: $KEY" | jq -r '.count')
-check "5 functions found" "5" "$COUNT"
+LISTING=$(curl -sf "$BASE_URL/functions" -H "X-API-Key: $KEY")
+check "5 functions found" "5" "$(echo "$LISTING" | jq -r '.count')"
+check "every entry carries an id" "true" \
+  "$(echo "$LISTING" | jq '[.functions[] | has("id") and (.id | length > 0)] | all')"
 
 # --- Summary ---
 

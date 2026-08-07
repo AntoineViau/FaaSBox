@@ -12,8 +12,13 @@ export class LogsService {
   private readonly http = inject(HttpClient);
   private readonly realtime = inject(RealtimeService);
 
-  list(functionName: string) {
-    const filter = encodeURIComponent(`functionName='${functionName}'`);
+  /**
+   * Entries of one function, keyed on its id. Filtering on the stored name would
+   * split the history in two at the first rename: an entry keeps the name the
+   * function had when it ran, on purpose.
+   */
+  list(functionId: string) {
+    const filter = encodeURIComponent(`function='${functionId}'`);
     return this.http.get<FaasboxLogListResponse>(
       `${BASE_URL}?filter=${filter}&sort=-created&perPage=50`,
     );
@@ -25,7 +30,7 @@ export class LogsService {
    * the list has to be re-read rather than continued.
    */
   subscribe(
-    functionName: string,
+    functionId: string,
     onNewLog: (log: FaasboxLog) => void,
     onReconnect?: () => void,
   ): () => void {
@@ -33,7 +38,7 @@ export class LogsService {
       topics: [LOGS_TOPIC],
       onMessage: (_topic, data) => {
         const event = data as { action?: string; record?: FaasboxLog };
-        if (event.action === 'create' && event.record?.functionName === functionName) {
+        if (event.action === 'create' && event.record?.function === functionId) {
           onNewLog(event.record);
         }
       },

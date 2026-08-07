@@ -105,8 +105,10 @@ func TestBroadcastDepsState_SkipsClientsWithoutTheSubscription(t *testing.T) {
 	}
 }
 
-// TestSetDepsState_BroadcastsEveryTransition ties the two writers to the
-// channel: whichever one publishes the state, a subscriber must learn about it.
+// TestSetDepsState_BroadcastsEveryTransition ties the writer to the channel: a
+// published state must reach a subscriber, and it must carry the record id —
+// which is the only thing a client is allowed to match on, since it is the only
+// thing that survives a rename.
 func TestSetDepsState_BroadcastsEveryTransition(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -119,8 +121,6 @@ func TestSetDepsState_BroadcastsEveryTransition(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{}}`)
 	client := registerRealtimeClient(t, app, true, depsRealtimeTopic)
 
-	// By id, the way the save path writes it. The message must carry that id:
-	// it is what lets a client keep following a function across a rename.
 	setDepsState(app, record.Id, "broadcast-deps", depsStatusInstalling, "")
 	state, ok := receivedState(t, client)
 	if !ok {
@@ -136,21 +136,18 @@ func TestSetDepsState_BroadcastsEveryTransition(t *testing.T) {
 		t.Errorf("functionName = %q, want it carried alongside the id", state.FunctionName)
 	}
 
-	// By name, the way the invocation path writes it. The id stays empty on
-	// purpose — resolving it would cost a read per state write — so the client
-	// falls back to matching on the name, which must therefore still be there.
-	setDepsStateByName(app, "broadcast-deps", depsStatusError, "install output")
+	// The terminal state goes out the same way, from whichever path produced it:
+	// the invocation path holds the record too, so no message ever leaves without
+	// an id for the client to match on.
+	setDepsState(app, record.Id, "broadcast-deps", depsStatusError, "install output")
 	state, ok = receivedState(t, client)
 	if !ok {
-		t.Fatal("no message after a write by name")
+		t.Fatal("no message after the terminal write")
 	}
 	if state.DepsStatus != depsStatusError || state.DepsError != "install output" {
 		t.Errorf("message = %+v, want the error status and its message", state)
 	}
-	if state.FunctionId != "" {
-		t.Errorf("functionId = %q, want it empty on the invocation path", state.FunctionId)
-	}
-	if state.FunctionName != "broadcast-deps" {
-		t.Errorf("functionName = %q, want the name to carry the message", state.FunctionName)
+	if state.FunctionId != record.Id {
+		t.Errorf("functionId = %q, want the record id %q", state.FunctionId, record.Id)
 	}
 }

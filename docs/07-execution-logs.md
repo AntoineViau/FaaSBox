@@ -8,7 +8,8 @@ Each log entry contains comprehensive details about a function run:
 
 | Field | Description |
 |-------|-------------|
-| `functionName` | The name of the function that was called. |
+| `function` | The function the entry belongs to. Filter and group on this one. |
+| `functionName` | The name that function carried **when it ran** — see below. |
 | `trigger` | `http` (API call) or `cron` (scheduled task). |
 | `status` | `success`, `error`, `timeout`, or `missed`. |
 | `duration` | Total execution time in milliseconds. |
@@ -17,6 +18,18 @@ Each log entry contains comprehensive details about a function run:
 | `requestPayload` | The JSON input sent to the function, truncated to 4 KB. |
 | `exitCode` | The process exit code (0 usually means success). |
 | `truncated` | `true` when at least one of the three fields above was cut to fit this record. |
+
+### Two Ways to Say "Which Function"
+
+A log entry carries both, and they answer different questions.
+
+`function` points at the function itself. It is what the history is keyed on, so **renaming a function keeps its whole past attached to it** — the Logs panel and any filter you write keep returning everything, from before and after the change.
+
+`functionName` is a **trace**: the name in force at the moment the entry was written. It is deliberately not refreshed. A log is an account of something that happened, and reading `stderr: cannot reach the API` next to a name the function no longer answers to is the truth about that run, not a stale value.
+
+So an old entry can show a name the editor no longer uses. That is the intended reading. Filter on `function` when you want a history; read `functionName` when you want to know what things were called at the time.
+
+**Deleting a function deletes its logs**, in the same operation. Nothing survives it. If you need the history of a function you are about to remove, export it first — the retention purge is not the only thing that can take it away.
 
 ## Output Truncation
 
@@ -57,7 +70,7 @@ The log viewer displays the 50 most recent entries for the current function. Use
 You can also view logs in the **PocketBase Admin UI** under the `faasbox_logs` collection.
 - **Filter** by `status="error"` to find failing functions.
 - **Filter** by `truncated=true` to find the runs whose stored output is incomplete — a function that shows up there constantly is one to make quieter.
-- **Search** by `functionName` to see the history of a specific function.
+- **Filter** by `function` to see the full history of one function, renames included. Filtering by `functionName` splits it at every rename.
 - **Sort** by `created` to see the most recent runs.
 
 ## Debugging with Stderr

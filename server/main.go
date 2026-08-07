@@ -47,7 +47,12 @@ func main() {
 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
-			// Ensure collections exist
+			// Ensure collections exist. Functions first: the cron jobs and the
+			// logs carry a relation to it, and a relation field needs the id of
+			// the collection it points at.
+			if err := ensureFunctionsCollection(e.App); err != nil {
+				return fmt.Errorf("failed to create %s collection: %w", faasboxFunctionsCollection, err)
+			}
 			if err := ensureAPIKeysCollection(e.App); err != nil {
 				return fmt.Errorf("failed to create %s collection: %w", faasboxAPIKeysCollection, err)
 			}
@@ -56,9 +61,6 @@ func main() {
 			}
 			if err := ensureLogsCollection(e.App); err != nil {
 				return fmt.Errorf("failed to create %s collection: %w", faasboxLogsCollection, err)
-			}
-			if err := ensureFunctionsCollection(e.App); err != nil {
-				return fmt.Errorf("failed to create %s collection: %w", faasboxFunctionsCollection, err)
 			}
 
 			// Restore functions from DB to disk (recreate files after container restart)

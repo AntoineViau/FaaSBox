@@ -29,7 +29,8 @@ func TestPublishDepsOutcome_InterruptionLeavesTheInstallOwed(t *testing.T) {
 	setDepsState(app, record.Id, "hung-up", depsStatusInstalling, "")
 
 	cause := fmt.Errorf("%w: resolving dependencies", errDepsInterrupted)
-	publishDepsOutcome(app, functionsDir, "hung-up", execResult{Err: &errDepsFailed{Cause: cause}})
+	publishDepsOutcome(app, functionsDir, record.Id, "hung-up",
+		execResult{Err: &errDepsFailed{Cause: cause}})
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -43,11 +44,11 @@ func TestPublishDepsOutcome_InterruptionLeavesTheInstallOwed(t *testing.T) {
 	}
 }
 
-// writeLockfile puts a bun.lock in a function's directory, as a successful install
-// would have.
-func writeLockfile(t testing.TB, functionsDir, name, content string) {
+// writeLockfile puts a bun.lock in a function's directory — named by its id, as
+// on disk — the way a successful install would have.
+func writeLockfile(t testing.TB, functionsDir, functionId, content string) {
 	t.Helper()
-	dir := filepath.Join(functionsDir, name)
+	dir := filepath.Join(functionsDir, functionId)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +69,9 @@ func TestPersistLockfile_StoresWhatTheInstallResolved(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 
 	const lock = `{"lockfileVersion":1,"packages":{"dayjs":["dayjs@1.11.13"]}}`
-	writeLockfile(t, functionsDir, "pinned", lock)
+	writeLockfile(t, functionsDir, record.Id, lock)
 
-	persistLockfile(app, functionsDir, "pinned")
+	persistLockfile(app, functionsDir, record.Id)
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -92,9 +93,9 @@ func TestPersistLockfile_NoLockfileLeavesTheRecordAlone(t *testing.T) {
 
 	functionsDir := t.TempDir()
 	record := saveTestFunction(t, app, functionsDir, "unpinned", "console.log('hi')", "")
-	setBunLock(app, "unpinned", "sentinel")
+	setBunLock(app, record.Id, "sentinel")
 
-	persistLockfile(app, functionsDir, "unpinned") // no bun.lock on disk
+	persistLockfile(app, functionsDir, record.Id) // no bun.lock on disk
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -121,11 +122,11 @@ func TestPersistLockfile_TooLargeKeepsThePreviousValue(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 
 	const previous = `{"lockfileVersion":1}`
-	setBunLock(app, "huge-lock", previous)
+	setBunLock(app, record.Id, previous)
 
-	writeLockfile(t, functionsDir, "huge-lock", strings.Repeat("x", maxLockfileSize+1))
+	writeLockfile(t, functionsDir, record.Id, strings.Repeat("x", maxLockfileSize+1))
 
-	persistLockfile(app, functionsDir, "huge-lock")
+	persistLockfile(app, functionsDir, record.Id)
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -165,7 +166,7 @@ func TestSetBunLock_WritesOnlyItsOwnColumn(t *testing.T) {
 		"console.log('original')", `{"dependencies":{}}`)
 	setDepsState(app, record.Id, "targeted", depsStatusInstalling, "sentinel")
 
-	setBunLock(app, "targeted", "resolved")
+	setBunLock(app, record.Id, "resolved")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -220,7 +221,7 @@ func TestScheduleDepsInstall_FailedInstallLeavesTheLockfileAlone(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
 
 	const previous = `{"lockfileVersion":1}`
-	setBunLock(app, "failed-install", previous)
+	setBunLock(app, record.Id, previous)
 
 	scheduleDepsInstall(context.Background(), app, record, functionsDir)
 	stored := waitDepsStatus(t, app, record.Id, depsStatusError)

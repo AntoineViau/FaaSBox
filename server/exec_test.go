@@ -82,7 +82,7 @@ func TestExecuteFunction_NominalRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := executeFunction(context.Background(), dir, "echo", `{"ping":1}`, nil)
+	res := executeFunction(context.Background(), dir, "echo", "echo", `{"ping":1}`, nil)
 
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil (stderr: %s)", res.Err, res.Stderr)
@@ -127,15 +127,10 @@ func TestExecuteFunction_NominalRun(t *testing.T) {
 	}
 }
 
-func TestExecuteFunction_RejectsInvalidName(t *testing.T) {
-	runs := fakeBun(t, "exit 0")
-
-	// The over-long name gets a real script on disk: the rejection must happen on
-	// the name alone, before the path is ever built or looked up.
-	tooLong := strings.Repeat("a", 65)
-	dir := setupTestFunctionsDir(t, map[string]string{tooLong: "", "ok": ""})
-
-	cases := map[string]string{
+// badIdentifiers are the spellings an id may not take. The id is the only one
+// checked, being the only one that builds a path.
+func badIdentifiers(tooLong string) map[string]string {
+	return map[string]string{
 		"empty":        "",
 		"traversal":    "../etc",
 		"nested path":  "a/b",
@@ -144,26 +139,62 @@ func TestExecuteFunction_RejectsInvalidName(t *testing.T) {
 		"space":        "my func",
 		"too long":     tooLong,
 	}
+}
 
-	for label, name := range cases {
+func TestExecuteFunction_RejectsInvalidId(t *testing.T) {
+	runs := fakeBun(t, "exit 0")
+
+	// The over-long id gets a real script on disk: the rejection must happen on
+	// the identifier alone, before the path is ever built or looked up.
+	tooLong := strings.Repeat("a", 65)
+	dir := setupTestFunctionsDir(t, map[string]string{tooLong: "", "ok": ""})
+
+	for label, id := range badIdentifiers(tooLong) {
 		t.Run(label, func(t *testing.T) {
-			res := executeFunction(context.Background(), dir, name, "", nil)
+			res := executeFunction(context.Background(), dir, id, "ok", "", nil)
 
 			if res.Err == nil {
-				t.Fatalf("Err = nil for name %q, want a rejection", name)
+				t.Fatalf("Err = nil for id %q, want a rejection", id)
 			}
-			if !strings.Contains(res.Err.Error(), "invalid function name") {
-				t.Errorf("Err = %v, want an invalid name error", res.Err)
+			if !strings.Contains(res.Err.Error(), "invalid function id") {
+				t.Errorf("Err = %v, want an invalid id error", res.Err)
 			}
 			var notFound *errNotFound
 			if errors.As(res.Err, &notFound) {
-				t.Errorf("Err = %v, want a name rejection rather than a missing script", res.Err)
+				t.Errorf("Err = %v, want an id rejection rather than a missing script", res.Err)
 			}
 		})
 	}
 
 	if got := runs(); got != 0 {
-		t.Errorf("the stub bun ran %d times, want 0 for names that must never reach it", got)
+		t.Errorf("the stub bun ran %d times, want 0 for ids that must never reach it", got)
+	}
+}
+
+// TestExecuteFunction_RunsWhateverTheNameLooksLike is the counterpart: a name the
+// engine cannot use to build anything must not be able to stop an execution. The
+// engine used to reject it, which made a function the editor had accepted
+// uninvocable by *any* spelling — a 500 recorded in faasbox_logs on every call,
+// once a minute for anything carrying a trigger.
+func TestExecuteFunction_RunsWhateverTheNameLooksLike(t *testing.T) {
+	runs := fakeBun(t, "exit 0")
+
+	tooLong := strings.Repeat("a", 65)
+	dir := setupTestFunctionsDir(t, map[string]string{"ok": ""})
+
+	names := badIdentifiers(tooLong)
+	for label, name := range names {
+		t.Run(label, func(t *testing.T) {
+			res := executeFunction(context.Background(), dir, "ok", name, "", nil)
+
+			if res.Err != nil {
+				t.Fatalf("Err = %v for name %q, want the run to go through on the id alone", res.Err, name)
+			}
+		})
+	}
+
+	if got := runs(); got != len(names) {
+		t.Errorf("the stub bun ran %d times, want %d — one per name", got, len(names))
 	}
 }
 
@@ -171,7 +202,7 @@ func TestExecuteFunction_MissingScript(t *testing.T) {
 	runs := fakeBun(t, "exit 0")
 	dir := setupTestFunctionsDir(t, map[string]string{"present": ""})
 
-	res := executeFunction(context.Background(), dir, "absent", "", nil)
+	res := executeFunction(context.Background(), dir, "absent", "absent", "", nil)
 
 	var notFound *errNotFound
 	if !errors.As(res.Err, &notFound) {
@@ -193,7 +224,7 @@ func TestExecuteFunction_DependencyFailurePreventsTheRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	res := executeFunction(context.Background(), dir, "needs-deps", "needs-deps", "", nil)
 
 	var depsFailed *errDepsFailed
 	if !errors.As(res.Err, &depsFailed) {
@@ -220,7 +251,7 @@ func TestExecuteFunction_DependencyFailureIsTimed(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	res := executeFunction(context.Background(), dir, "needs-deps", "needs-deps", "", nil)
 
 	var depsFailed *errDepsFailed
 	if !errors.As(res.Err, &depsFailed) {
@@ -253,7 +284,7 @@ func TestExecuteFunction_WaitsOutAnInstallInFlight(t *testing.T) {
 	}()
 	time.Sleep(100 * time.Millisecond) // let the background install take the lock
 
-	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	res := executeFunction(context.Background(), dir, "needs-deps", "needs-deps", "", nil)
 	<-installing
 
 	if res.Err != nil {
@@ -288,7 +319,7 @@ func TestExecuteFunction_DependencyDurationCoversTheLockWait(t *testing.T) {
 	}()
 	time.Sleep(50 * time.Millisecond)
 
-	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	res := executeFunction(context.Background(), dir, "needs-deps", "needs-deps", "", nil)
 	<-installing
 
 	var depsFailed *errDepsFailed
@@ -313,7 +344,7 @@ func TestExecuteFunction_ReportsWhatTheSafetyNetDid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res := executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	res := executeFunction(context.Background(), dir, "needs-deps", "needs-deps", "", nil)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want a clean run", res.Err)
 	}
@@ -322,7 +353,7 @@ func TestExecuteFunction_ReportsWhatTheSafetyNetDid(t *testing.T) {
 	}
 
 	// Second invocation: the hash check holds, and the caller must write nothing.
-	res = executeFunction(context.Background(), dir, "needs-deps", "", nil)
+	res = executeFunction(context.Background(), dir, "needs-deps", "needs-deps", "", nil)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want a clean run", res.Err)
 	}
@@ -335,7 +366,7 @@ func TestExecuteFunction_ReservedEnvironment(t *testing.T) {
 	readEnv := fakeBunEnvDump(t)
 	dir := setupTestFunctionsDir(t, map[string]string{"envdump": ""})
 
-	res := executeFunction(context.Background(), dir, "envdump", "", nil)
+	res := executeFunction(context.Background(), dir, "envdump", "envdump", "", nil)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil (stderr: %s)", res.Err, res.Stderr)
 	}
@@ -368,7 +399,7 @@ func TestExecuteFunction_SecretCannotOverrideReservedVariable(t *testing.T) {
 		"KEPT=yes",
 	}
 
-	res := executeFunction(context.Background(), dir, "hijack", "", extraEnv)
+	res := executeFunction(context.Background(), dir, "hijack", "hijack", "", extraEnv)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil (stderr: %s)", res.Err, res.Stderr)
 	}
@@ -402,7 +433,7 @@ func TestExecuteFunction_PassesOrdinarySecrets(t *testing.T) {
 		"API_URL=https://example.test/?a=b&c=d",
 	}
 
-	res := executeFunction(context.Background(), dir, "secrets", "", extraEnv)
+	res := executeFunction(context.Background(), dir, "secrets", "secrets", "", extraEnv)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil (stderr: %s)", res.Err, res.Stderr)
 	}
@@ -425,7 +456,7 @@ func TestExecuteFunction_ParentEnvironmentDoesNotLeak(t *testing.T) {
 	readEnv := fakeBunEnvDump(t)
 	dir := setupTestFunctionsDir(t, map[string]string{"nosy": ""})
 
-	res := executeFunction(context.Background(), dir, "nosy", "", nil)
+	res := executeFunction(context.Background(), dir, "nosy", "nosy", "", nil)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil (stderr: %s)", res.Err, res.Stderr)
 	}
@@ -455,7 +486,7 @@ func TestExecuteFunction_TimeoutIsReportedAsSuch(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	res := executeFunction(ctx, dir, "slow", "", nil)
+	res := executeFunction(ctx, dir, "slow", "slow", "", nil)
 	elapsed := time.Since(start)
 
 	if res.Err == nil {
@@ -473,7 +504,7 @@ func TestExecuteFunction_ExitCodeIsReported(t *testing.T) {
 	fakeBun(t, "echo out\necho boom >&2\nexit 3")
 	dir := setupTestFunctionsDir(t, map[string]string{"failing": ""})
 
-	res := executeFunction(context.Background(), dir, "failing", "", nil)
+	res := executeFunction(context.Background(), dir, "failing", "failing", "", nil)
 
 	if res.Err == nil {
 		t.Fatal("Err = nil, want a non-zero exit reported as a failure")
@@ -513,7 +544,7 @@ func TestExecuteFunction_CancellationKillsTheProcessGroup(t *testing.T) {
 	defer cancel()
 
 	done := make(chan execResult, 1)
-	go func() { done <- executeFunction(ctx, dir, "spawner", "", nil) }()
+	go func() { done <- executeFunction(ctx, dir, "spawner", "spawner", "", nil) }()
 
 	waitFileGrows(t, witness, 2*int64(len("tick\n")))
 	cancel()
@@ -549,7 +580,7 @@ func TestExecuteFunction_StdoutTruncationIsFlagged(t *testing.T) {
 	fakeBun(t, "head -c 200 /dev/zero | tr \"\\0\" \"x\"\nexit 0")
 	dir := setupTestFunctionsDir(t, map[string]string{"verbose": ""})
 
-	res := executeFunction(context.Background(), dir, "verbose", "", nil)
+	res := executeFunction(context.Background(), dir, "verbose", "verbose", "", nil)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil (stderr: %s)", res.Err, res.Stderr)
 	}
@@ -573,7 +604,7 @@ func TestExecuteFunction_StderrTruncationLeavesStdoutIntact(t *testing.T) {
 	fakeBun(t, "echo ok\nhead -c 200 /dev/zero | tr \"\\0\" \"x\" >&2\nexit 0")
 	dir := setupTestFunctionsDir(t, map[string]string{"noisy": ""})
 
-	res := executeFunction(context.Background(), dir, "noisy", "", nil)
+	res := executeFunction(context.Background(), dir, "noisy", "noisy", "", nil)
 	if res.Err != nil {
 		t.Fatalf("Err = %v, want nil", res.Err)
 	}

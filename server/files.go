@@ -45,7 +45,7 @@ type fileEntry struct {
 }
 
 // resolveFunctionPath returns the absolute path rel designates inside the
-// directory of the named function, or an error when it lands outside.
+// directory of a function, named by its id, or an error when it lands outside.
 //
 // EvalSymlinks is not a matter of form. Functions execute arbitrary code with
 // their own directory in reach, so one can drop a link to /etc/passwd or to
@@ -66,12 +66,12 @@ type fileEntry struct {
 //
 // A path that does not exist surfaces as fs.ErrNotExist so callers can tell a
 // missing entry from a refusal.
-func resolveFunctionPath(functionsDir, name, rel string) (string, error) {
-	if !validName.MatchString(name) || len(name) > 64 {
-		return "", fmt.Errorf("invalid function name: %s", name)
+func resolveFunctionPath(functionsDir, functionId, rel string) (string, error) {
+	if !validName.MatchString(functionId) || len(functionId) > 64 {
+		return "", fmt.Errorf("invalid function id: %s", functionId)
 	}
 
-	absDir, err := filepath.Abs(filepath.Join(functionsDir, name))
+	absDir, err := filepath.Abs(filepath.Join(functionsDir, functionId))
 	if err != nil {
 		return "", err
 	}
@@ -107,15 +107,17 @@ func withinRoot(root, path string) bool {
 //
 // A function that was never invoked and declares no dependencies may have no
 // directory on disk yet. That is not an error: the root listing comes back
-// empty, which is the truth, and the tab says so.
+// empty, which is the truth, and the tab says so. A segment designating no
+// function at all is a 404 — the two used to be indistinguishable, since the
+// path was built from the segment without asking the database anything.
 func functionFilesHandler(e *core.RequestEvent, functionsDir string) error {
-	name := e.Request.PathValue("name")
-	if !validName.MatchString(name) || len(name) > 64 {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
+	fn, err := functionFromPath(e)
+	if err != nil {
+		return answerFunctionLookup(e, err)
 	}
 
 	rel := e.Request.URL.Query().Get("path")
-	dir, err := resolveFunctionPath(functionsDir, name, rel)
+	dir, err := resolveFunctionPath(functionsDir, fn.Id, rel)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			if rel == "" {
@@ -201,9 +203,9 @@ func readLevel(dir string) ([]fileEntry, error) {
 // the client offers the download alone. With the flag, http.ServeContent hands
 // the file back as an attachment, uncapped.
 func functionFileContentHandler(e *core.RequestEvent, functionsDir string) error {
-	name := e.Request.PathValue("name")
-	if !validName.MatchString(name) || len(name) > 64 {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
+	fn, err := functionFromPath(e)
+	if err != nil {
+		return answerFunctionLookup(e, err)
 	}
 
 	rel := e.Request.URL.Query().Get("path")
@@ -211,7 +213,7 @@ func functionFileContentHandler(e *core.RequestEvent, functionsDir string) error
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "missing path"})
 	}
 
-	path, err := resolveFunctionPath(functionsDir, name, rel)
+	path, err := resolveFunctionPath(functionsDir, fn.Id, rel)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return e.JSON(http.StatusNotFound, map[string]string{"error": "not found"})

@@ -3,7 +3,12 @@ export interface FaasboxApiKey {
   name: string;
   /** First 16 characters of the raw key. The key itself is never returned. */
   keyPrefix: string;
-  /** Authorized function names. Empty or ["*"] means every function. */
+  /**
+   * Authorized function ids. Empty or ["*"] means every function.
+   *
+   * Ids and not names: a scope written in names stopped designating anything
+   * the day a function was renamed.
+   */
   allowedFunctions: string[] | null;
   active: boolean;
   /** Empty string means the key never expires. */

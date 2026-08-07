@@ -11,11 +11,11 @@ X-API-Key: fbx_your_key_here
 ---
 
 ## 1. Invoke a Function
-**Endpoint**: `POST /invoke/{name}`
+**Endpoint**: `POST /invoke/{idOrName}`
 
-Executes the function with the given name.
+Executes the function the path segment designates.
 
-- **Path Parameter**: `{name}` - The name of the function (folder name).
+- **Path Parameter**: `{idOrName}` - The **id** or the **name** of the function. Both work; see [Which one the segment designates](#which-one-the-segment-designates) below.
 - **Request Body**: Any valid JSON (max 1 MB by default, `FAASBOX_MAX_BODY_SIZE`).
 - **Response**:
     ```json
@@ -27,10 +27,11 @@ Executes the function with the given name.
       "truncated": false
     }
     ```
+    `function` is always the **name**, whichever spelling reached it.
 - **Error Codes**:
-    - `400`: Invalid function name.
+    - `400`: The path segment is not a usable identifier.
     - `401`: Missing or invalid API key.
-    - `403`: Key disabled, expired, not authorized for this function, or carrying a scope that cannot be read (see [06 - API Keys & Security](06-api-keys-and-security.md)).
+    - `403`: Key disabled, expired, not authorized for this function, or carrying a scope that cannot be read (see [06 - API Keys & Security](06-api-keys-and-security.md)). A key with a restricted scope also gets `403` — never `404` — for a segment designating nothing, so it cannot use the two codes to map the instance.
     - `404`: Function not found.
     - `413`: Request body too large (default 1 MB, configurable via `FAASBOX_MAX_BODY_SIZE`).
     - `429`: Too many concurrent invocations (default 4, configurable via `FAASBOX_MAX_CONCURRENCY`).
@@ -63,6 +64,20 @@ Executes the function with the given name.
 
     Truncation alone is not an error: an output cut below the limit that still parses as JSON, or that was free text to begin with, is returned normally with `"truncated": true`. The refusal only fires when the truncation is what broke the parsing.
 
+### Which one the segment designates
+
+A function has two handles: a **name**, which you choose and can change, and an **id**, which FaaSBox assigns once and never changes. The URL accepts either.
+
+The rule is a single one, and it applies everywhere a function is named in a URL:
+
+> The segment is looked up **as an id first**. If no function carries that id — and in every other case — it is looked up **as a name**. **The id wins**: if one function carries the id `X` and another is named `X`, `/invoke/X` reaches the first.
+
+That last sentence is not hypothetical. A name may contain the same characters as an id, so nothing about the look of a segment settles which one it is. The consequence is worth knowing: naming a function after another function's id makes it unreachable by name. Ids are 15 lowercase letters and digits, so this only happens on purpose.
+
+**Which one should you use?** The id, for anything that has to keep working. A name is a label meant to be changed, and changing it breaks every caller wired on it — FaaSBox will not redirect the old URL to the new one. The id is stable for the life of the function, and it is what `GET /functions` hands you.
+
+The same rule governs `GET /api/faasbox/functions/{idOrName}/env`, `.../files` and `.../files/content`.
+
 ---
 
 ## 2. List Functions
@@ -74,8 +89,8 @@ Returns the functions **the presented key is allowed to invoke** — not necessa
     ```json
     {
       "functions": [
-        { "name": "echo", "invoke": "/invoke/echo" },
-        { "name": "ping-site", "invoke": "/invoke/ping-site" }
+        { "id": "k9m2xq7p4wz1n3v", "name": "echo", "invoke": "/invoke/echo" },
+        { "id": "b3t8rl5c2fh6d9s", "name": "ping-site", "invoke": "/invoke/ping-site" }
       ],
       "count": 2
     }
@@ -84,9 +99,13 @@ Returns the functions **the presented key is allowed to invoke** — not necessa
     - `401`: Missing or invalid API key.
     - `403`: Key disabled, expired, or carrying a scope that cannot be read.
 
-The same `allowedFunctions` scope that governs `/invoke/{name}` governs this listing (see [06 - API Keys & Security](06-api-keys-and-security.md)). A key restricted to `["echo"]` sees `echo` and nothing else; `count` reflects the filtered list, not the real total. A superuser session sees everything.
+`id` is the stable handle: it is what a key's scope lists, and it survives a rename. `invoke` is spelled with the name because that is the readable form — `/invoke/{id}` reaches the same function and is what to wire an integration on.
 
-A key whose scope names only functions that do not exist gets `{"functions": [], "count": 0}` — an empty list, not an error.
+The same `allowedFunctions` scope that governs `/invoke/{idOrName}` governs this listing (see [06 - API Keys & Security](06-api-keys-and-security.md)). A key restricted to one function sees that one and nothing else; `count` reflects the filtered list, not the real total. A superuser session sees everything.
+
+What decides whether a function is listed is the presence of its `index.ts` **on disk**, not the state of its record. A function saved with an empty script has never had one written, so it is not invocable and does not show up. Clearing the script of a function that already had one is a different matter: the file stays where it is, so the function keeps being listed and keeps running its previous code until you save a new script over it.
+
+A key whose scope names only functions that no longer exist gets `{"functions": [], "count": 0}` — an empty list, not an error.
 
 ---
 
@@ -101,10 +120,11 @@ Creates a new hashed API key.
     ```json
     {
       "name": "My App",
-      "allowedFunctions": ["echo", "time-now"],
+      "allowedFunctions": ["k9m2xq7p4wz1n3v", "b3t8rl5c2fh6d9s"],
       "expiresAt": "2027-01-01 00:00:00.000Z"
     }
     ```
+- `allowedFunctions` is a list of function **ids** — the values `GET /functions` returns. Names are not accepted: a scope written in names would stop granting anything the day a function was renamed. Leave it out for a key with no restriction, or pass `["*"]` for an explicit wildcard.
 - `expiresAt` is optional and RFC3339. Leave it out and the key never expires.
 - **Response**:
     ```json
@@ -121,7 +141,7 @@ Creates a new hashed API key.
 ---
 
 ## 4. Read a Function's Environment
-**Endpoint**: `GET /api/faasbox/functions/{name}/env`
+**Endpoint**: `GET /api/faasbox/functions/{idOrName}/env`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
 
@@ -135,13 +155,13 @@ Returns the decrypted environment variables of a function, as a flat JSON object
     }
     ```
 - A function with no secrets returns `{}`.
-- **404** if no function carries that name, **400** if the name is not a valid function name.
+- **404** if the segment designates no function, **400** if it is not a usable identifier.
 - **500** if the stored value cannot be decrypted — for instance after `FAASBOX_ENCRYPTION_KEY` changed. An empty object is never returned in that case, since it would read as "no variable" and invite an overwrite.
 
 ---
 
 ## 5. List a Function's Files
-**Endpoint**: `GET /api/faasbox/functions/{name}/files`
+**Endpoint**: `GET /api/faasbox/functions/{idOrName}/files`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
 
@@ -161,14 +181,14 @@ Returns **one level** of the function's folder on disk. Never recursive.
     ```
 - Directories come first, then files, each group sorted by name.
 - `size` is carried by files, `entries` by directories. `entries` counts one level of that directory — it is there to tell you what you are about to walk into, and it is never a recursive total.
-- A function whose folder does not exist yet — never invoked, no dependencies — returns `{"path": "", "entries": []}` at the root. Nothing there is not an error.
-- **400** if the name is not a valid function name, if `path` leaves the function folder, or if `path` names a file rather than a directory.
-- **404** if `path` names something that does not exist.
+- A function whose folder does not exist yet — never invoked, no dependencies — returns `{"path": "", "entries": []}` at the root. Nothing there is not an error; a function that does not exist at all is a `404`.
+- **400** if the segment is not a usable identifier, if `path` leaves the function folder, or if `path` names a file rather than a directory.
+- **404** if the segment designates no function, or if `path` names something that does not exist.
 
 ---
 
 ## 6. Read a Function's File
-**Endpoint**: `GET /api/faasbox/functions/{name}/files/content`
+**Endpoint**: `GET /api/faasbox/functions/{idOrName}/files/content`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
 
@@ -186,8 +206,8 @@ Two modes on one endpoint, chosen by `download`.
 - **415** if the file is binary, with `{"error": "binary"}`. The verdict is a NUL byte in the first 8 KB, never the extension — `node_modules` is full of files without one.
 - **413** if the file is larger than `FAASBOX_MAX_FILE_VIEW` (default 256 KB), with `{"error": "too large", "size": 4194304}`.
 - **Response** with `download=1`: the file itself, served as `Content-Disposition: attachment`, **with no size limit**. The limit is on what is rendered inline, not on what can be fetched — displaying 40 MB in a browser is a defect, downloading them is not. `415` and `413` do not apply here.
-- **400** if the name is not a valid function name, if `path` is missing, if `path` names a directory, or if `path` leaves the function folder.
-- **404** if `path` names something that does not exist.
+- **400** if the segment is not a usable identifier, if `path` is missing, if `path` names a directory, or if `path` leaves the function folder.
+- **404** if the segment designates no function, or if `path` names something that does not exist.
 
 A `path` that leaves the folder is a `400`, never a `404`: the refusal is a rule, not an absence, and answering "not found" would suggest that a different spelling might work.
 

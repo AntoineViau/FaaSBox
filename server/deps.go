@@ -244,10 +244,10 @@ func ensureDeps(ctx context.Context, funcDir string) (installed bool, err error)
 // instead of leaving it orphaned. The install runs detached from the save, which
 // returns immediately.
 func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record, functionsDir string) {
-	name := record.GetString("name")
-	if name == "" || !validName.MatchString(name) || len(name) > 64 {
+	if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 		return
 	}
+	name := record.GetString("name")
 
 	if record.GetString("packageJson") == "" {
 		// No dependency spec: the state goes back to empty. Clearing unconditionally
@@ -271,6 +271,9 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 // pass reads to stop where it stands. A save has a single function to install and
 // ignores it.
 //
+// recordId names the directory as well as the row; name is carried for the log
+// lines and the broadcast alone.
+//
 // The install budget is not set here: ensureDeps owns it (see depsTimeout).
 func runDepsInstall(ctx context.Context, app core.App, functionsDir, recordId, name string) (interrupted bool) {
 	setDepsState(app, recordId, name, depsStatusInstalling, "")
@@ -279,7 +282,7 @@ func runDepsInstall(ctx context.Context, app core.App, functionsDir, recordId, n
 	// save that only touched the script costs nothing here. Whether it installed is
 	// of no use: this path publishes the state either way, having claimed it from
 	// installing onwards.
-	if _, err := ensureDeps(ctx, filepath.Join(functionsDir, name)); err != nil {
+	if _, err := ensureDeps(ctx, filepath.Join(functionsDir, recordId)); err != nil {
 		// A shutdown interrupted the install, it did not fail: the work is still
 		// owed, and the safety net on the invocation path will do it. Reporting
 		// an error here would outlive the restart and accuse the dependencies.
@@ -300,7 +303,7 @@ func runDepsInstall(ctx context.Context, app core.App, functionsDir, recordId, n
 
 	// Before the state, so that a record announcing "ready" already carries
 	// what the install resolved.
-	persistLockfile(app, functionsDir, name)
+	persistLockfile(app, functionsDir, recordId)
 	setDepsState(app, recordId, name, depsStatusReady, "")
 	return false
 }

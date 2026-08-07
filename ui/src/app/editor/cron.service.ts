@@ -9,9 +9,10 @@ const BASE_URL = '/api/collections/faasbox_cron_jobs/records';
 export class CronService {
   private readonly http = inject(HttpClient);
 
-  list(functionName: string) {
+  /** Triggers of one function, keyed on its id: the relation, not the label. */
+  list(functionId: string) {
     return this.http.get<FaasboxCronJobListResponse>(BASE_URL, {
-      params: { filter: `functionName='${functionName}'`, sort: '-name', perPage: '200' },
+      params: { filter: `function='${functionId}'`, sort: '-name', perPage: '200' },
     });
   }
 

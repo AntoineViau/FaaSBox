@@ -100,20 +100,19 @@ func decryptFunctionEnv(record *core.Record) (map[string]string, error) {
 	return envMap, nil
 }
 
-// lookupFunctionEnv retrieves and decrypts the environment variables for a function.
-// Returns a slice of "KEY=value" strings ready for cmd.Env, or nil if no env is configured.
-// A failure is logged and degrades to nil: an invocation runs without secrets
-// rather than not running at all.
-func lookupFunctionEnv(app core.App, name string) []string {
-	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
-	if err != nil {
-		return nil
-	}
-
+// functionEnv decrypts the environment variables of an already loaded function
+// record. Returns a slice of "KEY=value" strings ready for cmd.Env, or nil if no
+// env is configured. A failure is logged and degrades to nil: an invocation runs
+// without secrets rather than not running at all.
+//
+// It takes the record rather than a name because both invocation paths now hold
+// one: they resolved it to learn which directory to run. Looking it up again
+// would be a second read for a row already in hand.
+func functionEnv(app core.App, record *core.Record) []string {
 	envMap, err := decryptFunctionEnv(record)
 	if err != nil {
 		app.Logger().Error("faasbox: failed to read env for function",
-			"function", name, "error", err)
+			"function", record.GetString("name"), "error", err)
 		return nil
 	}
 
@@ -130,20 +129,15 @@ func lookupFunctionEnv(app core.App, name string) []string {
 // it — saving rewrites the whole object, so editing blind silently drops the
 // variables the user could not see.
 func functionEnvHandler(e *core.RequestEvent) error {
-	name := e.Request.PathValue("name")
-	if !validName.MatchString(name) || len(name) > 64 {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
-	}
-
-	record, err := e.App.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
+	record, err := functionFromPath(e)
 	if err != nil {
-		return e.JSON(http.StatusNotFound, map[string]string{"error": "Function not found"})
+		return answerFunctionLookup(e, err)
 	}
 
 	envMap, err := decryptFunctionEnv(record)
 	if err != nil {
 		e.App.Logger().Error("faasbox: failed to read env for function",
-			"function", name, "error", err)
+			"function", record.GetString("name"), "error", err)
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to read the environment of this function",
 		})
@@ -197,13 +191,17 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 // syncRecordToDisk writes a single faasbox_functions record to disk.
 // Creates the function directory and writes index.ts (and package.json and
 // bun.lock if non-empty).
+//
+// The directory is named by the record id, never by the name: a rename then
+// moves nothing, loses no node_modules and triggers no reinstall. The name is
+// kept for the error messages, which are read by a human.
 func syncRecordToDisk(record *core.Record, functionsDir string) error {
-	name := record.GetString("name")
-	if name == "" || !validName.MatchString(name) || len(name) > 64 {
+	if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 		return nil
 	}
+	name := record.GetString("name")
 
-	dir := filepath.Join(functionsDir, name)
+	dir := filepath.Join(functionsDir, record.Id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
@@ -272,11 +270,10 @@ func writeIfChanged(path string, data []byte, perm os.FileMode) error {
 
 // deleteRecordFromDisk removes the function directory from disk.
 func deleteRecordFromDisk(record *core.Record, functionsDir string) error {
-	name := record.GetString("name")
-	if name == "" || !validName.MatchString(name) || len(name) > 64 {
+	if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 		return nil
 	}
-	dir := filepath.Join(functionsDir, name)
+	dir := filepath.Join(functionsDir, record.Id)
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("failed to remove directory %s: %w", dir, err)
 	}

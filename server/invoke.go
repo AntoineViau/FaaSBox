@@ -32,11 +32,14 @@ var sem = make(chan struct{}, maxConcurrency)
 // validName whitelists function names: alphanumeric + hyphens, no path traversal.
 var validName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$`)
 
+// invokeHandler answers POST /invoke/{idOrName}. The path segment designates the
+// function by either spelling; resolveFunction carries the rule and the tie-break.
 func invokeHandler(e *core.RequestEvent, functionsDir string) error {
-	name := e.Request.PathValue("name")
+	segment := e.Request.PathValue("name")
 
-	// 1. Validate function name early for a proper 400
-	if !validName.MatchString(name) || len(name) > 64 {
+	// 1. Validate the segment early for a proper 400. Unchanged: the same rule
+	// covers a name and an id, ids being 15 lowercase alphanumerics.
+	if !validName.MatchString(segment) || len(segment) > 64 {
 		return e.JSON(http.StatusBadRequest, map[string]string{
 			"error": "invalid function name",
 		})
@@ -68,13 +71,29 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 		})
 	}
 
-	// 4. Execute function
-	env := lookupFunctionEnv(e.App, name)
-	res := executeFunction(e.Request.Context(), functionsDir, name, string(body), env)
+	// 4. Resolve the function, then execute it. The record replaces the lookup
+	// lookupFunctionEnv used to make: the secrets come off the row already read.
+	fn, err := resolveFunction(e.App, segment)
+	if err != nil {
+		var notFound *errNotFound
+		if !errors.As(err, &notFound) {
+			e.App.Logger().Error("faasbox http: failed to resolve the function",
+				"segment", segment, "error", err)
+			return e.JSON(http.StatusInternalServerError, map[string]string{
+				"error": "failed to resolve the function",
+			})
+		}
+		// Nothing ran, so nothing is recorded — same rule as an absent index.ts.
+		return e.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
+	}
+	name := fn.GetString("name")
+
+	env := functionEnv(e.App, fn)
+	res := executeFunction(e.Request.Context(), functionsDir, fn.Id, name, string(body), env)
 
 	// 5. Publish what the dependency safety net did, if anything. The cron path
 	// does the same right after its own call — the two must not diverge.
-	publishDepsOutcome(e.App, functionsDir, name, res)
+	publishDepsOutcome(e.App, functionsDir, fn.Id, name, res)
 
 	// 6. Decode stdout before logging: an execution whose output did not survive
 	// the capture cap is a failure, and the log has to say so.
@@ -97,6 +116,7 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 			status = "error"
 		}
 		recordExecution(e.App, logEntry{
+			FunctionId:     fn.Id,
 			FunctionName:   name,
 			Trigger:        "http",
 			Status:         status,
@@ -194,6 +214,11 @@ func parseFunctionOutput(stdout string, truncated bool) (result any, usable bool
 // key may invoke, and nothing more. The route carries no {name} path value, so
 // the middleware cannot apply the scope for it — enforcing it here is what
 // keeps a restricted key from learning the full inventory of the instance.
+//
+// The inventory comes from the database. The directory can no longer supply it:
+// its entries are named by id, and a listing has to answer with the name. The
+// disk still has the last word on whether a function is invocable — an index.ts
+// under the id directory — which is what the listing has always meant.
 func listFunctionsHandler(e *core.RequestEvent, functionsDir string) error {
 	allowed, err := requestKeyScope(e)
 	if err != nil {
@@ -203,25 +228,29 @@ func listFunctionsHandler(e *core.RequestEvent, functionsDir string) error {
 		})
 	}
 
-	entries, err := os.ReadDir(functionsDir)
+	records, err := e.App.FindAllRecords(faasboxFunctionsCollection)
 	if err != nil {
+		e.App.Logger().Error("faasbox: failed to list the functions", "error", err)
 		return e.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "cannot read functions directory",
+			"error": "cannot read the functions",
 		})
 	}
 
-	functions := make([]map[string]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() || !scopeAllows(allowed, entry.Name()) {
+	functions := make([]map[string]string, 0, len(records))
+	for _, record := range records {
+		if !scopeAllows(allowed, record.Id) {
 			continue
 		}
-		indexPath := filepath.Join(functionsDir, entry.Name(), "index.ts")
-		if _, err := os.Stat(indexPath); err == nil {
-			functions = append(functions, map[string]string{
-				"name":   entry.Name(),
-				"invoke": fmt.Sprintf("/invoke/%s", entry.Name()),
-			})
+		indexPath := filepath.Join(functionsDir, record.Id, "index.ts")
+		if _, err := os.Stat(indexPath); err != nil {
+			continue
 		}
+		name := record.GetString("name")
+		functions = append(functions, map[string]string{
+			"id":     record.Id,
+			"name":   name,
+			"invoke": fmt.Sprintf("/invoke/%s", name),
+		})
 	}
 
 	return e.JSON(http.StatusOK, map[string]any{

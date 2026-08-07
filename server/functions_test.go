@@ -10,6 +10,19 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 )
 
+// newDetachedFunction builds an unsaved record carrying the id we want, which is
+// what names its directory now. A record straight out of core.NewRecord has no id
+// until it is saved, and these tests are about the path, not the persistence.
+func newDetachedFunction(id, name string) *core.Record {
+	record := core.NewRecord(core.NewBaseCollection(faasboxFunctionsCollection))
+	record.Id = id
+	record.Set("name", name)
+	return record
+}
+
+// TestSyncRecordToDisk_Validation guards the identifier that builds the path.
+// That is the id now, not the name: a name is free to be anything the editor
+// accepts, and it no longer reaches the filesystem.
 func TestSyncRecordToDisk_Validation(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "faasbox-test-*")
 	if err != nil {
@@ -19,22 +32,21 @@ func TestSyncRecordToDisk_Validation(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		functionName  string
+		functionId    string
 		shouldSucceed bool
 	}{
-		{"Valid name", "my-function", true},
-		{"Valid name with numbers", "func123", true},
-		{"Empty name", "", false},
+		{"Generated id", "k9m2xq7p4wz1n3v", true},
+		{"Id-shaped value", "func123", true},
+		{"Empty id", "", false},
 		{"Path traversal", "../traversal", false},
 		{"Absolute path (if regex allowed it)", "/etc/passwd", false},
 		{"Invalid characters", "func$name", false},
-		{"Too long", "this-is-a-very-long-function-name-that-exceeds-sixty-four-characters-limit", false},
+		{"Too long", "this-is-a-very-long-identifier-that-exceeds-sixty-four-characters-limit", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			record := core.NewRecord(core.NewBaseCollection(faasboxFunctionsCollection))
-			record.Set("name", tt.functionName)
+			record := newDetachedFunction(tt.functionId, "my-function")
 			record.Set("script", "console.log('test')")
 
 			err := syncRecordToDisk(record, tmpDir)
@@ -42,15 +54,20 @@ func TestSyncRecordToDisk_Validation(t *testing.T) {
 				t.Errorf("syncRecordToDisk() unexpected error: %v", err)
 			}
 
-			dir := filepath.Join(tmpDir, tt.functionName)
+			dir := filepath.Join(tmpDir, tt.functionId)
 			_, err = os.Stat(dir)
 			exists := !os.IsNotExist(err)
 
 			if tt.shouldSucceed && !exists {
 				t.Errorf("expected directory %s to exist, but it doesn't", dir)
 			}
-			if !tt.shouldSucceed && exists && tt.functionName != "" {
+			if !tt.shouldSucceed && exists && tt.functionId != "" {
 				t.Errorf("expected directory %s NOT to exist, but it does", dir)
+			}
+
+			// The name never names anything on disk any more.
+			if _, err := os.Stat(filepath.Join(tmpDir, "my-function")); err == nil {
+				t.Error("a directory was created under the function name, not its id")
 			}
 		})
 	}
@@ -70,11 +87,11 @@ func TestDeleteRecordFromDisk_Validation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		functionName string
-		setupDir     bool
+		name       string
+		functionId string
+		setupDir   bool
 	}{
-		{"Valid name", "to-delete", true},
+		{"Generated id", "k9m2xq7p4wz1n3v", true},
 		{"Path traversal attempt", "..", false}, // In theory would delete tmpDir itself if not validated
 		{"Path traversal attempt with child", "../other", false},
 	}
@@ -82,13 +99,12 @@ func TestDeleteRecordFromDisk_Validation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.setupDir {
-				if err := os.MkdirAll(filepath.Join(tmpDir, tt.functionName), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Join(tmpDir, tt.functionId), 0755); err != nil {
 					t.Fatal(err)
 				}
 			}
 
-			record := core.NewRecord(core.NewBaseCollection(faasboxFunctionsCollection))
-			record.Set("name", tt.functionName)
+			record := newDetachedFunction(tt.functionId, "to-delete")
 
 			err := deleteRecordFromDisk(record, tmpDir)
 			if err != nil {
@@ -101,11 +117,58 @@ func TestDeleteRecordFromDisk_Validation(t *testing.T) {
 			}
 
 			if tt.setupDir {
-				if _, err := os.Stat(filepath.Join(tmpDir, tt.functionName)); !os.IsNotExist(err) {
-					t.Errorf("expected directory %s to be deleted, but it still exists", tt.functionName)
+				if _, err := os.Stat(filepath.Join(tmpDir, tt.functionId)); !os.IsNotExist(err) {
+					t.Errorf("expected directory %s to be deleted, but it still exists", tt.functionId)
 				}
 			}
 		})
+	}
+}
+
+// TestSyncRecordToDisk_RenameLeavesTheDirectoryAlone is the whole point of naming
+// the directory by the id: a rename moves nothing, so node_modules survives it and
+// no reinstall is triggered.
+func TestSyncRecordToDisk_RenameLeavesTheDirectoryAlone(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	record := saveTestFunction(t, app, functionsDir, "before",
+		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
+
+	// Stand in for what an install left behind, plus its fingerprint.
+	modules := filepath.Join(functionsDir, record.Id, "node_modules")
+	if err := os.MkdirAll(modules, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := depsHash(filepath.Join(functionsDir, record.Id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modules, depsHashFile), []byte(hash), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	record.Set("name", "after")
+	if err := app.Save(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(modules); err != nil {
+		t.Errorf("node_modules did not survive the rename: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(functionsDir, "after")); err == nil {
+		t.Error("a second directory appeared under the new name")
+	}
+	// The install fingerprint still matches, so nothing would be reinstalled.
+	if !depsUpToDate(filepath.Join(functionsDir, record.Id)) {
+		t.Error("the rename invalidated the dependency fingerprint")
 	}
 }
 
@@ -154,10 +217,10 @@ func TestSyncFunctionRecord_ReadsDirAtEventTime(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := os.Stat(filepath.Join(chosenDir, "probe", "index.ts")); err != nil {
+	if _, err := os.Stat(filepath.Join(chosenDir, record.Id, "index.ts")); err != nil {
 		t.Errorf("function not written to the chosen directory: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(defaultDir, "probe")); err == nil {
+	if _, err := os.Stat(filepath.Join(defaultDir, record.Id)); err == nil {
 		t.Error("function written to the default directory: the hook froze the flag's default")
 	}
 }
@@ -230,8 +293,7 @@ func TestEnsureFunctionsCollection_BunLockField(t *testing.T) {
 // longer carries one.
 func TestSyncRecordToDisk_Lockfile(t *testing.T) {
 	functionsDir := t.TempDir()
-	record := core.NewRecord(core.NewBaseCollection(faasboxFunctionsCollection))
-	record.Set("name", "pinned")
+	record := newDetachedFunction("k9m2xq7p4wz1n3v", "pinned")
 	record.Set("script", "console.log('hi')")
 	record.Set("packageJson", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 	record.Set("bunLock", "resolved")
@@ -239,7 +301,7 @@ func TestSyncRecordToDisk_Lockfile(t *testing.T) {
 	if err := syncRecordToDisk(record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(functionsDir, "pinned", "bun.lock")
+	lockPath := filepath.Join(functionsDir, record.Id, "bun.lock")
 	data, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("bun.lock not restored: %v", err)
@@ -269,16 +331,16 @@ func TestSyncDiskFromDB_RestoresLockfile(t *testing.T) {
 	defer app.Cleanup()
 
 	functionsDir := t.TempDir()
-	saveTestFunction(t, app, functionsDir, "survivor",
+	record := saveTestFunction(t, app, functionsDir, "survivor",
 		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 	const lock = `{"lockfileVersion":1,"packages":{"dayjs":["dayjs@1.11.13"]}}`
-	setBunLock(app, "survivor", lock)
+	setBunLock(app, record.Id, lock)
 
 	// The container is thrown away and comes back with nothing on disk.
 	freshDir := t.TempDir()
 	syncDiskFromDB(app, freshDir)
 
-	data, err := os.ReadFile(filepath.Join(freshDir, "survivor", "bun.lock"))
+	data, err := os.ReadFile(filepath.Join(freshDir, record.Id, "bun.lock"))
 	if err != nil {
 		t.Fatalf("bun.lock not restored on a fresh filesystem: %v", err)
 	}

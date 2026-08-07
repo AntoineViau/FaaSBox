@@ -26,22 +26,27 @@ func withMaxFileView(t testing.TB, n int) {
 	t.Cleanup(func() { maxFileView = previous })
 }
 
+// filesFixtureId is the id of the function the browsing fixture lays out. The
+// directory is named by it, which is what the routes resolve to before touching
+// the disk; the record itself is registered under the name "app".
+const filesFixtureId = "appfunction0001"
+
 // setupFilesFixture builds a functions root holding one function directory with
 // every shape the browsing routes have to deal with, and returns that root.
 //
-//	<root>/outside.txt          the file the escapes aim at
-//	<root>/other/secret.txt     a sibling function, one "../" away
-//	<root>/app/index.ts         plain text
-//	<root>/app/package.json     plain text
-//	<root>/app/big.txt          8 KB of text
-//	<root>/app/binary.bin       carries a NUL byte
-//	<root>/app/evade            symlink to <root>/outside.txt
-//	<root>/app/inward           symlink to <root>/app/index.ts
-//	<root>/app/node_modules/    three entries, one of them nested
+//	<root>/outside.txt           the file the escapes aim at
+//	<root>/other/secret.txt      a sibling function, one "../" away
+//	<root>/<id>/index.ts         plain text
+//	<root>/<id>/package.json     plain text
+//	<root>/<id>/big.txt          8 KB of text
+//	<root>/<id>/binary.bin       carries a NUL byte
+//	<root>/<id>/evade            symlink to <root>/outside.txt
+//	<root>/<id>/inward           symlink to <root>/<id>/index.ts
+//	<root>/<id>/node_modules/    three entries, one of them nested
 func setupFilesFixture(t testing.TB) string {
 	t.Helper()
 	root := t.TempDir()
-	fn := filepath.Join(root, "app")
+	fn := filepath.Join(root, filesFixtureId)
 
 	mkdir := func(path string) {
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -80,14 +85,39 @@ func setupFilesFixture(t testing.TB) string {
 	return root
 }
 
+// registerFilesFixtureFunctions declares the records the browsing routes resolve
+// before they touch the disk: the one the fixture laid out, and one that carries
+// no directory at all. Neither is synced to disk — setupFilesFixture owns the
+// tree, and a sync would overwrite it with a bare script.
+func registerFilesFixtureFunctions(t testing.TB, app core.App) {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range []struct{ id, name string }{
+		{filesFixtureId, "app"},
+		{"", "fresh"},
+	} {
+		record := core.NewRecord(col)
+		if fn.id != "" {
+			record.Id = fn.id
+		}
+		record.Set("name", fn.name)
+		if err := app.Save(record); err != nil {
+			t.Fatalf("failed to register function %q: %v", fn.name, err)
+		}
+	}
+}
+
 // TestResolveFunctionPath is where the ticket's real risk is covered: the
 // confinement of a directory the executed code can write into.
 func TestResolveFunctionPath(t *testing.T) {
 	root := setupFilesFixture(t)
-	fn := filepath.Join(root, "app")
+	fn := filepath.Join(root, filesFixtureId)
 
 	t.Run("the root itself resolves", func(t *testing.T) {
-		got, err := resolveFunctionPath(root, "app", "")
+		got, err := resolveFunctionPath(root, filesFixtureId, "")
 		if err != nil {
 			t.Fatalf("resolveFunctionPath() error: %v", err)
 		}
@@ -97,7 +127,7 @@ func TestResolveFunctionPath(t *testing.T) {
 	})
 
 	t.Run("a nested file resolves", func(t *testing.T) {
-		got, err := resolveFunctionPath(root, "app", "node_modules/pkg-a/package.json")
+		got, err := resolveFunctionPath(root, filesFixtureId, "node_modules/pkg-a/package.json")
 		if err != nil {
 			t.Fatalf("resolveFunctionPath() error: %v", err)
 		}
@@ -107,7 +137,7 @@ func TestResolveFunctionPath(t *testing.T) {
 	})
 
 	t.Run("a link staying inside resolves", func(t *testing.T) {
-		got, err := resolveFunctionPath(root, "app", "inward")
+		got, err := resolveFunctionPath(root, filesFixtureId, "inward")
 		if err != nil {
 			t.Fatalf("resolveFunctionPath() error: %v", err)
 		}
@@ -120,7 +150,7 @@ func TestResolveFunctionPath(t *testing.T) {
 	// the attempt into a plain not-found and lose the fact that it was made.
 	t.Run("a climbing path is refused", func(t *testing.T) {
 		for _, rel := range []string{"..", "../", "../outside.txt", "../other/secret.txt", "a/../../outside.txt"} {
-			if _, err := resolveFunctionPath(root, "app", rel); !errors.Is(err, errOutsideFunction) {
+			if _, err := resolveFunctionPath(root, filesFixtureId, rel); !errors.Is(err, errOutsideFunction) {
 				t.Errorf("resolveFunctionPath(%q) error = %v, want errOutsideFunction", rel, err)
 			}
 		}
@@ -130,13 +160,13 @@ func TestResolveFunctionPath(t *testing.T) {
 	// and executes arbitrary code, so a link planted at run time is the escape
 	// a lexical check alone would never see.
 	t.Run("a link leaving the directory is refused", func(t *testing.T) {
-		if _, err := resolveFunctionPath(root, "app", "evade"); !errors.Is(err, errOutsideFunction) {
+		if _, err := resolveFunctionPath(root, filesFixtureId, "evade"); !errors.Is(err, errOutsideFunction) {
 			t.Fatalf("resolveFunctionPath(\"evade\") error = %v, want errOutsideFunction", err)
 		}
 	})
 
 	t.Run("a missing entry is not a refusal", func(t *testing.T) {
-		_, err := resolveFunctionPath(root, "app", "nope.txt")
+		_, err := resolveFunctionPath(root, filesFixtureId, "nope.txt")
 		if !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("error = %v, want fs.ErrNotExist", err)
 		}
@@ -145,17 +175,17 @@ func TestResolveFunctionPath(t *testing.T) {
 		}
 	})
 
-	t.Run("an invalid function name is refused", func(t *testing.T) {
-		if _, err := resolveFunctionPath(root, "bad$name", ""); err == nil {
-			t.Fatal("expected an error on an invalid function name")
+	t.Run("an invalid function id is refused", func(t *testing.T) {
+		if _, err := resolveFunctionPath(root, "bad$id", ""); err == nil {
+			t.Fatal("expected an error on an invalid function id")
 		}
 	})
 
 	t.Run("a sibling whose name is a prefix is refused", func(t *testing.T) {
-		if err := os.MkdirAll(filepath.Join(root, "app-extra"), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, filesFixtureId+"-extra"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := resolveFunctionPath(root, "app", "../app-extra"); !errors.Is(err, errOutsideFunction) {
+		if _, err := resolveFunctionPath(root, filesFixtureId, "../"+filesFixtureId+"-extra"); !errors.Is(err, errOutsideFunction) {
 			t.Errorf("error = %v, want errOutsideFunction", err)
 		}
 	})
@@ -166,7 +196,7 @@ func TestResolveFunctionPath(t *testing.T) {
 func TestReadLevel(t *testing.T) {
 	root := setupFilesFixture(t)
 
-	entries, err := readLevel(filepath.Join(root, "app"))
+	entries, err := readLevel(filepath.Join(root, filesFixtureId))
 	if err != nil {
 		t.Fatalf("readLevel() error: %v", err)
 	}
@@ -232,6 +262,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus: 200,
@@ -251,6 +282,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus: 200,
@@ -271,6 +303,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  200,
@@ -285,6 +318,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  400,
@@ -299,6 +333,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  400,
@@ -313,6 +348,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  400,
@@ -324,6 +360,7 @@ func TestFunctionFilesHandler(t *testing.T) {
 			URL:    "/api/faasbox/functions/app/files",
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:     401,
@@ -348,6 +385,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus: 200,
@@ -368,6 +406,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:     415,
@@ -384,6 +423,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				withMaxFileView(t, 4096)
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:     413,
@@ -401,6 +441,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				withMaxFileView(t, 4096)
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  200,
@@ -421,6 +462,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:     400,
@@ -436,6 +478,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:     400,
@@ -451,6 +494,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  400,
@@ -465,6 +509,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  404,
@@ -479,6 +524,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			},
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:  400,
@@ -490,6 +536,7 @@ func TestFunctionFileContentHandler(t *testing.T) {
 			URL:    "/api/faasbox/functions/app/files/content?path=index.ts",
 			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 				setupFaaSCollections(t, app)
+				registerFilesFixtureFunctions(t, app)
 				registerFaaSRoutes(app, e, setupFilesFixture(t))
 			},
 			ExpectedStatus:     401,

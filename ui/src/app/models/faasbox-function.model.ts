@@ -28,9 +28,9 @@ export interface FaasboxFunctionListResponse {
 /**
  * What the server pushes on the dependency state channel.
  *
- * `functionId` is empty when the message comes from the invocation path, which
- * never loads the record. Match on it when it is set — it survives a rename —
- * and fall back to `functionName` when it is not.
+ * `functionId` is always set and is the only thing to match on: it survives a
+ * rename, which the name does not. `functionName` is there for whoever reads
+ * the stream, never for identification.
  */
 export interface DepsStateMessage {
   functionId: string;

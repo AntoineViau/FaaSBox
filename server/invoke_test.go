@@ -128,7 +128,7 @@ func TestInvokeHandler_TruncatedOutputRejected(t *testing.T) {
 	t.Cleanup(func() { maxOutputSize = original })
 
 	key := createTestAPIKey(t, app, "test", []string{"*"})
-	functionsDir := setupTestFunctionsDir(t, map[string]string{
+	functionsDir, _ := setupTestFunctions(t, app, map[string]string{
 		"big": `console.log(JSON.stringify({ big: "x".repeat(500) }));`,
 	})
 
@@ -175,7 +175,7 @@ func TestInvokeHandler_FreeTextOutputAccepted(t *testing.T) {
 	setupFaaSCollections(t, app)
 
 	key := createTestAPIKey(t, app, "test", []string{"*"})
-	functionsDir := setupTestFunctionsDir(t, map[string]string{
+	functionsDir, _ := setupTestFunctions(t, app, map[string]string{
 		"text": `console.log("plain answer");`,
 	})
 
@@ -459,7 +459,7 @@ func TestListFunctionsHandler(t *testing.T) {
 		setupFaaSCollections(t, app)
 
 		key := createTestAPIKey(t, app, "test", []string{"*"})
-		functionsDir := setupTestFunctionsDir(t, map[string]string{
+		functionsDir, _ := setupTestFunctions(t, app, map[string]string{
 			"func-a": "",
 			"func-b": "",
 		})
@@ -511,7 +511,10 @@ func TestListFunctionsHandler(t *testing.T) {
 		scenario.Test(t)
 	})
 
-	t.Run("skips directories without index.ts", func(t *testing.T) {
+	// The inventory comes from the database, but the disk still says whether a
+	// function can be invoked: a record whose script never reached it has no
+	// index.ts, and listing it would advertise an invocation that answers 404.
+	t.Run("skips records with no script on disk", func(t *testing.T) {
 		app, err := tests.NewTestApp()
 		if err != nil {
 			t.Fatal(err)
@@ -520,16 +523,17 @@ func TestListFunctionsHandler(t *testing.T) {
 		setupFaaSCollections(t, app)
 
 		key := createTestAPIKey(t, app, "test", []string{"*"})
-		functionsDir := setupTestFunctionsDir(t, map[string]string{
+		functionsDir, _ := setupTestFunctions(t, app, map[string]string{
 			"valid-func": "",
 		})
-		// Create a dir without index.ts
-		if err := os.MkdirAll(functionsDir+"/no-index", 0o755); err != nil {
+		saveTestFunction(t, app, functionsDir, "no-index", "", "")
+		// A stray directory answering to no record is invisible either way.
+		if err := os.MkdirAll(functionsDir+"/orphan-dir-001", 0o755); err != nil {
 			t.Fatal(err)
 		}
 
 		scenario := tests.ApiScenario{
-			Name:   "skips non-function directories",
+			Name:   "skips records without an index.ts",
 			Method: http.MethodGet,
 			URL:    "/functions",
 			Headers: map[string]string{
@@ -542,7 +546,42 @@ func TestListFunctionsHandler(t *testing.T) {
 			},
 			ExpectedStatus:     200,
 			ExpectedContent:    []string{`"count":1`, `"valid-func"`},
-			NotExpectedContent: []string{`"no-index"`},
+			NotExpectedContent: []string{`"no-index"`, `"orphan-dir-001"`},
+		}
+		scenario.Test(t)
+	})
+
+	// The id joins the response: it is what a scope lists and what survives a
+	// rename, so a caller wiring an integration needs it.
+	t.Run("each entry carries its id, name and invoke URL", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+		setupFaaSCollections(t, app)
+
+		key := createTestAPIKey(t, app, "test", []string{"*"})
+		functionsDir, functions := setupTestFunctions(t, app, map[string]string{"echo": ""})
+
+		scenario := tests.ApiScenario{
+			Name:   "id, name and invoke URL",
+			Method: http.MethodGet,
+			URL:    "/functions",
+			Headers: map[string]string{
+				"X-API-Key": key,
+			},
+			TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+			DisableTestAppCleanup: true,
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				registerFaaSRoutes(app, e, functionsDir)
+			},
+			ExpectedStatus: 200,
+			ExpectedContent: []string{
+				`"id":"` + functions["echo"].Id + `"`,
+				`"name":"echo"`,
+				`"invoke":"/invoke/echo"`,
+			},
 		}
 		scenario.Test(t)
 	})
@@ -553,41 +592,51 @@ func TestListFunctionsHandler(t *testing.T) {
 // restriction: without the filtering in the handler, any valid key learns the
 // full inventory of the instance.
 func TestListFunctionsHandler_Scope(t *testing.T) {
+	// The scope is a list of ids now, so each case builds it from the records the
+	// fixture created.
 	cases := []struct {
 		name               string
-		scope              any // allowedFunctions as stored on the record
+		scope              func(map[string]*core.Record) any
 		expectedStatus     int
 		expectedContent    []string
 		notExpectedContent []string
 	}{
 		{
 			name:               "scoped key sees only its function",
-			scope:              []string{"func-a"},
+			scope:              func(f map[string]*core.Record) any { return []string{f["func-a"].Id} },
 			expectedStatus:     200,
 			expectedContent:    []string{`"count":1`, `"func-a"`},
 			notExpectedContent: []string{`"func-b"`},
 		},
 		{
 			name:            "wildcard sees everything",
-			scope:           []string{"*"},
+			scope:           func(map[string]*core.Record) any { return []string{"*"} },
 			expectedStatus:  200,
 			expectedContent: []string{`"count":2`, `"func-a"`, `"func-b"`},
 		},
 		{
 			name:            "empty list sees everything",
-			scope:           []string{},
+			scope:           func(map[string]*core.Record) any { return []string{} },
 			expectedStatus:  200,
 			expectedContent: []string{`"count":2`, `"func-a"`, `"func-b"`},
 		},
 		{
-			name:            "scope naming an unknown function sees nothing",
-			scope:           []string{"does-not-exist"},
+			name:            "scope naming an unknown id sees nothing",
+			scope:           func(map[string]*core.Record) any { return []string{"doesnotexist01"} },
+			expectedStatus:  200,
+			expectedContent: []string{`"count":0`, `"functions":[]`},
+		},
+		{
+			// A scope written in names no longer designates anything: the ids are
+			// what the check compares, and a name is not one.
+			name:            "scope written in names sees nothing",
+			scope:           func(map[string]*core.Record) any { return []string{"func-a"} },
 			expectedStatus:  200,
 			expectedContent: []string{`"count":0`, `"functions":[]`},
 		},
 		{
 			name:            "unreadable scope is denied",
-			scope:           `{"func-a":true}`,
+			scope:           func(map[string]*core.Record) any { return `{"func-a":true}` },
 			expectedStatus:  403,
 			expectedContent: []string{`API key scope cannot be read`},
 		},
@@ -603,12 +652,12 @@ func TestListFunctionsHandler_Scope(t *testing.T) {
 			setupFaaSCollections(t, app)
 
 			key := createTestAPIKey(t, app, "scoped-listing", []string{"*"})
-			setKeyScope(t, app, key, tt.scope)
 
-			functionsDir := setupTestFunctionsDir(t, map[string]string{
+			functionsDir, functions := setupTestFunctions(t, app, map[string]string{
 				"func-a": "",
 				"func-b": "",
 			})
+			setKeyScope(t, app, key, tt.scope(functions))
 
 			scenario := tests.ApiScenario{
 				Name:   tt.name,
@@ -642,7 +691,7 @@ func TestListFunctionsHandler_Superuser(t *testing.T) {
 	defer app.Cleanup()
 	setupFaaSCollections(t, app)
 
-	functionsDir := setupTestFunctionsDir(t, map[string]string{
+	functionsDir, _ := setupTestFunctions(t, app, map[string]string{
 		"func-a": "",
 		"func-b": "",
 	})
@@ -672,13 +721,13 @@ func TestScopeAllows(t *testing.T) {
 		target  string
 		want    bool
 	}{
-		{"Nil scope allows any", nil, "echo", true},
-		{"Empty scope allows any", []string{}, "echo", true},
-		{"Wildcard allows any", []string{"*"}, "echo", true},
-		{"Listed name allowed", []string{"echo", "ping"}, "ping", true},
-		{"Unlisted name denied", []string{"echo"}, "ping", false},
-		{"Wildcard among names allows any", []string{"echo", "*"}, "ping", true},
-		{"Match is exact", []string{"echo"}, "echo-2", false},
+		{"Nil scope allows any", nil, "echofunction001", true},
+		{"Empty scope allows any", []string{}, "echofunction001", true},
+		{"Wildcard allows any", []string{"*"}, "echofunction001", true},
+		{"Listed id allowed", []string{"echofunction001", "pingfunction001"}, "pingfunction001", true},
+		{"Unlisted id denied", []string{"echofunction001"}, "pingfunction001", false},
+		{"Wildcard among ids allows any", []string{"echofunction001", "*"}, "pingfunction001", true},
+		{"Match is exact", []string{"echofunction001"}, "echofunction0012", false},
 	}
 
 	for _, tt := range cases {

@@ -15,14 +15,18 @@ const BASE_URL = '/api/faasbox/functions';
  * These two routes are the only ones that show what the disk carries rather
  * than what the database does — what `bun install` left behind, and whatever a
  * running function wrote and never cleaned up.
+ *
+ * The path segment is the function id. The routes take a name just as well, but
+ * the directory itself is named by the id, and asking by id is the spelling that
+ * cannot be invalidated by a rename in flight.
  */
 @Injectable({ providedIn: 'root' })
 export class FilesService {
   private readonly http = inject(HttpClient);
 
   /** One level of the directory. Never recursive; an absent directory lists empty. */
-  list(name: string, path: string) {
-    return this.http.get<FunctionFileListing>(`${BASE_URL}/${name}/files`, {
+  list(functionId: string, path: string) {
+    return this.http.get<FunctionFileListing>(`${BASE_URL}/${functionId}/files`, {
       params: { path },
     });
   }
@@ -32,8 +36,8 @@ export class FilesService {
    * binary or past the view cap — read that body rather than the status text,
    * it is what names the reason.
    */
-  read(name: string, path: string) {
-    return this.http.get<FunctionFileContent>(`${BASE_URL}/${name}/files/content`, {
+  read(functionId: string, path: string) {
+    return this.http.get<FunctionFileContent>(`${BASE_URL}/${functionId}/files/content`, {
       params: { path },
     });
   }
@@ -43,8 +47,8 @@ export class FilesService {
    * plain link because the route is superuser-only: a browser navigation
    * carries no Authorization header and would come back 401.
    */
-  download(name: string, path: string) {
-    return this.http.get(`${BASE_URL}/${name}/files/content`, {
+  download(functionId: string, path: string) {
+    return this.http.get(`${BASE_URL}/${functionId}/files/content`, {
       params: { path, download: '1' },
       responseType: 'blob',
     });

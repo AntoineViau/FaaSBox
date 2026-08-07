@@ -14,7 +14,9 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
-// cronQueueDepth tracks the number of in-flight (waiting + running) cron executions per function.
+// cronQueueDepth tracks the number of in-flight (waiting + running) cron
+// executions per function, keyed on the function id — the depth of a function
+// must not reset because someone renamed it mid-flight.
 var cronQueueDepth sync.Map // map[string]*atomic.Int32
 
 const (
@@ -24,15 +26,35 @@ const (
 
 // ensureCronJobsCollection creates the faasbox_cron_jobs collection if it doesn't exist,
 // or migrates it by adding missing fields (maxQueue, lastRunAt).
+//
+// The target function is a relation, not a name. A name is editable, so a
+// trigger wired on one fired into the void from the moment its function was
+// renamed — and nothing said so, since nothing was a reference. CascadeDelete
+// makes the other half true as well: deleting a function takes its triggers with
+// it, with no cleanup code of ours to forget.
+//
+// It therefore requires faasbox_functions to exist already: OnServe creates that
+// collection first.
 func ensureCronJobsCollection(app core.App) error {
 	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
 	if err != nil {
+		functions, ferr := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if ferr != nil {
+			return fmt.Errorf("collection %s not found: %w", faasboxFunctionsCollection, ferr)
+		}
+
 		// Collection doesn't exist — create it with all fields
 		col = core.NewBaseCollection(faasboxCronJobsCollection)
 		col.Fields.Add(
 			&core.TextField{Name: "name", Required: true},
 			&core.TextField{Name: "schedule", Required: true},
-			&core.TextField{Name: "functionName", Required: true},
+			&core.RelationField{
+				Name:          "function",
+				Required:      true,
+				MaxSelect:     1,
+				CascadeDelete: true,
+				CollectionId:  functions.Id,
+			},
 			&core.JSONField{Name: "payload"},
 			&core.BoolField{Name: "active"},
 			&core.NumberField{Name: "maxQueue"},
@@ -107,28 +129,33 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 			continue
 		}
 
-		name := record.GetString("functionName")
+		functionId := record.GetString("function")
 		schedule := record.GetString("schedule")
 		payload := record.GetString("payload")
 		maxQueue := int(record.GetFloat("maxQueue"))
 
-		if name == "" || schedule == "" {
+		if functionId == "" || schedule == "" {
 			continue
 		}
-		if !validName.MatchString(name) || len(name) > 64 {
-			app.Logger().Error("faasbox: invalid function name in cron job, skipping",
-				"recordId", record.Id, "functionName", name)
+		// Resolved here to refuse a dangling relation at registration time rather
+		// than at every tick, and to name the function in the messages below.
+		// runFunction resolves again when it fires: the name and the secrets are
+		// read then, so a rename in between is picked up without a resync.
+		fn, err := app.FindRecordById(faasboxFunctionsCollection, functionId)
+		if err != nil {
+			app.Logger().Error("faasbox: cron job points at no function, skipping",
+				"recordId", record.Id, "functionId", functionId, "error", err)
 			continue
 		}
 
 		jobId := cronJobPrefix + record.Id
 		recordId := record.Id
-		err := app.Cron().Add(jobId, schedule, func() {
-			runFunction(ctx, app, functionsDir, name, payload, maxQueue, recordId)
+		err = app.Cron().Add(jobId, schedule, func() {
+			runFunction(ctx, app, functionsDir, functionId, payload, maxQueue, recordId)
 		})
 		if err != nil {
 			app.Logger().Error("faasbox: failed to register cron",
-				"jobId", jobId, "schedule", schedule, "function", name, "error", err)
+				"jobId", jobId, "schedule", schedule, "function", fn.GetString("name"), "error", err)
 		}
 	}
 }
@@ -138,17 +165,22 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 // for this function. 0 means no limit. recordId identifies the faasbox_cron_jobs
 // record whose lastRunAt is stamped once the execution is over; an empty value
 // skips the stamping.
-func runFunction(ctx context.Context, app core.App, functionsDir, name, payload string, maxQueue int, recordId string) {
+//
+// The function is resolved here, at fire time, and not captured when the job was
+// registered: the scheduler is only rebuilt when a cron record changes, so a name
+// captured at registration would go stale the moment the function was renamed.
+// This is the same single read the secrets used to cost.
+func runFunction(ctx context.Context, app core.App, functionsDir, functionId, payload string, maxQueue int, recordId string) {
 	// Check queue depth before blocking on the semaphore
 	if maxQueue > 0 {
-		val, _ := cronQueueDepth.LoadOrStore(name, &atomic.Int32{})
+		val, _ := cronQueueDepth.LoadOrStore(functionId, &atomic.Int32{})
 		counter := val.(*atomic.Int32)
 		depth := counter.Add(1)
 		defer counter.Add(-1)
 
 		if int(depth) > maxQueue {
 			app.Logger().Warn("faasbox cron: queue full, skipping",
-				"function", name, "depth", depth, "maxQueue", maxQueue)
+				"functionId", functionId, "depth", depth, "maxQueue", maxQueue)
 			return
 		}
 	}
@@ -161,12 +193,20 @@ func runFunction(ctx context.Context, app core.App, functionsDir, name, payload 
 		payload = "{}"
 	}
 
-	env := lookupFunctionEnv(app, name)
-	res := executeFunction(ctx, functionsDir, name, payload, env)
+	fn, err := app.FindRecordById(faasboxFunctionsCollection, functionId)
+	if err != nil {
+		app.Logger().Error("faasbox cron: function no longer exists, skipping",
+			"functionId", functionId, "error", err)
+		return
+	}
+	name := fn.GetString("name")
+
+	env := functionEnv(app, fn)
+	res := executeFunction(ctx, functionsDir, fn.Id, name, payload, env)
 
 	// Publish what the dependency safety net did, if anything. invokeHandler does
 	// the same right after its own call — the two must not diverge.
-	publishDepsOutcome(app, functionsDir, name, res)
+	publishDepsOutcome(app, functionsDir, fn.Id, name, res)
 
 	// Stamp the trigger time whatever the outcome: what is recorded is that the
 	// job fired, not that it succeeded. Missed-run detection reads it back.
@@ -180,6 +220,7 @@ func runFunction(ctx context.Context, app core.App, functionsDir, name, payload 
 		status = "error"
 	}
 	recordExecution(app, logEntry{
+		FunctionId:     fn.Id,
 		FunctionName:   name,
 		Trigger:        "cron",
 		Status:         status,

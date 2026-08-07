@@ -136,9 +136,11 @@ func createKeyHandler(e *core.RequestEvent) error {
 
 // readKeyScope reads the function scope declared by an API key record.
 //
-// It returns the authorized function names; an empty result means no
-// restriction. PocketBase hands a JSON field back under several shapes
-// depending on the access path, hence the type switch.
+// It returns the authorized function ids; an empty result means no restriction.
+// Ids and not names: a scope written in names stopped designating anything the
+// day a function was renamed — or, worse, started designating a *different*
+// function created since under the old name. PocketBase hands a JSON field back
+// under several shapes depending on the access path, hence the type switch.
 //
 // A field that is present but cannot be decoded yields an error. Callers must
 // deny on that error: an unreadable restriction is not an absence of
@@ -169,7 +171,7 @@ func readKeyScope(record *core.Record) ([]string, error) {
 
 	var allowed []string
 	if err := json.Unmarshal(encoded, &allowed); err != nil {
-		return nil, fmt.Errorf("allowedFunctions is not a list of function names: %w", err)
+		return nil, fmt.Errorf("allowedFunctions is not a list of function ids: %w", err)
 	}
 	return allowed, nil
 }
@@ -187,15 +189,21 @@ func requestKeyScope(e *core.RequestEvent) ([]string, error) {
 	return readKeyScope(record)
 }
 
-// scopeAllows reports whether a scope authorizes a function name. An empty
-// scope carries no restriction, "*" is the wildcard.
+// scopeIsUnrestricted reports whether a scope grants every function without
+// looking at any of them: an empty list carries no restriction, "*" is the
+// wildcard. Split out of scopeAllows because the middleware needs the answer
+// *before* it has a function to ask about — a scope that grants everything has
+// nothing to compare, so it needs no lookup to compare it with.
+func scopeIsUnrestricted(allowed []string) bool {
+	return len(allowed) == 0 || slices.Contains(allowed, "*")
+}
+
+// scopeAllows reports whether a scope authorizes a function id.
 //
 // Invocation and enumeration ask this same question, and a rule spelled out
 // twice is a rule that gets fixed once.
-func scopeAllows(allowed []string, name string) bool {
-	return len(allowed) == 0 ||
-		slices.Contains(allowed, "*") ||
-		slices.Contains(allowed, name)
+func scopeAllows(allowed []string, functionId string) bool {
+	return scopeIsUnrestricted(allowed) || slices.Contains(allowed, functionId)
 }
 
 // requireAPIKey returns a middleware that validates the X-API-Key header.
@@ -248,8 +256,8 @@ func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 			}
 
 			// 6. Check function scope
-			name := e.Request.PathValue("name")
-			if name != "" {
+			segment := e.Request.PathValue("name")
+			if segment != "" {
 				allowed, err := readKeyScope(record)
 				if err != nil {
 					app.Logger().Error("faasbox: unreadable allowedFunctions, denying access",
@@ -258,10 +266,26 @@ func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 						"error": "API key scope cannot be read",
 					})
 				}
-				if !scopeAllows(allowed, name) {
-					return e.JSON(http.StatusForbidden, map[string]string{
-						"error": fmt.Sprintf("API key is not authorized to invoke function %q", name),
-					})
+				// A scope that grants everything is answered without a lookup. The
+				// check below costs one read of faasbox_functions, and the handler
+				// pays a second one to run the function: that is the price of a
+				// *restricted* key, and there is no reason for the common case to
+				// pay it too.
+				if !scopeIsUnrestricted(allowed) {
+					// The scope lists ids, so the segment has to be resolved before
+					// it can be compared. A segment that resolves to nothing is
+					// weighed as it stands, so the key is refused before it learns
+					// whether the name exists — which is what happened before ids,
+					// and is the half of the inventory the scope filter withholds.
+					target := segment
+					if fn, err := resolveFunction(app, segment); err == nil {
+						target = fn.Id
+					}
+					if !scopeAllows(allowed, target) {
+						return e.JSON(http.StatusForbidden, map[string]string{
+							"error": fmt.Sprintf("API key is not authorized to invoke function %q", segment),
+						})
+					}
 				}
 			}
 

@@ -91,7 +91,6 @@ export class EnvEditorComponent {
   private readonly store = inject(FunctionsStore);
 
   readonly functionId = input.required<string>();
-  readonly functionName = input.required<string>();
 
   protected readonly pairs = signal<Pair[]>([]);
   protected readonly revealed = signal(false);
@@ -109,23 +108,25 @@ export class EnvEditorComponent {
   protected readonly canSave = computed(() => this.loaded() && this.isDirty() && !this.saving());
 
   constructor() {
-    effect(() => void this.load(this.functionName()));
+    // Keyed on the id: renaming the open function must not discard the pairs
+    // being edited, and the route takes either spelling.
+    effect(() => void this.load(this.functionId()));
   }
 
-  private async load(name: string): Promise<void> {
+  private async load(functionId: string): Promise<void> {
     this.loaded.set(false);
     this.error.set('');
     this.revealed.set(false);
     try {
-      const env = await firstValueFrom(this.functionsService.getEnv(name));
+      const env = await firstValueFrom(this.functionsService.getEnv(functionId));
       // A slow answer must not land on the function the user switched to.
-      if (this.functionName() !== name) return;
+      if (this.functionId() !== functionId) return;
       const pairs = Object.entries(env).map(([key, value]) => ({ key, value }));
       this.pairs.set(pairs);
       this.savedSnapshot.set(snapshot(pairs));
       this.loaded.set(true);
     } catch {
-      if (this.functionName() !== name) return;
+      if (this.functionId() !== functionId) return;
       this.pairs.set([]);
       // Saving stays disabled: replacing variables that could not be read would
       // drop the ones the user never saw.

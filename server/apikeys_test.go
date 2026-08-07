@@ -396,8 +396,11 @@ func TestRequireAPIKey(t *testing.T) {
 		defer app.Cleanup()
 		setupFaaSCollections(t, app)
 
-		key := createTestAPIKey(t, app, "scoped-echo-only", []string{"echo"})
-		functionsDir := setupTestFunctionsDir(t, map[string]string{"other-func": ""})
+		functionsDir, functions := setupTestFunctions(t, app, map[string]string{
+			"echo":       "",
+			"other-func": "",
+		})
+		key := createTestAPIKey(t, app, "scoped-echo-only", []string{functions["echo"].Id})
 		scenario := tests.ApiScenario{
 			Name:   "scoped key rejects unauthorized function",
 			Method: http.MethodPost,
@@ -452,7 +455,7 @@ func TestRequireAPIKey(t *testing.T) {
 		setupFaaSCollections(t, app)
 
 		key := createTestAPIKey(t, app, "wildcard", []string{"*"})
-		functionsDir := setupTestFunctionsDir(t, map[string]string{"any-func": ""})
+		functionsDir, _ := setupTestFunctions(t, app, map[string]string{"any-func": ""})
 		scenario := tests.ApiScenario{
 			Name:   "wildcard key allows any function",
 			Method: http.MethodPost,
@@ -592,7 +595,7 @@ func TestRequireAPIKey_UnreadableScope(t *testing.T) {
 	key := createTestAPIKey(t, app, "broken-scope", []string{"echo"})
 	setKeyScope(t, app, key, `{"echo":true}`)
 
-	functionsDir := setupTestFunctionsDir(t, map[string]string{"echo": ""})
+	functionsDir, _ := setupTestFunctions(t, app, map[string]string{"echo": ""})
 	scenario := tests.ApiScenario{
 		Name:   "unreadable scope denies invocation",
 		Method: http.MethodPost,
@@ -621,8 +624,8 @@ func TestRequireAPIKey_ScopedKeyAllowsItsOwnFunction(t *testing.T) {
 	defer app.Cleanup()
 	setupFaaSCollections(t, app)
 
-	key := createTestAPIKey(t, app, "scoped-echo", []string{"echo"})
-	functionsDir := setupTestFunctionsDir(t, map[string]string{"echo": ""})
+	functionsDir, functions := setupTestFunctions(t, app, map[string]string{"echo": ""})
+	key := createTestAPIKey(t, app, "scoped-echo", []string{functions["echo"].Id})
 	scenario := tests.ApiScenario{
 		Name:   "scoped key invokes its authorized function",
 		Method: http.MethodPost,
@@ -652,7 +655,7 @@ func TestRequireAPIKey_EmptyListAllowsAny(t *testing.T) {
 	setupFaaSCollections(t, app)
 
 	key := createTestAPIKey(t, app, "empty-list", []string{})
-	functionsDir := setupTestFunctionsDir(t, map[string]string{"echo": ""})
+	functionsDir, _ := setupTestFunctions(t, app, map[string]string{"echo": ""})
 	scenario := tests.ApiScenario{
 		Name:   "empty list grants access to any function",
 		Method: http.MethodPost,

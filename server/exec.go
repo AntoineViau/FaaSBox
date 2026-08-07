@@ -52,10 +52,24 @@ type execResult struct {
 // It returns an execResult with the outcome. Validation and setup errors are returned
 // in execResult.Err with a sentinel prefix so callers can distinguish them.
 // extraEnv is an optional list of "KEY=value" strings injected into the subprocess environment.
-func executeFunction(ctx context.Context, functionsDir, name, payload string, extraEnv []string) execResult {
-	// 1. Validate function name
-	if !validName.MatchString(name) || len(name) > 64 {
-		return execResult{Err: fmt.Errorf("invalid function name: %s", name)}
+//
+// Only functionId is checked, because it is the only one that builds a path.
+// The name is not: it reaches the subprocess environment as FUNCTION_NAME and
+// the text of a not-found message, neither of which a strange name can subvert —
+// execve does not reparse an entry, so an "=" or a newline inside the value stays
+// inside it, and e.JSON escapes the message.
+//
+// Rejecting on the name is what this function used to do, and it made a function
+// the editor accepted uninvocable by *any* spelling, id included: an ordinary
+// error, so a 500 rather than a 404, recorded in faasbox_logs on every call —
+// once a minute for anything carrying a trigger. An identifier that cannot build
+// a path must not be able to stop an execution. Refusing such a name at save
+// time is the other half of the question, and it belongs to the collection, not
+// to the engine.
+func executeFunction(ctx context.Context, functionsDir, functionId, name, payload string, extraEnv []string) execResult {
+	// 1. Validate the identifier that builds the path
+	if !validName.MatchString(functionId) || len(functionId) > 64 {
+		return execResult{Err: fmt.Errorf("invalid function id: %s", functionId)}
 	}
 
 	// 2. Resolve and verify the script path
@@ -63,7 +77,7 @@ func executeFunction(ctx context.Context, functionsDir, name, payload string, ex
 	if err != nil {
 		return execResult{Err: fmt.Errorf("cannot resolve functions directory: %w", err)}
 	}
-	scriptPath := filepath.Join(absDir, name, "index.ts")
+	scriptPath := filepath.Join(absDir, functionId, "index.ts")
 	if _, err := os.Stat(scriptPath); err != nil {
 		return execResult{Err: &errNotFound{Name: name}}
 	}
@@ -71,7 +85,7 @@ func executeFunction(ctx context.Context, functionsDir, name, payload string, ex
 	// 3. Install dependencies if needed. No deadline is set here: ensureDeps takes
 	// its own once it holds the directory lock, so that queueing behind another
 	// install does not eat this caller's budget.
-	funcDir := filepath.Join(absDir, name)
+	funcDir := filepath.Join(absDir, functionId)
 	// Timed like the subprocess below: an error response publishes duration_ms,
 	// and a failure that waited a full minute must not report zero. The wait for
 	// the lock is inside ensureDeps, hence inside this measure — the caller really

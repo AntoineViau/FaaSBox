@@ -5,6 +5,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
@@ -78,9 +79,7 @@ func TestRecordExecution_TruncatesPersistedFields(t *testing.T) {
 	}
 	defer app.Cleanup()
 
-	if err := ensureLogsCollection(app); err != nil {
-		t.Fatalf("failed to create logs collection: %v", err)
-	}
+	setupLogsCollection(t, app)
 
 	const hugeOutput = 5 << 20 // 5 MB, the size an unbounded run can reach
 	entry := logEntry{
@@ -141,9 +140,7 @@ func TestRecordExecution_ShortOutputUntouched(t *testing.T) {
 	}
 	defer app.Cleanup()
 
-	if err := ensureLogsCollection(app); err != nil {
-		t.Fatalf("failed to create logs collection: %v", err)
-	}
+	setupLogsCollection(t, app)
 
 	recordExecution(app, logEntry{
 		FunctionName: "small-output",
@@ -224,9 +221,7 @@ func TestRecordExecution_TruncatedFlag(t *testing.T) {
 			}
 			defer app.Cleanup()
 
-			if err := ensureLogsCollection(app); err != nil {
-				t.Fatalf("failed to create logs collection: %v", err)
-			}
+			setupLogsCollection(t, app)
 
 			recordExecution(app, tt.entry)
 
@@ -254,9 +249,7 @@ func TestRecordExecution_TruncatedIsFilterable(t *testing.T) {
 	}
 	defer app.Cleanup()
 
-	if err := ensureLogsCollection(app); err != nil {
-		t.Fatalf("failed to create logs collection: %v", err)
-	}
+	setupLogsCollection(t, app)
 
 	recordExecution(app, logEntry{
 		FunctionName: "chatty",
@@ -290,9 +283,7 @@ func TestEnsureLogsCollection_TruncatedField(t *testing.T) {
 	}
 	defer app.Cleanup()
 
-	if err := ensureLogsCollection(app); err != nil {
-		t.Fatal(err)
-	}
+	setupLogsCollection(t, app)
 
 	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
 	if err != nil {
@@ -304,6 +295,82 @@ func TestEnsureLogsCollection_TruncatedField(t *testing.T) {
 	}
 }
 
+// TestRecordExecution_TiesTheEntryToTheRecord covers the denormalisation the
+// collection carries on purpose: the relation follows the function through a
+// rename, the stored name says what it was called when the entry was written.
+func TestRecordExecution_TiesTheEntryToTheRecord(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupLogsCollection(t, app)
+
+	fn := saveTestFunction(t, app, t.TempDir(), "before", "console.log(1)", "")
+	recordExecution(app, logEntry{
+		FunctionId:   fn.Id,
+		FunctionName: "before",
+		Trigger:      "http",
+		Status:       "success",
+	})
+
+	fn.Set("name", "after")
+	if err := app.Save(fn); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := app.FindAllRecords(faasboxLogsCollection,
+		dbx.HashExp{"function": fn.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the rename left %d entries attached to the function, want 1", len(entries))
+	}
+	if got := entries[0].GetString("functionName"); got != "before" {
+		t.Errorf("functionName = %q, want the name of the moment, %q", got, "before")
+	}
+}
+
+// TestDeleteFunction_CascadesToItsLogs is the choice the ticket makes explicit:
+// deleting a function destroys its history, exactly as the retention purge
+// already does.
+func TestDeleteFunction_CascadesToItsLogs(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupLogsCollection(t, app)
+
+	functionsDir := t.TempDir()
+	doomed := saveTestFunction(t, app, functionsDir, "doomed", "console.log(1)", "")
+	survivor := saveTestFunction(t, app, functionsDir, "survivor", "console.log(1)", "")
+	for _, fn := range []*core.Record{doomed, survivor} {
+		recordExecution(app, logEntry{
+			FunctionId:   fn.Id,
+			FunctionName: fn.GetString("name"),
+			Trigger:      "http",
+			Status:       "success",
+		})
+	}
+
+	if err := app.Delete(doomed); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := app.FindAllRecords(faasboxLogsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("faasbox_logs holds %d entries, want only the survivor's", len(entries))
+	}
+	if got := entries[0].GetString("function"); got != survivor.Id {
+		t.Errorf("the surviving entry belongs to %q, want %q", got, survivor.Id)
+	}
+}
+
 func TestEnsureLogsCollection_StatusValues(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -311,9 +378,7 @@ func TestEnsureLogsCollection_StatusValues(t *testing.T) {
 	}
 	defer app.Cleanup()
 
-	if err := ensureLogsCollection(app); err != nil {
-		t.Fatal(err)
-	}
+	setupLogsCollection(t, app)
 
 	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
 	if err != nil {

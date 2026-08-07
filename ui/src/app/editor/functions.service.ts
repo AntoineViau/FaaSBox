@@ -57,9 +57,13 @@ export class FunctionsService {
     return this.http.post<InvocationResult>(`/invoke/${name}`, payload);
   }
 
-  /** Decrypted secrets of a function. Superuser only, and the only way to read them back. */
-  getEnv(name: string) {
-    return this.http.get<Record<string, string>>(`/api/faasbox/functions/${name}/env`);
+  /**
+   * Decrypted secrets of a function. Superuser only, and the only way to read
+   * them back. The segment is the id: the route takes either spelling, and the
+   * id is the one a rename in flight cannot invalidate.
+   */
+  getEnv(functionId: string) {
+    return this.http.get<Record<string, string>>(`/api/faasbox/functions/${functionId}/env`);
   }
 
   /**

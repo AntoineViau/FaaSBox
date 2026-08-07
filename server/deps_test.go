@@ -999,8 +999,7 @@ func TestScheduleDepsInstall_ScriptOnlyChangeSkipsInstall(t *testing.T) {
 
 // TestSetDepsState_WritesWithoutFiringTheSaveHooks pins a mechanism, not a
 // style. app.Save would fire OnRecordAfterUpdateSuccess, which is precisely what
-// schedules an install — the record would save itself in an endless loop. Both
-// spellings of the write, by id and by name, have to stay out of that.
+// schedules an install — the record would save itself in an endless loop.
 func TestSetDepsState_WritesWithoutFiringTheSaveHooks(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -1024,8 +1023,8 @@ func TestSetDepsState_WritesWithoutFiringTheSaveHooks(t *testing.T) {
 		status string
 		errMsg string
 	}{
-		{"by id", func() { setDepsState(app, record.Id, "state-write", depsStatusError, "boom") }, depsStatusError, "boom"},
-		{"by name", func() { setDepsStateByName(app, "state-write", depsStatusReady, "") }, depsStatusReady, ""},
+		{"failure", func() { setDepsState(app, record.Id, "state-write", depsStatusError, "boom") }, depsStatusError, "boom"},
+		{"success", func() { setDepsState(app, record.Id, "state-write", depsStatusReady, "") }, depsStatusReady, ""},
 	}
 
 	for _, tc := range cases {

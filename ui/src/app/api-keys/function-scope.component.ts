@@ -11,6 +11,12 @@ import {
 /** Wildcard scope: every function is allowed. */
 export const ALL_FUNCTIONS = '*';
 
+/** A function a scope can point at: recorded by id, shown by name. */
+export interface ScopeFunction {
+  id: string;
+  name: string;
+}
+
 /**
  * Reports whether a stored scope authorizes every function. Mirrors the server
  * rule: an empty list carries no restriction, "*" is the wildcard.
@@ -20,12 +26,24 @@ export function isUnrestrictedScope(scope: string[]): boolean {
 }
 
 /**
+ * Names a scope entry for display. An id matching no function is rendered as
+ * itself rather than hidden: it is a dangling grant, and saying so is the only
+ * way anyone will ever clean it up.
+ */
+export function describeScopeEntry(functions: readonly ScopeFunction[], id: string): string {
+  return functions.find((fn) => fn.id === id)?.name ?? id;
+}
+
+/**
  * Function scope picker, shared by the creation form and the key list.
  *
- * It emits a list of function names, or `null` when the selection is not usable
- * yet — "selected functions" mode with nothing checked. Never an empty list:
- * an empty scope means "no restriction" server-side, so persisting one by
+ * It emits a list of function **ids**, or `null` when the selection is not
+ * usable yet — "selected functions" mode with nothing checked. Never an empty
+ * list: an empty scope means "no restriction" server-side, so persisting one by
  * accident would widen the key instead of narrowing it.
+ *
+ * Ids are what gets recorded and names are what gets shown, which is the whole
+ * point: renaming a function leaves every key that grants it untouched.
  */
 @Component({
   selector: 'app-function-scope',
@@ -60,15 +78,15 @@ export function isUnrestrictedScope(scope: string[]): boolean {
           <p class="text-xs text-muted-foreground">No function to select yet.</p>
         } @else {
           <div class="flex max-h-32 flex-wrap gap-x-4 gap-y-1 overflow-y-auto rounded-md border border-border p-2">
-            @for (fn of functions(); track fn) {
+            @for (fn of functions(); track fn.id) {
               <label class="flex cursor-pointer items-center gap-1.5">
                 <input
                   type="checkbox"
                   class="h-3.5 w-3.5 accent-primary"
-                  [checked]="selected().has(fn)"
-                  (change)="toggle(fn, $any($event.target).checked)"
+                  [checked]="selected().has(fn.id)"
+                  (change)="toggle(fn.id, $any($event.target).checked)"
                 />
-                <span class="font-mono text-xs">{{ fn }}</span>
+                <span class="font-mono text-xs">{{ fn.name }}</span>
               </label>
             }
           </div>
@@ -82,9 +100,9 @@ export function isUnrestrictedScope(scope: string[]): boolean {
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class FunctionScopeComponent {
-  /** Every function name the scope can point at. */
-  readonly functions = input.required<string[]>();
-  /** Current scope, as stored. Empty or containing "*" means every function. */
+  /** Every function the scope can point at. */
+  readonly functions = input.required<ScopeFunction[]>();
+  /** Current scope, as stored: ids. Empty or containing "*" means every function. */
   readonly value = input<string[]>([]);
   /** Radio group name, unique per instance on a page holding several pickers. */
   readonly groupName = input('function-scope');
@@ -110,12 +128,12 @@ export class FunctionScopeComponent {
     this.emit();
   }
 
-  protected toggle(name: string, checked: boolean): void {
+  protected toggle(functionId: string, checked: boolean): void {
     const next = new Set(this.selected());
     if (checked) {
-      next.add(name);
+      next.add(functionId);
     } else {
-      next.delete(name);
+      next.delete(functionId);
     }
     this.selected.set(next);
     this.emit();
@@ -128,7 +146,7 @@ export class FunctionScopeComponent {
       this.valueChange.emit([ALL_FUNCTIONS]);
       return;
     }
-    const names = [...this.selected()];
-    this.valueChange.emit(names.length > 0 ? names : null);
+    const ids = [...this.selected()];
+    this.valueChange.emit(ids.length > 0 ? ids : null);
   }
 }

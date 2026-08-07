@@ -61,13 +61,18 @@ func newBunLockField() *core.TextField {
 // An invocation that left ensureDeps on the hash check — the overwhelming
 // majority — writes nothing: the state is already right, and a write per
 // invocation would be pure cost.
-func publishDepsOutcome(app core.App, functionsDir, functionName string, res execResult) {
+//
+// Both callers now hold the record: they resolved it to learn which directory to
+// run. So the write is keyed on the id like every other one, and the broadcast
+// always carries an identifier — there is no state message left for a client to
+// have to match on a name.
+func publishDepsOutcome(app core.App, functionsDir, functionId, functionName string, res execResult) {
 	// An interrupted install is not a failure — same reading as runDepsInstall, and
 	// deliberately the same published state: the work is still owed. Publishing
 	// error here would put a diagnosis on the record, and push it to the editor,
 	// for a request the caller simply abandoned.
 	if errors.Is(res.Err, errDepsInterrupted) {
-		setDepsStateByName(app, functionName, depsStatusPending, "")
+		setDepsState(app, functionId, functionName, depsStatusPending, "")
 		return
 	}
 
@@ -76,14 +81,14 @@ func publishDepsOutcome(app core.App, functionsDir, functionName string, res exe
 		// The cause, not the errDepsFailed wrapper: the field must read the same
 		// whether the install was triggered by a save or by this safety net.
 		msg, _ := truncateForLog(depsFailed.Cause.Error(), maxDepsError)
-		setDepsStateByName(app, functionName, depsStatusError, msg)
+		setDepsState(app, functionId, functionName, depsStatusError, msg)
 		return
 	}
 	if res.DepsInstalled {
 		// Before the state, so that a record announcing "ready" already carries
 		// what the install resolved.
-		persistLockfile(app, functionsDir, functionName)
-		setDepsStateByName(app, functionName, depsStatusReady, "")
+		persistLockfile(app, functionsDir, functionId)
+		setDepsState(app, functionId, functionName, depsStatusReady, "")
 	}
 }
 
@@ -95,8 +100,8 @@ func publishDepsOutcome(app core.App, functionsDir, functionName string, res exe
 //
 // It is called by the three paths that can complete an install — the save, and
 // the safety net on each of the two invocation paths.
-func persistLockfile(app core.App, functionsDir, name string) {
-	data, err := os.ReadFile(filepath.Join(functionsDir, name, "bun.lock"))
+func persistLockfile(app core.App, functionsDir, functionId string) {
+	data, err := os.ReadFile(filepath.Join(functionsDir, functionId, "bun.lock"))
 	if err != nil {
 		return // no lockfile: nothing to persist, and nothing abnormal
 	}
@@ -107,16 +112,15 @@ func persistLockfile(app core.App, functionsDir, name string) {
 	// that did not change, and bun reconciles the rest.
 	if len(data) > maxLockfileSize {
 		app.Logger().Warn("faasbox: lockfile too large to persist",
-			"function", name, "size", len(data), "max", maxLockfileSize)
+			"functionId", functionId, "size", len(data), "max", maxLockfileSize)
 		return
 	}
 
-	setBunLock(app, name, string(data))
+	setBunLock(app, functionId, string(data))
 }
 
 // setBunLock writes the resolved lockfile on the function record, keyed on the
-// name — which is what all three install paths hold, and which carries a unique
-// index.
+// id — which is what all three install paths hold, and which is the primary key.
 //
 // Kept distinct from updateDepsState rather than mutualised with it. The two share
 // no logic: they set different columns, for different reasons, and only one of
@@ -129,39 +133,31 @@ func persistLockfile(app core.App, functionsDir, name string) {
 // updateDepsState: it would fire OnRecordAfterUpdateSuccess, hence a new install,
 // and it would rewrite the whole record from a copy loaded up to a minute earlier,
 // overwriting a user save made in the meantime.
-func setBunLock(app core.App, name, lock string) {
+func setBunLock(app core.App, functionId, lock string) {
 	_, err := app.DB().NewQuery(
-		"UPDATE " + faasboxFunctionsCollection + " SET bunLock = {:lock} WHERE name = {:name}",
+		"UPDATE " + faasboxFunctionsCollection + " SET bunLock = {:lock} WHERE id = {:id}",
 	).Bind(dbx.Params{
 		"lock": lock,
-		"name": name,
+		"id":   functionId,
 	}).Execute()
 	if err != nil {
 		app.Logger().Error("faasbox: failed to record the lockfile",
-			"function", name, "error", err)
+			"functionId", functionId, "error", err)
 	}
 }
 
 // setDepsState publishes the installation state on the function record, then
 // pushes it to the realtime subscribers. name is carried for the broadcast
 // alone — the write itself is keyed on the record id.
+//
+// Every writer holds the id: the save and the startup pass always did, and the
+// invocation path now resolves the record to learn which directory to run. The
+// by-name variant that used to exist alongside is gone with the reason for it.
 func setDepsState(app core.App, recordId, name, status, errMsg string) {
-	if !updateDepsState(app, "id", recordId, status, errMsg) {
+	if !updateDepsState(app, recordId, status, errMsg) {
 		return
 	}
 	broadcastDepsState(app, recordId, name, status, errMsg)
-}
-
-// setDepsStateByName is the same write keyed on the function name, which is what
-// the invocation path holds — it never loaded the record. The name column carries
-// a unique index, so it identifies exactly one row.
-// The empty id is deliberate and must stay: resolving it would add a read to
-// every state write on this path. See depsStateMessage.
-func setDepsStateByName(app core.App, name, status, errMsg string) {
-	if !updateDepsState(app, "name", name, status, errMsg) {
-		return
-	}
-	broadcastDepsState(app, "", name, status, errMsg)
 }
 
 // updateDepsState writes the two dependency columns through a direct SQL update
@@ -176,20 +172,18 @@ func setDepsStateByName(app core.App, name, status, errMsg string) {
 // narrows the window without closing it, and PocketBase offers no optimistic
 // locking. Writing only the two columns this code owns is the correct move, and
 // broadcasting is not a reason to give it up.
-//
-// column is one of two literals from this file, never caller input.
-func updateDepsState(app core.App, column, value, status, errMsg string) bool {
+func updateDepsState(app core.App, recordId, status, errMsg string) bool {
 	_, err := app.DB().NewQuery(
 		"UPDATE " + faasboxFunctionsCollection +
-			" SET depsStatus = {:status}, depsError = {:err} WHERE " + column + " = {:value}",
+			" SET depsStatus = {:status}, depsError = {:err} WHERE id = {:id}",
 	).Bind(dbx.Params{
 		"status": status,
 		"err":    errMsg,
-		"value":  value,
+		"id":     recordId,
 	}).Execute()
 	if err != nil {
 		app.Logger().Error("faasbox: failed to record dependency state",
-			column, value, "status", status, "error", err)
+			"functionId", recordId, "status", status, "error", err)
 		return false
 	}
 	return true

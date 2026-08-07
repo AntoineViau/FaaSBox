@@ -110,7 +110,7 @@ import { ZardIconComponent } from '@shared/components/icon';
 export class LogViewerComponent {
   private readonly logsService = inject(LogsService);
 
-  readonly functionName = input.required<string>();
+  readonly functionId = input.required<string>();
 
   protected readonly logs = signal<FaasboxLog[]>([]);
   protected readonly isLoading = signal(false);
@@ -118,25 +118,25 @@ export class LogViewerComponent {
 
   constructor() {
     effect((onCleanup) => {
-      const name = this.functionName();
-      this.loadLogs(name);
+      const id = this.functionId();
+      this.loadLogs(id);
       const unsubscribe = this.logsService.subscribe(
-        name,
+        id,
         (log) => {
           this.logs.update((current) => [log, ...current].slice(0, 50));
         },
         // Entries written while the stream was down never arrived; appending to
         // the list from there on would leave a hole nothing ever fills.
-        () => this.loadLogs(name),
+        () => this.loadLogs(id),
       );
       onCleanup(() => unsubscribe());
     });
   }
 
-  protected async loadLogs(functionName: string): Promise<void> {
+  protected async loadLogs(functionId: string): Promise<void> {
     this.isLoading.set(true);
     try {
-      const res = await firstValueFrom(this.logsService.list(functionName));
+      const res = await firstValueFrom(this.logsService.list(functionId));
       this.logs.set(res.items);
     } catch {
       this.logs.set([]);
@@ -146,7 +146,7 @@ export class LogViewerComponent {
   }
 
   protected refresh(): void {
-    this.loadLogs(this.functionName());
+    this.loadLogs(this.functionId());
   }
 
   protected toggleExpand(id: string): void {
