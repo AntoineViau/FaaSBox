@@ -50,10 +50,18 @@ func setupLogsCollection(t testing.TB, app core.App) {
 	}
 }
 
-// createTestAPIKey creates an API key record and returns the raw key string.
+// createTestAPIKey creates an invoke-only API key record and returns the raw key
+// string.
 func createTestAPIKey(t testing.TB, app core.App, name string, allowedFunctions []string) string {
 	t.Helper()
-	rawKey, err := generateAPIKey(app, name, allowedFunctions, types.DateTime{})
+	return createTestManageKey(t, app, name, allowedFunctions, false)
+}
+
+// createTestManageKey is createTestAPIKey with the canManage flag chosen, for
+// the tests that exercise the function management routes.
+func createTestManageKey(t testing.TB, app core.App, name string, allowedFunctions []string, canManage bool) string {
+	t.Helper()
+	rawKey, err := generateAPIKey(app, name, allowedFunctions, types.DateTime{}, canManage)
 	if err != nil {
 		t.Fatalf("failed to generate API key %q: %v", name, err)
 	}
@@ -257,6 +265,15 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	faas.GET("/functions", func(re *core.RequestEvent) error {
 		return listFunctionsHandler(re, functionsDir)
 	})
+
+	// Function management (API key with canManage, or superuser)
+	manage := e.Router.Group("/api/faasbox/functions")
+	manage.Bind(requireAPIKey(e.App))
+	manage.Bind(requireManageKey())
+	manage.POST("", createFunctionHandler)
+	manage.GET("/{name}", getFunctionHandler)
+	manage.PUT("/{name}", replaceFunctionHandler)
+	manage.DELETE("/{name}", deleteFunctionHandler)
 
 	// Key management (superuser only)
 	e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {

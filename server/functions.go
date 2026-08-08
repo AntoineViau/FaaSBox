@@ -14,6 +14,27 @@ import (
 
 const faasboxFunctionsCollection = "faasbox_functions"
 
+// maxSourceSize bounds the two fields that carry what the user actually wrote:
+// the script and the package.json manifest.
+//
+// It has to be declared. A core.TextField with no explicit Max takes PocketBase's
+// 5000-rune default and refuses the whole record past it — and 5000 runes is
+// short enough to turn away an ordinary function. The refusal was loud but
+// baffling, since nothing in the product declared such a limit.
+//
+// The unit is the rune, not the byte: PocketBase counts a TextField's length as
+// len([]rune(value)). A million runes is therefore at least a megabyte of source,
+// and more when it is not ASCII.
+const maxSourceSize = 1 << 20 // 1,048,576 characters
+
+// maxEnvSize bounds the encrypted environment of a function.
+//
+// It measures the *stored* value — base64 of nonce, ciphertext and tag — not the
+// plaintext, which is what the caller sends. Base64 costs a third on top, so
+// this leaves roughly 75 KB of secrets in clear, where the undeclared default
+// left about 3.7 KB: enough to turn away a single long private key.
+const maxEnvSize = 100 << 10 // 102,400 characters
+
 // ensureFunctionsCollection creates the faasbox_functions collection if it doesn't exist,
 // or migrates it by adding missing fields (script, packageJson, depsStatus, depsError,
 // bunLock).
@@ -24,10 +45,10 @@ func ensureFunctionsCollection(app core.App) error {
 		col = core.NewBaseCollection(faasboxFunctionsCollection)
 		col.Fields.Add(
 			&core.TextField{Name: "name", Required: true},
-			&core.TextField{Name: "env", Hidden: true},
+			&core.TextField{Name: "env", Hidden: true, Max: maxEnvSize},
 			&core.JSONField{Name: "plainEnv"},
-			&core.TextField{Name: "script"},
-			&core.TextField{Name: "packageJson"},
+			&core.TextField{Name: "script", Max: maxSourceSize},
+			&core.TextField{Name: "packageJson", Max: maxSourceSize},
 			newDepsStatusField(),
 			newDepsErrorField(),
 			newBunLockField(),
@@ -41,11 +62,11 @@ func ensureFunctionsCollection(app core.App) error {
 	// Collection exists — add missing fields if needed
 	needsSave := false
 	if col.Fields.GetByName("script") == nil {
-		col.Fields.Add(&core.TextField{Name: "script"})
+		col.Fields.Add(&core.TextField{Name: "script", Max: maxSourceSize})
 		needsSave = true
 	}
 	if col.Fields.GetByName("packageJson") == nil {
-		col.Fields.Add(&core.TextField{Name: "packageJson"})
+		col.Fields.Add(&core.TextField{Name: "packageJson", Max: maxSourceSize})
 		needsSave = true
 	}
 	if col.Fields.GetByName("depsStatus") == nil {
@@ -66,6 +87,37 @@ func ensureFunctionsCollection(app core.App) error {
 			needsSave = true
 		}
 	}
+
+	// Realign the declared size of the three fields whose cap has moved.
+	//
+	// These are the caps on this collection that changed: bunLock and depsError
+	// have carried the same constant since they were created, so nothing can make
+	// them diverge, while a collection created by an earlier version carries the
+	// 5000-rune default on the three below. Left frozen, they would keep refusing
+	// exactly what the raise is meant to accept — an existing instance would see
+	// no effect at all.
+	//
+	// Widening never invalidates what is stored: PocketBase validates a size when
+	// a record is written, not when a schema changes.
+	//
+	// A field that is absent — or is not a TextField — yields nil, false and is
+	// skipped, same reasoning as ensureLogsCollection.
+	for _, want := range []struct {
+		name string
+		max  int
+	}{
+		{"script", maxSourceSize},
+		{"packageJson", maxSourceSize},
+		{"env", maxEnvSize},
+	} {
+		field, ok := col.Fields.GetByName(want.name).(*core.TextField)
+		if !ok || field.Max == want.max {
+			continue
+		}
+		field.Max = want.max
+		needsSave = true
+	}
+
 	if needsSave {
 		return app.Save(col)
 	}

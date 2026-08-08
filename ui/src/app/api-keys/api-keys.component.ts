@@ -84,6 +84,11 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
                   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                     <span class="text-sm font-semibold">{{ key.name }}</span>
                     <code class="font-mono text-xs text-muted-foreground">{{ key.keyPrefix }}...</code>
+                    @if (key.canManage) {
+                      <span class="rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">
+                        Can manage functions
+                      </span>
+                    }
                   </div>
                   <p class="text-xs text-muted-foreground">
                     Created {{ day(key.created) }} —
@@ -173,7 +178,12 @@ export class ApiKeysComponent implements OnInit {
     this.errorMessage.set('');
     try {
       const created = await firstValueFrom(
-        this.apiKeysService.create(request.name, request.allowedFunctions, request.expiresAt),
+        this.apiKeysService.create(
+          request.name,
+          request.allowedFunctions,
+          request.expiresAt,
+          request.canManage,
+        ),
       );
       // The raw value only lives in this signal, until the user leaves the page
       // or dismisses the panel.

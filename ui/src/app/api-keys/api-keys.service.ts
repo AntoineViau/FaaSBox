@@ -22,11 +22,12 @@ export class ApiKeysService {
     });
   }
 
-  create(name: string, allowedFunctions: string[], expiresAt: string) {
+  create(name: string, allowedFunctions: string[], expiresAt: string, canManage: boolean) {
     return this.http.post<FaasboxApiKeyCreated>(CREATE_URL, {
       name,
       allowedFunctions,
       expiresAt,
+      canManage,
     });
   }
 

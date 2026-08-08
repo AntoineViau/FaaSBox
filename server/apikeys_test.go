@@ -105,7 +105,7 @@ func TestGenerateAPIKey(t *testing.T) {
 	defer app.Cleanup()
 	setupFaaSCollections(t, app)
 
-	rawKey, err := generateAPIKey(app, "test-key", []string{"echo"}, types.DateTime{})
+	rawKey, err := generateAPIKey(app, "test-key", []string{"echo"}, types.DateTime{}, false)
 	if err != nil {
 		t.Fatalf("generateAPIKey failed: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestGenerateAPIKey(t *testing.T) {
 	}
 
 	// Two generated keys should be different
-	rawKey2, err := generateAPIKey(app, "test-key-2", nil, types.DateTime{})
+	rawKey2, err := generateAPIKey(app, "test-key-2", nil, types.DateTime{}, false)
 	if err != nil {
 		t.Fatalf("second generateAPIKey failed: %v", err)
 	}

@@ -55,6 +55,8 @@ Either way, on save:
 
 A record saved without touching `plainEnv` keeps its secrets — editing a script never disturbs them.
 
+**How much a function may carry.** Roughly **75 KB of secrets in clear**, all variables taken together. The ceiling is on the encrypted blob actually stored, and encryption plus its encoding cost a third on top, which is where that figure comes from. Past it the save is refused and names the field; nothing is ever trimmed behind your back, so a secret that saved is a secret stored whole.
+
 ### 3. Access Secrets in your Function
 Secrets are injected into the function's environment and are available via `process.env`.
 

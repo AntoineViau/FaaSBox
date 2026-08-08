@@ -288,6 +288,106 @@ func TestEnsureFunctionsCollection_BunLockField(t *testing.T) {
 	})
 }
 
+// TestEnsureFunctionsCollection_SourceSize pins the declared size of the fields
+// carrying what the user wrote — the script, the manifest, and the encrypted
+// environment. Undeclared, they take PocketBase's 5000-rune default, which turns
+// away an ordinary function and a single long private key.
+func TestEnsureFunctionsCollection_SourceSize(t *testing.T) {
+	wanted := map[string]int{
+		"script":      maxSourceSize,
+		"packageJson": maxSourceSize,
+		"env":         maxEnvSize,
+	}
+	assertFields := func(t *testing.T, app core.App) {
+		t.Helper()
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, max := range wanted {
+			field, ok := col.Fields.GetByName(name).(*core.TextField)
+			if !ok {
+				t.Fatalf("%s is a %T, want a *core.TextField", name, col.Fields.GetByName(name))
+			}
+			if field.Max != max {
+				t.Errorf("%s Max = %d, want the declared cap %d", name, field.Max, max)
+			}
+		}
+	}
+
+	t.Run("at creation", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		assertFields(t, app)
+	})
+
+	t.Run("realigned on a collection created by an earlier version", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		// Put the fields back the way a version without the cap left them: no
+		// declared Max, hence the 5000-rune default.
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name := range wanted {
+			col.Fields.GetByName(name).(*core.TextField).Max = 0
+		}
+		if err := app.Save(col); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		assertFields(t, app)
+	})
+
+	t.Run("a second call saves nothing", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before := col.Updated
+
+		// Recomputing the wanted size differently on each path would make the
+		// comparison miss and re-save the collection at every boot.
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		col, err = app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if col.Updated != before {
+			t.Error("an idempotent call re-saved the collection")
+		}
+	})
+}
+
 // TestSyncRecordToDisk_Lockfile makes the lockfile an artefact of the record: it is
 // written back like index.ts and package.json, and cleared when the record no
 // longer carries one.

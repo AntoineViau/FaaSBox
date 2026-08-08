@@ -76,7 +76,7 @@ That last sentence is not hypothetical. A name may contain the same characters a
 
 **Which one should you use?** The id, for anything that has to keep working. A name is a label meant to be changed, and changing it breaks every caller wired on it — FaaSBox will not redirect the old URL to the new one. The id is stable for the life of the function, and it is what `GET /functions` hands you.
 
-The same rule governs `GET /api/faasbox/functions/{idOrName}/env`, `.../files` and `.../files/content`.
+The same rule governs the management endpoints below, and `GET /api/faasbox/functions/{idOrName}/env`, `.../files` and `.../files/content`.
 
 ---
 
@@ -109,7 +109,120 @@ A key whose scope names only functions that no longer exist gets `{"functions": 
 
 ---
 
-## 3. Create API Key
+## 3. Manage Functions
+
+Four endpoints write functions over HTTP, with an API key rather than a superuser token: create, read, replace, delete. There is no `PATCH`.
+
+| Endpoint | Effect | Codes |
+|---|---|---|
+| `POST /api/faasbox/functions` | Creates a function | `201`, `400`, `401`, `403`, `409` |
+| `GET /api/faasbox/functions/{idOrName}` | Reads it | `200`, `400`, `401`, `403`, `404` |
+| `PUT /api/faasbox/functions/{idOrName}` | Replaces it | `200`, `400`, `401`, `403`, `404` |
+| `DELETE /api/faasbox/functions/{idOrName}` | Deletes it | `204`, `400`, `401`, `403`, `404` |
+
+**Authentication**: an API key carrying the `canManage` flag (see [06 - API Keys & Security](06-api-keys-and-security.md)), or a superuser session. A valid key *without* the flag gets `403` on all four — invoking and rewriting are two different rights.
+
+**Scope**: the key's `allowedFunctions` applies to the three endpoints that name a function, exactly as it does to `/invoke`. `POST` is the exception: it carries no function in its path, and there is nothing to compare a scope against for a function that does not exist yet. **A key with a restricted scope therefore changes and deletes the functions it names, but creates none** — otherwise it could grant itself a function it was never given.
+
+### Request body (`POST` and `PUT`)
+
+```json
+{
+  "name": "echo",
+  "script": "const payload = await Bun.stdin.text(); console.log(JSON.stringify({ok: true}));",
+  "packageJson": "{\"dependencies\":{}}",
+  "plainEnv": { "STRIPE_KEY": "sk_test_..." },
+  "crons": [
+    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 }
+  ]
+}
+```
+
+- `name` is read by `POST` only. On `PUT` the **path** identifies the function; a `name` in the body may repeat that identity — either the current name or the id, so a `GET` response can be edited and sent straight back — but a different one is a `400`. **This route never renames.** A silent rename would break every URL wired on the old name with nothing in the exchange saying so; rename from the editor instead.
+- `script` and `packageJson` are **replaced whole**. `PUT` replaces the function: a field the body does not carry becomes empty. Sending only `script` therefore clears `packageJson`, and with it the dependencies. Send the full pair every time.
+- `crons`, when present, is the complete set of triggers, not a patch. `active` defaults to `true` when omitted, `maxQueue` to `0` (no limit).
+- **The whole request is one write, or none of it is.** The function and its triggers are saved together: if any trigger is refused, the call answers `400` and *nothing* is applied — not the script, not `packageJson`, not `plainEnv`, not the other triggers. A refused `POST` leaves no function behind, so the corrected retry still creates rather than colliding with a `409`.
+
+### `plainEnv`: absent and empty do not mean the same thing
+
+This is the trap of the contract, and it is worth reading twice:
+
+| `plainEnv` in the body | Effect |
+|---|---|
+| **Absent**, or `null` | The stored secrets are **preserved**. |
+| `{}` | Every secret is **deleted**. |
+| A non-empty object | The secrets are **replaced whole** — variables not listed are dropped. |
+
+A client that serialises an empty object where it meant to send nothing destroys the secrets of that function, with no confirmation and no way back. If you are writing a script or an agent tool around this endpoint, say so in its description.
+
+Anything other than an object of string values is a `400`, and nothing is written.
+
+Reading secrets back is *not* part of this contract: `GET` never returns them. Only the superuser endpoint below decrypts them.
+
+### `crons`: same rule
+
+| `crons` in the body | Effect |
+|---|---|
+| **Absent**, or `null` | The existing triggers are **preserved**. |
+| `[]` | Every trigger is **deleted**. |
+| A non-empty list | The triggers are **replaced whole**. |
+
+### Response (`POST`, `GET`, `PUT`)
+
+```json
+{
+  "id": "k9m2xq7p4wz1n3v",
+  "name": "echo",
+  "script": "...",
+  "packageJson": "...",
+  "depsStatus": "installing",
+  "depsError": "",
+  "crons": [
+    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 }
+  ]
+}
+```
+
+`DELETE` answers `204` with no body.
+
+**Never `env`, never `bunLock`.** The encrypted environment and the lockfile are mechanics, not contract: a caller that never saw them cannot be broken by them changing. Use `id` for anything that has to keep working — it survives a rename, and it is what a key's scope lists.
+
+`depsStatus` is what the record says at that instant, not the end of the install: `bun install` runs in the background and the reply does not wait for it. Poll with `GET`, or simply call `POST /invoke/{idOrName}` — the invocation path installs what is missing before running.
+
+### What each code means
+
+- `400`: the body is not valid JSON, the name is not a usable identifier, `plainEnv` is not an object of strings, a `name` in a `PUT` body designates another function, or a cron expression is invalid. It is also the answer when a record is refused by field validation, and the body then names the field:
+    ```json
+    { "error": "The function was refused", "fields": { "script": "Must be no more than 1048576 character(s)." } }
+    ```
+    A trigger refused the same way says which one, since a function and a trigger both carry a `name`:
+    ```json
+    { "error": "Trigger \"nightly\" was refused", "fields": { "schedule": "Cannot be blank." } }
+    ```
+    `script` and `packageJson` are capped at **1,048,576 characters each** — the editor uses the same ceiling. It is counted in characters, not bytes, so a non-ASCII file gets more than a megabyte of room.
+
+    `plainEnv` has its own ceiling, about **75 KB of secrets in clear**. It applies to the encrypted form actually stored, and encryption plus its encoding cost a third on top, which is where the figure comes from.
+- `401`: missing or invalid `X-API-Key`.
+- `403`: the key lacks `canManage`, its scope does not cover this function, its scope cannot be read, or it is restricted and tried to create.
+- `404`: the segment designates no function. `PUT` **never creates** — a `404` is a `404`.
+- `409`: `POST` on a name another function already carries.
+
+### Deleting
+
+`DELETE` removes the record. Its triggers and its execution logs go with it, by the cascade on their relation, and its folder is removed from disk. **The history is destroyed** — that is deliberate, in the same spirit as log retention, and there is no undo.
+
+### Example
+
+```bash
+curl -X POST http://localhost:8080/api/faasbox/functions \
+  -H "X-API-Key: fbx_..." \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"echo","script":"console.log(JSON.stringify({ok:true}))","packageJson":"{}"}'
+```
+
+---
+
+## 4. Create API Key
 **Endpoint**: `POST /api/faasbox/keys`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -140,7 +253,7 @@ Creates a new hashed API key.
 
 ---
 
-## 4. Read a Function's Environment
+## 5. Read a Function's Environment
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/env`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -160,7 +273,7 @@ Returns the decrypted environment variables of a function, as a flat JSON object
 
 ---
 
-## 5. List a Function's Files
+## 6. List a Function's Files
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -187,7 +300,7 @@ Returns **one level** of the function's folder on disk. Never recursive.
 
 ---
 
-## 6. Read a Function's File
+## 7. Read a Function's File
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files/content`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -217,7 +330,7 @@ Both endpoints are read-only. There is no counterpart that writes, deletes or up
 
 ---
 
-## 7. Health Check
+## 8. Health Check
 **Endpoint**: `GET /health`
 
 **No Authentication Required.**
@@ -241,6 +354,8 @@ Used for container health checks or load balancer heartbeat. Verifies that the S
 ---
 
 ## Internal Collections API
-Since FaaSBox is built on PocketBase, you can also use the standard PocketBase Web APIs to manage the collections (`faasbox_api_keys`, `faasbox_cron_jobs`, `faasbox_logs`, `faasbox_functions`). 
+Since FaaSBox is built on PocketBase, you can also use the standard PocketBase Web APIs to manage the collections (`faasbox_api_keys`, `faasbox_cron_jobs`, `faasbox_logs`, `faasbox_functions`).
 
-Refer to the [PocketBase API Documentation](https://pocketbase.io/docs/api-records/) for details on listing, creating, and updating records in these collections. **Note**: By default, these collections have `nil` API rules, meaning only Superusers can access them.
+Refer to the [PocketBase API Documentation](https://pocketbase.io/docs/api-records/) for details on listing, creating, and updating records in these collections. **Note**: these collections have `nil` API rules, so **only a superuser reaches them** — and a superuser token is full power over the instance: dropping collections, reading every secret in clear, changing the password.
+
+For writing functions, prefer [Manage Functions](#3-manage-functions) above. It needs an API key rather than that token, and it publishes a contract rather than the record: the internal columns (`env`, `bunLock`, and whatever the install machinery adds next) can change without breaking what you built on it.

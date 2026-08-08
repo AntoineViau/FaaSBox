@@ -22,7 +22,8 @@ Two paths, one result. Both go through the same endpoint — the editor simply c
 
 1.  A **Name**, for your own reference. Required.
 2.  A **Scope**: either *All functions*, or a selection among the functions that exist on the instance.
-3.  An optional **Expiration** date. The key stays valid through the end of that day (UTC).
+3.  **Can manage functions**, off by default. See [Management Keys](#management-keys) below before ticking it.
+4.  An optional **Expiration** date. The key stays valid through the end of that day (UTC). Ticking the management box fills it in with a date 30 days out, if you have not typed one — a proposal, which you can change or clear.
 
 The key is then revealed once, with a copy button and a warning. Dismiss the panel or leave the page and the value is gone for good.
 
@@ -37,7 +38,33 @@ curl -X POST http://localhost:8080/api/faasbox/keys \
   -d '{"name":"my-app","allowedFunctions":["k9m2xq7p4wz1n3v"],"expiresAt":"2026-12-31T23:59:59Z"}'
 ```
 
-`allowedFunctions` and `expiresAt` are both optional. An empty or absent `allowedFunctions` means the key can invoke any function; an absent `expiresAt` means it never expires. `expiresAt` is a date string — RFC3339 (`2026-12-31T23:59:59Z`) or a plain `2026-12-31`, which lands at midnight UTC. A value that cannot be parsed is rejected with `400`: it is never silently dropped, since that would turn a key you meant to bound into a perpetual one.
+`allowedFunctions`, `expiresAt` and `canManage` are all optional. An empty or absent `allowedFunctions` means the key can invoke any function; an absent `expiresAt` means it never expires; an absent `canManage` means invoke-only. `expiresAt` is a date string — RFC3339 (`2026-12-31T23:59:59Z`) or a plain `2026-12-31`, which lands at midnight UTC. A value that cannot be parsed is rejected with `400`: it is never silently dropped, since that would turn a key you meant to bound into a perpetual one.
+
+### Management Keys
+
+A key has two independent dimensions of authority. The **scope** says *which* functions it reaches. The **`canManage`** flag says *what it may do* with them:
+
+| `canManage` | What the key can do |
+|-------------|---------------------|
+| Absent or `false` | Invoke functions and list them. This is what every key could do before the flag existed. |
+| `true` | The above, plus create, replace and delete functions — see [09 - API Reference](09-api-reference.md). |
+
+**Read that second row again before you tick the box.** Replacing a function means writing the code this server executes. A leaked invocation key lets someone call what you already wrote; a leaked management key lets them write anything and have it run, with your secrets in its environment and your network within reach. The two are not on the same scale, and the flag is off by default for that reason.
+
+Three things follow:
+
+- **Give a management key an expiration.** The creation form proposes one; the API does not, so pass `expiresAt` yourself.
+- **Scope it if you can.** A management key restricted to named functions replaces and deletes those, and **creates nothing** — creation needs an unrestricted key, since there is no name yet to weigh against a scope. If a robot only maintains one function, a scoped key is the right shape.
+- **The flag does not grant secrets.** A management key can *write* environment variables, never read them back: `GET /api/faasbox/functions/{idOrName}/env` stays superuser-only. Writing them is part of deploying a function; reading them is not.
+
+Creating keys is not part of it either — `POST /api/faasbox/keys` remains superuser-only, so a management key cannot mint itself a better one.
+
+```bash
+curl -X POST http://localhost:8080/api/faasbox/keys \
+  -H "Authorization: $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"deploy-bot","canManage":true,"expiresAt":"2026-12-31T23:59:59Z"}'
+```
 
 ### Function Scope
 
@@ -80,7 +107,7 @@ When a key is generated:
 
 ### Revocation
 
-From the editor's **API keys** page, each key carries an **Active** checkbox and a delete button — unchecking one disables the key, deleting one removes it. The same two operations are available by hand in the `faasbox_api_keys` collection (`active = false`, or delete the record). Either way, the change takes effect on the next request: nothing is cached.
+From the editor's **API keys** page, each key carries an **Active** checkbox and a delete button — unchecking one disables the key, deleting one removes it. A key that can manage functions is labelled as such next to its name, so the page shows you what you are about to keep. The same two operations are available by hand in the `faasbox_api_keys` collection (`active = false`, or delete the record). Either way, the change takes effect on the next request: nothing is cached.
 
 The page also lets you narrow or widen the scope of a key that already exists, which is the cheap way to apply least privilege after the fact.
 
@@ -114,7 +141,7 @@ In the official Docker image, the application runs as a dedicated `faas` user, n
 
 ## Best Practices
 
-1.  **Least Privilege**: Create specific API keys for specific applications and restrict them to only the functions they need to call.
+1.  **Least Privilege**: Create specific API keys for specific applications and restrict them to only the functions they need to call. Leave **Can manage functions** off unless the caller genuinely writes functions, and give it an expiration when you do.
 2.  **Regular Rotation**: Periodically rotate your API keys.
 3.  **Secret Management**: Never hardcode API keys or sensitive data in your `index.ts`. Use the [Encrypted Environment Variables](04-environment-variables.md) system.
 4.  **Audit Logs**: Regularly check the `faasbox_logs` collection for any suspicious activity or unexpected errors.

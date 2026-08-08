@@ -11,6 +11,13 @@ export interface FaasboxApiKey {
    */
   allowedFunctions: string[] | null;
   active: boolean;
+  /**
+   * Whether the key may create, replace and delete functions.
+   *
+   * A second dimension, not a wider scope: reaching a function and rewriting it
+   * are different rights. A key without it can only invoke what already exists.
+   */
+  canManage: boolean;
   /** Empty string means the key never expires. */
   expiresAt: string;
   created: string;

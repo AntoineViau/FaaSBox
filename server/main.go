@@ -103,6 +103,18 @@ func main() {
 				return listFunctionsHandler(re, functionsDir)
 			})
 
+			// Function management. Behind the same key middleware, plus the
+			// canManage guard: reaching a function and rewriting it are two
+			// different rights, and only the second lets a key decide what this
+			// server executes.
+			manage := e.Router.Group("/api/faasbox/functions")
+			manage.Bind(requireAPIKey(e.App))
+			manage.Bind(requireManageKey())
+			manage.POST("", createFunctionHandler)
+			manage.GET("/{name}", getFunctionHandler)
+			manage.PUT("/{name}", replaceFunctionHandler)
+			manage.DELETE("/{name}", deleteFunctionHandler)
+
 			// Key management (superuser only, no API key needed)
 			e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
 				return createKeyHandler(re)

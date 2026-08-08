@@ -23,7 +23,19 @@ export interface ApiKeyCreateRequest {
   allowedFunctions: string[];
   /** RFC3339 date, or an empty string when the key never expires. */
   expiresAt: string;
+  /** Whether the key may create, replace and delete functions. */
+  canManage: boolean;
 }
+
+/**
+ * Days the form proposes as an expiry once the management flag is ticked.
+ *
+ * A leaked management key lets someone write the code this server runs, where a
+ * leaked invocation key only calls what is already there. The proposal is a
+ * nudge, not a rule: the field stays editable, and clearing it still creates a
+ * key that never expires.
+ */
+const MANAGE_KEY_EXPIRY_DAYS = 30;
 
 @Component({
   selector: 'app-api-key-create',
@@ -83,6 +95,22 @@ export interface ApiKeyCreateRequest {
         </div>
 
         <div>
+          <label class="flex w-fit cursor-pointer items-center gap-1.5">
+            <input
+              type="checkbox"
+              class="h-4 w-4 accent-primary"
+              [checked]="canManage()"
+              (change)="onCanManageChange($any($event.target).checked)"
+            />
+            <span class="text-xs text-muted-foreground">Can manage functions</span>
+          </label>
+          <p class="mt-0.5 text-xs text-muted-foreground">
+            Lets the key create, replace and delete functions — not just call them. That is arbitrary
+            code execution on this server, so give it an expiration.
+          </p>
+        </div>
+
+        <div>
           <label class="mb-1 block text-xs text-muted-foreground">Expiration (optional)</label>
           <input
             z-input
@@ -116,6 +144,7 @@ export class ApiKeyCreateComponent {
 
   protected readonly name = signal('');
   protected readonly expiryDate = signal('');
+  protected readonly canManage = signal(false);
   protected readonly copied = signal(false);
   protected readonly copyFailed = signal(false);
 
@@ -133,12 +162,26 @@ export class ApiKeyCreateComponent {
       if (this.createdKey()) {
         this.name.set('');
         this.expiryDate.set('');
+        this.canManage.set(false);
         this.scope.set(['*']);
         this.scopeSeed.set(['*']);
         this.copied.set(false);
         this.copyFailed.set(false);
       }
     });
+  }
+
+  /**
+   * Ticking the box proposes an expiry, and only when the field is still empty:
+   * a date the user typed is theirs, and unticking never takes one away.
+   */
+  protected onCanManageChange(checked: boolean): void {
+    this.canManage.set(checked);
+    if (checked && this.expiryDate() === '') {
+      const day = new Date();
+      day.setDate(day.getDate() + MANAGE_KEY_EXPIRY_DAYS);
+      this.expiryDate.set(day.toISOString().slice(0, 10));
+    }
   }
 
   protected submit(): void {
@@ -152,6 +195,7 @@ export class ApiKeyCreateComponent {
       // <input type="date"> yields YYYY-MM-DD; the key expires at the end of
       // that day rather than at its first second.
       expiresAt: day ? `${day}T23:59:59Z` : '',
+      canManage: this.canManage(),
     });
   }
 

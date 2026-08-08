@@ -40,6 +40,10 @@ func ensureAPIKeysCollection(app core.App) error {
 		&core.TextField{Name: "keyPrefix", Required: true},
 		&core.JSONField{Name: "allowedFunctions"},
 		&core.BoolField{Name: "active"},
+		// canManage is the second dimension of a key's authority: allowedFunctions
+		// says *which* functions it reaches, this says *what it may do* with them.
+		// Absent means invoke-only, which is what every key was before it existed.
+		&core.BoolField{Name: "canManage"},
 		&core.DateField{Name: "expiresAt"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
@@ -59,8 +63,10 @@ func hashAPIKey(rawKey string) string {
 // generateAPIKey creates a new API key record and returns the raw key.
 //
 // A zero expiresAt leaves the field empty, which the middleware reads as "never
-// expires".
-func generateAPIKey(app core.App, name string, allowedFunctions []string, expiresAt types.DateTime) (string, error) {
+// expires". canManage opens the function management routes: a key carrying it
+// can replace the code of a function, which is arbitrary execution on this
+// server — hence the parameter rather than a default.
+func generateAPIKey(app core.App, name string, allowedFunctions []string, expiresAt types.DateTime, canManage bool) (string, error) {
 	rawKey := apiKeyPrefix + security.RandomString(apiKeyLen-len(apiKeyPrefix))
 	keyHash := hashAPIKey(rawKey)
 
@@ -75,6 +81,7 @@ func generateAPIKey(app core.App, name string, allowedFunctions []string, expire
 	record.Set("keyPrefix", rawKey[:16])
 	record.Set("allowedFunctions", allowedFunctions)
 	record.Set("active", true)
+	record.Set("canManage", canManage)
 	if !expiresAt.IsZero() {
 		record.Set("expiresAt", expiresAt)
 	}
@@ -92,6 +99,7 @@ func createKeyHandler(e *core.RequestEvent) error {
 		Name             string   `json:"name"`
 		AllowedFunctions []string `json:"allowedFunctions"`
 		ExpiresAt        string   `json:"expiresAt"` // RFC3339, optional
+		CanManage        bool     `json:"canManage"` // absent means invoke-only
 	}
 	if err := json.NewDecoder(e.Request.Body).Decode(&body); err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{
@@ -119,7 +127,7 @@ func createKeyHandler(e *core.RequestEvent) error {
 		expiresAt = parsed
 	}
 
-	rawKey, err := generateAPIKey(e.App, body.Name, body.AllowedFunctions, expiresAt)
+	rawKey, err := generateAPIKey(e.App, body.Name, body.AllowedFunctions, expiresAt, body.CanManage)
 	if err != nil {
 		e.App.Logger().Error("faasbox: failed to generate API key", "error", err)
 		return e.JSON(http.StatusInternalServerError, map[string]string{
@@ -206,6 +214,39 @@ func scopeAllows(allowed []string, functionId string) bool {
 	return scopeIsUnrestricted(allowed) || slices.Contains(allowed, functionId)
 }
 
+// requireManageKey returns a middleware that gates the function management
+// routes on the canManage flag. It is bound *after* requireAPIKey, which is what
+// leaves the key record in the request context.
+//
+// A superuser session short-circuits requireAPIKey and therefore leaves no
+// record behind: it is recognised here for the same reason, and not read as an
+// absent flag. Any other request without a record never went through the
+// middleware chain and is refused rather than trusted.
+//
+// The flag is a second dimension, not a stronger scope: a key needs both a scope
+// covering the function and canManage to change it. Losing an invoke-only key
+// lets someone call code that already exists; losing a canManage key lets them
+// write the code the server executes.
+func requireManageKey() *hook.Handler[*core.RequestEvent] {
+	return &hook.Handler[*core.RequestEvent]{
+		Id: "faasboxRequireManageKey",
+		Func: func(e *core.RequestEvent) error {
+			if e.Auth != nil && e.Auth.IsSuperuser() {
+				return e.Next()
+			}
+
+			record, ok := e.Get(apiKeyContextKey).(*core.Record)
+			if !ok || record == nil || !record.GetBool("canManage") {
+				return e.JSON(http.StatusForbidden, map[string]string{
+					"error": "API key is not authorized to manage functions",
+				})
+			}
+
+			return e.Next()
+		},
+	}
+}
+
 // requireAPIKey returns a middleware that validates the X-API-Key header.
 func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 	return &hook.Handler[*core.RequestEvent]{
@@ -281,9 +322,11 @@ func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 					if fn, err := resolveFunction(app, segment); err == nil {
 						target = fn.Id
 					}
+					// The wording does not name invocation: the same check now
+					// also governs reading, replacing and deleting a function.
 					if !scopeAllows(allowed, target) {
 						return e.JSON(http.StatusForbidden, map[string]string{
-							"error": fmt.Sprintf("API key is not authorized to invoke function %q", segment),
+							"error": fmt.Sprintf("API key is not authorized for function %q", segment),
 						})
 					}
 				}
