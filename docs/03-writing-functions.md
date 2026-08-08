@@ -21,6 +21,8 @@ Examples:
 | `my-function-` | No (ends with a hyphen)      |
 | `my_function`  | No (underscores not allowed) |
 
+These rules are **enforced when you save**, not merely recommended. A name outside them is refused with a `400` whose message quotes the name and restates the rule, and nothing is written — the same refusal from the editor, from the [management API](09-api-reference.md) and from the PocketBase admin UI. Renaming is checked the same way, so the function keeps the name it had.
+
 ## Basic Structure
 
 A function is an `index.ts`, written in the **Script** tab of the editor.

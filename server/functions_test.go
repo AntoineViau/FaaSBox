@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
+	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 // newDetachedFunction builds an unsaved record carrying the id we want, which is
@@ -386,6 +390,221 @@ func TestEnsureFunctionsCollection_SourceSize(t *testing.T) {
 			t.Error("an idempotent call re-saved the collection")
 		}
 	})
+}
+
+// bindFunctionNameHook wires the name guard the way main.go does. A test app
+// starts with no hook bound.
+func bindFunctionNameHook(app core.App) {
+	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
+	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
+}
+
+// newFunctionApp is a test app carrying the functions collection, with the name
+// guard bound unless the caller asks to bind it later — which is how a record
+// already stored under an invalid name is staged.
+func newFunctionApp(t *testing.T, bindHook bool) *tests.TestApp {
+	t.Helper()
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(app.Cleanup)
+	if err := ensureFunctionsCollection(app); err != nil {
+		t.Fatal(err)
+	}
+	if bindHook {
+		bindFunctionNameHook(app)
+	}
+	return app
+}
+
+// newFunctionRecord builds an unsaved record under the given name.
+func newFunctionRecord(t *testing.T, app core.App, name string) *core.Record {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(col)
+	record.Set("name", name)
+	record.Set("script", "console.log(1)")
+	return record
+}
+
+// assertNameRefused checks the shape of the refusal as much as its existence: an
+// ordinary error would be swallowed by firstApiError and replaced by a generic
+// "Failed to create record", leaving the editor with nothing to show.
+func assertNameRefused(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("the name was accepted")
+	}
+	var apiErr *router.ApiError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("refusal is a %T, want a *router.ApiError", err)
+	}
+	if apiErr.Status != http.StatusBadRequest {
+		t.Errorf("refusal status = %d, want 400", apiErr.Status)
+	}
+	if !strings.Contains(apiErr.Message, "Invalid function name") ||
+		!strings.Contains(apiErr.Message, "letters, digits and hyphens only") {
+		t.Errorf("refusal message = %q, it names neither the name nor the rule", apiErr.Message)
+	}
+}
+
+// TestValidateFunctionNameHook covers the guard the naming rule was missing. It
+// was declared as a product rule and enforced nowhere it applies: a name outside
+// it saved and ran, but /invoke/{name} answered 400 before resolving anything,
+// and a name carrying a NUL failed every single invocation.
+func TestValidateFunctionNameHook(t *testing.T) {
+	invalid := []struct {
+		label string
+		name  string
+	}{
+		{"underscore", "my_function"},
+		{"space", "mon nom"},
+		{"empty", ""},
+		{"leading hyphen", "-my-function"},
+		{"trailing hyphen", "my-function-"},
+		{"path traversal", "../escape"},
+		{"over 64 characters", strings.Repeat("a", 65)},
+		{"NUL byte", "bad\x00name"},
+	}
+
+	t.Run("refuses an invalid name at creation", func(t *testing.T) {
+		for _, tc := range invalid {
+			t.Run(tc.label, func(t *testing.T) {
+				app := newFunctionApp(t, true)
+				assertNameRefused(t, app.Save(newFunctionRecord(t, app, tc.name)))
+
+				records, err := app.FindAllRecords(faasboxFunctionsCollection)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(records) != 0 {
+					t.Errorf("%d record(s) written despite the refused name", len(records))
+				}
+			})
+		}
+	})
+
+	t.Run("refuses a rename to an invalid name", func(t *testing.T) {
+		for _, tc := range invalid {
+			t.Run(tc.label, func(t *testing.T) {
+				app := newFunctionApp(t, true)
+				record := newFunctionRecord(t, app, "before")
+				if err := app.Save(record); err != nil {
+					t.Fatal(err)
+				}
+
+				record.Set("name", tc.name)
+				assertNameRefused(t, app.Save(record))
+
+				stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := stored.GetString("name"); got != "before" {
+					t.Errorf("stored name = %q, want the old one kept", got)
+				}
+			})
+		}
+	})
+
+	t.Run("a valid name goes through, at creation and at update", func(t *testing.T) {
+		for _, name := range []string{"my-function", "hello123", "a", strings.Repeat("a", 64)} {
+			t.Run(name[:min(len(name), 12)], func(t *testing.T) {
+				app := newFunctionApp(t, true)
+				record := newFunctionRecord(t, app, name)
+				if err := app.Save(record); err != nil {
+					t.Fatalf("valid name refused at creation: %v", err)
+				}
+				record.Set("script", "console.log(2)")
+				if err := app.Save(record); err != nil {
+					t.Fatalf("valid name refused at update: %v", err)
+				}
+			})
+		}
+	})
+
+	// The guard applies to updates too, so a record stored under an invalid name
+	// stays frozen until its name is fixed. That correction is the only way out,
+	// and the name field is editable on screen — this pins it down.
+	t.Run("an update that fixes an invalid name goes through", func(t *testing.T) {
+		app := newFunctionApp(t, false)
+		record := newFunctionRecord(t, app, "my_function")
+		if err := app.Save(record); err != nil {
+			t.Fatal(err)
+		}
+		bindFunctionNameHook(app)
+
+		// Saving it as it stands is refused: that is the frozen state.
+		record.Set("script", "console.log(2)")
+		assertNameRefused(t, app.Save(record))
+
+		record.Set("name", "my-function")
+		if err := app.Save(record); err != nil {
+			t.Fatalf("the correction was refused: %v", err)
+		}
+		stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := stored.GetString("name"); got != "my-function" {
+			t.Errorf("stored name = %q, want the corrected one", got)
+		}
+	})
+}
+
+// TestValidateFunctionNameHook_OverHTTP is the other half: what reaches the wire.
+// The editor writes through the PocketBase collections API, whose endpoints pass
+// a hook failure through firstApiError — an ordinary error would be replaced by a
+// generic message, and the editor would have nothing but "Failed to save".
+func TestValidateFunctionNameHook_OverHTTP(t *testing.T) {
+	scenarios := []tests.ApiScenario{
+		{
+			Name:   "invalid name refused with a message the client can display",
+			Method: http.MethodPost,
+			URL:    "/api/collections/" + faasboxFunctionsCollection + "/records",
+			Body:   strings.NewReader(`{"name":"a_b","script":"console.log(1)"}`),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				bindFunctionNameHook(app)
+			},
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`Invalid function name \"a_b\"`,
+				`letters, digits and hyphens only`,
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "a_b"); err == nil {
+					t.Error("record was created despite the refused name")
+				}
+			},
+		},
+		{
+			Name:   "valid name goes through",
+			Method: http.MethodPost,
+			URL:    "/api/collections/" + faasboxFunctionsCollection + "/records",
+			Body:   strings.NewReader(`{"name":"a-b","script":"console.log(1)"}`),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				bindFunctionNameHook(app)
+			},
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"name":"a-b"`},
+		},
+	}
+
+	for _, s := range scenarios {
+		s.Test(t)
+	}
 }
 
 // TestSyncRecordToDisk_Lockfile makes the lockfile an artefact of the record: it is

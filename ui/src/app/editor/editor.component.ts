@@ -19,6 +19,7 @@ import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { CronEditorComponent } from '@/editor/cron-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
 import { EnvEditorComponent } from '@/editor/env-editor.component';
+import { errorText } from '@/editor/error-text';
 import { FilesTabComponent } from '@/editor/files-tab.component';
 import { InvokeHintComponent } from '@/editor/invoke-hint.component';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
@@ -369,7 +370,9 @@ export class EditorComponent implements OnInit {
       await this.store.updateFunction(fn.id, data as any);
       return true;
     } catch (e) {
-      alert(`Failed to save: ${(e as Error).message}`);
+      // The reason lives in the response body: a name outside the naming rule
+      // is refused there, and the message names both the name and the rule.
+      alert(`Failed to save: ${errorText(e)}`);
       return false;
     }
   }
@@ -428,7 +431,7 @@ export class EditorComponent implements OnInit {
     try {
       await this.store.createFunction(name.trim());
     } catch (e) {
-      alert(`Failed to create function: ${(e as Error).message}`);
+      alert(`Failed to create function: ${errorText(e)}`);
     }
   }
 
@@ -440,7 +443,7 @@ export class EditorComponent implements OnInit {
     try {
       await this.store.deleteFunction(id);
     } catch (e) {
-      alert(`Failed to delete function: ${(e as Error).message}`);
+      alert(`Failed to delete function: ${errorText(e)}`);
     }
   }
 

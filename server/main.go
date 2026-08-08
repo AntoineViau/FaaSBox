@@ -164,6 +164,12 @@ func main() {
 		return e.Next()
 	})
 
+	// Refuse a function name outside the product's rule. Bound before the
+	// encryption hook: a record that will not be written has no reason to cost
+	// an AES pass first.
+	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
+	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
+
 	// Encrypt plainEnv before saving faasbox_functions records
 	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(encryptPlainEnvHook)
 	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(encryptPlainEnvHook)

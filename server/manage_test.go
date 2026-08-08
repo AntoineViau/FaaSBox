@@ -29,6 +29,7 @@ func manageApp(t testing.TB) (*tests.TestApp, string, *core.Record) {
 
 	setupFaaSCollections(t, app)
 	bindEnvHook(app)
+	bindFunctionNameHook(app)
 
 	functionsDir, functions := setupTestFunctions(t, app, map[string]string{"echo": ""})
 	record := functions["echo"]
@@ -166,13 +167,18 @@ func TestCreateFunctionHandler(t *testing.T) {
 	t.Run("refuses a name validName rejects", func(t *testing.T) {
 		app, dir, _ := manageApp(t)
 		s := manageScenario(app, dir, tests.ApiScenario{
-			Name:            "invalid name",
-			Method:          http.MethodPost,
-			URL:             "/api/faasbox/functions",
-			Body:            strings.NewReader(`{"name":"../escape","script":"console.log('{}')"}`),
-			Headers:         manageKeyHeader(t, app, "manager", nil),
-			ExpectedStatus:  400,
-			ExpectedContent: []string{`Invalid function name`},
+			Name:           "invalid name",
+			Method:         http.MethodPost,
+			URL:            "/api/faasbox/functions",
+			Body:           strings.NewReader(`{"name":"../escape","script":"console.log('{}')"}`),
+			Headers:        manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus: 400,
+			// The refusal reaches this route through the hook, so what is checked
+			// here is that answerSaveFailure hands the wording back intact.
+			ExpectedContent: []string{
+				`Invalid function name \"../escape\"`,
+				`letters, digits and hyphens only`,
+			},
 		})
 		s.Test(t)
 	})

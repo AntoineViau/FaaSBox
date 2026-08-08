@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -196,6 +197,40 @@ func functionEnvHandler(e *core.RequestEvent) error {
 	}
 
 	return e.JSON(http.StatusOK, envMap)
+}
+
+// validateFunctionNameHook refuses a function name outside the product's rule:
+// letters, digits and hyphens, never a leading or trailing hyphen, 64 characters
+// at most.
+//
+// The rule was declared and enforced nowhere it applies. A name outside it saved,
+// synced and ran, but POST /invoke/{name} answered 400 before resolving anything
+// — the function was only reachable by an id the editor shows nowhere, with
+// nothing on screen saying why. A name carrying a NUL was worse: Go refuses an
+// environment entry containing one, so cmd.Run failed, every invocation answered
+// 500 and wrote a log line — once a minute for a trigger on the minute.
+//
+// The engine cannot catch either case. executeFunction stopped validating the
+// name on purpose: an identifier that builds no path must not be able to stop an
+// execution. The guard belongs upstream, at the write.
+//
+// The refusal is an ApiError and not an ordinary error, same reason as
+// validateCronScheduleHook: the record endpoints pass a hook failure through
+// firstApiError, which keeps only an argument that already is an ApiError. An
+// ordinary error is replaced by a generic "Failed to update record", and the
+// client is left with a 400 whose body says nothing.
+func validateFunctionNameHook(e *core.RecordEvent) error {
+	name := e.Record.GetString("name")
+	if !validName.MatchString(name) || len(name) > 64 {
+		// %q escapes what the regex refused — a NUL prints as \x00 rather than
+		// travelling raw into the response.
+		return apis.NewBadRequestError(fmt.Sprintf(
+			"Invalid function name %q. Use letters, digits and hyphens only, "+
+				"starting and ending with a letter or digit, 64 characters at most.",
+			name,
+		), nil)
+	}
+	return e.Next()
 }
 
 // encryptPlainEnvHook is a PocketBase hook that encrypts the plainEnv field

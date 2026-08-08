@@ -26,6 +26,10 @@ import (
 //
 // The request body is bounded by the router's own BodyLimit (32 MB by default),
 // which every route inherits — this file adds no unbounded read.
+//
+// Past the 300-line guideline, deliberately: it carries one responsibility, the
+// management contract, and the neighbouring domain — reconciling the triggers —
+// already lives in managecrons.go.
 
 // manageRequest is the body POST and PUT accept.
 //
@@ -79,9 +83,10 @@ func createFunctionHandler(e *core.RequestEvent) error {
 	if err := json.NewDecoder(e.Request.Body).Decode(&body); err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
 	}
-	if !validName.MatchString(body.Name) || len(body.Name) > 64 {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
-	}
+	// The name is not checked here. validateFunctionNameHook refuses it at the
+	// write, for this route as for the editor, and answerSaveFailure hands its
+	// ApiError back as the same 400 — with a message that names the rule, which
+	// a second check here could only repeat and let drift.
 	if _, err := e.App.FindFirstRecordByData(faasboxFunctionsCollection, "name", body.Name); err == nil {
 		return e.JSON(http.StatusConflict, map[string]string{"error": "A function already carries this name"})
 	}

@@ -13,6 +13,7 @@ import { firstValueFrom } from 'rxjs';
 import type { FaasboxCronJob } from '@/models/faasbox-cron-job.model';
 import { CronService } from '@/editor/cron.service';
 import { CronTriggerCardComponent, type CronRow } from '@/editor/cron-trigger-card.component';
+import { errorText } from '@/editor/error-text';
 import { ZardAlertComponent } from '@shared/components/alert';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -298,19 +299,3 @@ function formatPayload(payload: unknown): string {
   return JSON.stringify(payload, null, 2);
 }
 
-/**
- * PocketBase puts the useful text in the response body — the validation message
- * of a refused schedule lands there. HttpErrorResponse.message only restates the
- * status, so reading it alone would drop exactly what the user needs.
- */
-function errorText(error: unknown): string {
-  const failure = error as { error?: { message?: unknown }; message?: unknown } | null;
-  const body = failure?.error;
-  if (body && typeof body.message === 'string' && body.message) {
-    return body.message;
-  }
-  if (typeof failure?.message === 'string' && failure.message) {
-    return failure.message;
-  }
-  return 'Unknown error';
-}
