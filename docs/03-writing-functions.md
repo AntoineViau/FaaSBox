@@ -194,6 +194,12 @@ Nothing is executed if the save itself fails — the server refusing the record,
 
 This is the fastest way to iterate on a function. You can also use `curl` for automated testing (see [06 - API Keys and Security](06-api-keys-and-security.md)).
 
+### Calling It from Outside
+
+The Editor tells you how, right under the name field: a line reading `POST /invoke/<your-function>`, and an **Example with curl** link next to it. The dialog it opens carries the whole call — the address of the instance you are looking at, the headers, a payload — ready to paste into a terminal. The key in it is a placeholder: a key's value is only ever shown once, when it is created, so you have to paste a real one in from the [API keys](06-api-keys-and-security.md) page.
+
+Renaming a function changes that URL. The Editor warns you as soon as the name field leaves the saved name: callers cabled on the old name get a `404`, while those cabled on the function's id keep working. The warning does not block the save — it tells you the price, it does not refuse the rename.
+
 ## Best Practices
 
 1.  **Be Stateless**: Functions should be stateless. Any persistent data should be stored in PocketBase (via its API) or an external database.

@@ -20,6 +20,7 @@ import { CronEditorComponent } from '@/editor/cron-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
 import { EnvEditorComponent } from '@/editor/env-editor.component';
 import { FilesTabComponent } from '@/editor/files-tab.component';
+import { InvokeHintComponent } from '@/editor/invoke-hint.component';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
 import { RunnerComponent } from '@/editor/runner.component';
 import { SidebarComponent } from '@/editor/sidebar.component';
@@ -43,6 +44,7 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
     DepsStatusComponent,
     EnvEditorComponent,
     FilesTabComponent,
+    InvokeHintComponent,
     LogViewerComponent,
     RunnerComponent,
     SidebarComponent,
@@ -124,6 +126,26 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
                 </button>
               }
             </div>
+
+            <!-- How to call this function from outside. It names the saved
+                 name, which is the one /invoke answers to right now. -->
+            <app-invoke-hint [name]="fn.name" />
+
+            <!-- Renaming is allowed and this does not stand in its way: it says
+                 what it costs, and clears itself as soon as the field is back
+                 on the saved name. A creation never sees it — the record
+                 already exists by the time the editor opens on it. -->
+            @if (nameDirty()) {
+              <div
+                class="flex items-center gap-2 border-b border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-xs text-yellow-600 dark:text-yellow-500"
+              >
+                <z-icon zType="triangle-alert" class="h-4 w-4 shrink-0" />
+                <span class="flex-1">
+                  Renaming changes the invocation URL. Callers that use this function's name will
+                  break — those that use its id keep working.
+                </span>
+              </div>
+            }
 
             <!-- Unsaved package.json banner: outside the tab panels on purpose,
                  so it stays visible after leaving the package.json tab. -->
@@ -259,6 +281,17 @@ export class EditorComponent implements OnInit {
   });
 
   /**
+   * The name field left the name the record carries. It is what the renaming
+   * warning is pinned on, and it is only ever true for an existing function:
+   * the editor has no unsaved-creation state, a function is written server-side
+   * before it is opened, so its buffer starts on the saved name.
+   */
+  protected readonly nameDirty = computed(() => {
+    const fn = this.store.selectedFunction();
+    return !!fn && this.localName() !== fn.name;
+  });
+
+  /**
    * What the Save next to the name field answers for. It writes all three
    * fields, but it only shows up for these two: a package.json edited alone
    * already has the banner and its button, and a second call to action on the
@@ -266,7 +299,7 @@ export class EditorComponent implements OnInit {
    */
   protected readonly nameOrScriptDirty = computed(() => {
     const fn = this.store.selectedFunction();
-    return !!fn && (this.localName() !== fn.name || this.localScript() !== fn.script);
+    return this.nameDirty() || (!!fn && this.localScript() !== fn.script);
   });
 
   /** Environment lives in its own tab, with its own Save: it is not part of this. */
