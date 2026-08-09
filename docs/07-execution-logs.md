@@ -49,7 +49,7 @@ It is `true` as soon as **any one** of `stdout`, `stderr` or `requestPayload` wa
 
 > **It reports the cut made when writing the record, not the one made during the run.** These are two different events, and an output can hit both: capped at 1 MB while the function was running (`FAASBOX_MAX_OUTPUT_SIZE`), then trimmed to 8 KB on its way into the log. The `truncated` field of a log record only ever means the second. The `truncated` field of an [invocation response](09-api-reference.md) only ever means the first. An output of 10 KB is the common case where they disagree: it survived the run whole, so the response says `false`, and it was trimmed for storage, so the log says `true`.
 
-One consequence to know if you read logs programmatically: a truncated `requestPayload` is no longer valid JSON, so it is stored as an escaped **string** instead of an object. A payload under 4 KB keeps its original shape. Code consuming `faasbox_logs` through the [PocketBase Records API](09-api-reference.md) should handle both.
+One consequence to know if you read logs programmatically: a truncated `requestPayload` is no longer valid JSON, so it is stored as an escaped **string** instead of an object. A payload under 4 KB keeps its original shape. Code consuming the logs — through [Read a Function's Logs](09-api-reference.md#4-read-a-functions-logs) or the PocketBase Records API — should handle both.
 
 Truncation applies **only to the persisted copy**. The HTTP response of `POST /invoke/{name}` still carries the full captured output — that is where you read it while debugging. Once the response is gone, the trimmed part is lost, which matters most for cron functions whose response nobody reads: keep diagnostic output short enough to survive in the logs.
 
@@ -65,6 +65,12 @@ Each entry shows the status (success, error, timeout, missed), trigger type (htt
 
 The log viewer displays the 50 most recent entries for the current function. Use the refresh button to reload the list.
 
+## From the API
+
+`GET /api/faasbox/functions/{idOrName}/logs` returns the same history to a script or an agent, with an API key carrying `canManage` — no superuser token. See [Read a Function's Logs](09-api-reference.md#4-read-a-functions-logs) for the contract, the `limit` parameter and the codes.
+
+That endpoint matters most for **cron functions**: a scheduled run answers no HTTP response, so its log entry is the only account of what it printed and why it failed.
+
 ## From the Admin UI (optional)
 
 You can also view logs in the **PocketBase Admin UI** under the `faasbox_logs` collection.
@@ -72,6 +78,8 @@ You can also view logs in the **PocketBase Admin UI** under the `faasbox_logs` c
 - **Filter** by `truncated=true` to find the runs whose stored output is incomplete — a function that shows up there constantly is one to make quieter.
 - **Filter** by `function` to see the full history of one function, renames included. Filtering by `functionName` splits it at every rename.
 - **Sort** by `created` to see the most recent runs.
+
+Reaching the collection this way needs a superuser token, which is full power over the instance. Prefer the endpoint above for anything scripted.
 
 ## Debugging with Stderr
 

@@ -274,6 +274,7 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	manage.GET("/{name}", getFunctionHandler)
 	manage.PUT("/{name}", replaceFunctionHandler)
 	manage.DELETE("/{name}", deleteFunctionHandler)
+	manage.GET("/{name}/logs", functionLogsHandler)
 
 	// Key management (superuser only)
 	e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
@@ -294,12 +295,13 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	}).Bind(apis.RequireSuperuserAuth())
 }
 
-// setCronJobDate overwrites a date column PocketBase manages itself (created) or
-// that is only ever written by direct SQL (lastRunAt).
-func setCronJobDate(t testing.TB, app core.App, recordId, column string, at time.Time) {
+// setRecordDate overwrites a date column PocketBase manages itself (created) or
+// that is only ever written by direct SQL (lastRunAt). A record.Set would not
+// stick on an autodate field, which rewrites it at every save.
+func setRecordDate(t testing.TB, app core.App, collection, recordId, column string, at time.Time) {
 	t.Helper()
 	_, err := app.DB().NewQuery(
-		"UPDATE " + faasboxCronJobsCollection + " SET " + column + " = {:at} WHERE id = {:id}",
+		"UPDATE " + collection + " SET " + column + " = {:at} WHERE id = {:id}",
 	).Bind(dbx.Params{
 		"at": at.UTC().Format(types.DefaultDateLayout),
 		"id": recordId,
@@ -307,6 +309,12 @@ func setCronJobDate(t testing.TB, app core.App, recordId, column string, at time
 	if err != nil {
 		t.Fatalf("failed to set %s on %s: %v", column, recordId, err)
 	}
+}
+
+// setCronJobDate is setRecordDate on faasbox_cron_jobs.
+func setCronJobDate(t testing.TB, app core.App, recordId, column string, at time.Time) {
+	t.Helper()
+	setRecordDate(t, app, faasboxCronJobsCollection, recordId, column, at)
 }
 
 // createTestCronJob saves a cron job record pointing at a function id, and

@@ -114,6 +114,9 @@ func main() {
 			manage.GET("/{name}", getFunctionHandler)
 			manage.PUT("/{name}", replaceFunctionHandler)
 			manage.DELETE("/{name}", deleteFunctionHandler)
+			// Reading the history needs that same right: a log carries the
+			// payload and the output of runs the key holder never triggered.
+			manage.GET("/{name}/logs", functionLogsHandler)
 
 			// Key management (superuser only, no API key needed)
 			e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {

@@ -76,7 +76,7 @@ That last sentence is not hypothetical. A name may contain the same characters a
 
 **Which one should you use?** The id, for anything that has to keep working. A name is a label meant to be changed, and changing it breaks every caller wired on it — FaaSBox will not redirect the old URL to the new one. The id is stable for the life of the function, and it is what `GET /functions` hands you.
 
-The same rule governs the management endpoints below, and `GET /api/faasbox/functions/{idOrName}/env`, `.../files` and `.../files/content`.
+The same rule governs the management endpoints below, and `GET /api/faasbox/functions/{idOrName}/logs`, `.../env`, `.../files` and `.../files/content`.
 
 ---
 
@@ -222,7 +222,68 @@ curl -X POST http://localhost:8080/api/faasbox/functions \
 
 ---
 
-## 4. Create API Key
+## 4. Read a Function's Logs
+**Endpoint**: `GET /api/faasbox/functions/{idOrName}/logs`
+
+Returns the execution history of one function, most recent first.
+
+**Authentication**: an API key carrying the `canManage` flag, or a superuser session — the same right as [Manage Functions](#3-manage-functions) above, and its `allowedFunctions` scope applies here exactly as it does there. A valid key *without* the flag gets `403`. The bar is higher than invocation on purpose: an entry carries the `requestPayload` and the output of runs **someone else triggered**, which an invocation response never shows you.
+
+This is the endpoint to reach for when the trigger is a cron. A scheduled run answers no HTTP response, so the log entry is the only trace it leaves: without this, knowing whether last night's run succeeded took a superuser token.
+
+- **Query Parameter**: `limit`, the number of entries to return.
+
+    | `limit` | Result |
+    |---|---|
+    | Absent or empty | 50 |
+    | A whole number from 1 to 200 | that many |
+    | Above 200 | capped at 200 |
+    | Not a number, `0`, or negative | **400** |
+
+    The two refusals differ deliberately. `limit=1000` is a legitimate ask the server bounds; `limit=abc` is an ask nobody can honour, and answering the default would return something other than what you requested. There is **no pagination**: with a default retention of 1000 entries and a ceiling of 200, you cannot walk the whole history of a chatty function. The endpoint is for debugging the last runs.
+
+- **Response**:
+    ```json
+    {
+      "logs": [
+        {
+          "id": "9d1x4kq7mz2p8rb",
+          "functionName": "noisy",
+          "trigger": "http",
+          "status": "success",
+          "durationMs": 42,
+          "stdout": "{\"ok\":true}",
+          "stderr": "diag",
+          "requestPayload": { "n": 3 },
+          "exitCode": 0,
+          "truncated": false,
+          "created": "2026-08-09T10:12:31Z"
+        }
+      ],
+      "count": 1
+    }
+    ```
+- `count` reflects the list returned, not the total the function carries.
+- A function that never ran returns `{"logs": [], "count": 0}` with a `200`. Nothing there is not an error.
+- **No `function` field**: the endpoint is already per function, and the identity is in the path. `functionName` stays because it says something else — the name the function carried **when it ran**, deliberately not refreshed (see [07 - Execution Logs](07-execution-logs.md)). A rename therefore does not split the history: the entries written under the old name keep coming back, still spelling it.
+- `created` is RFC3339 UTC, the same format as `modified` in the file endpoints below — not PocketBase's own layout.
+- `requestPayload` is relayed as stored, and is `null` for an entry that carries none. **Expect two shapes**: a payload cut at the 4 KB storage cap is no longer valid JSON, so it comes back as an escaped **string** instead of an object. Code reading this endpoint has to handle both.
+- **Error Codes**:
+    - `400`: the segment is not a usable identifier, or `limit` cannot be read.
+    - `401`: missing or invalid `X-API-Key`.
+    - `403`: the key lacks `canManage`, or its scope does not cover this function.
+    - `404`: the segment designates no function.
+
+### Example
+
+```bash
+curl -s "http://localhost:8080/api/faasbox/functions/noisy/logs?limit=5" \
+  -H "X-API-Key: fbx_..."
+```
+
+---
+
+## 5. Create API Key
 **Endpoint**: `POST /api/faasbox/keys`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -253,7 +314,7 @@ Creates a new hashed API key.
 
 ---
 
-## 5. Read a Function's Environment
+## 6. Read a Function's Environment
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/env`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -273,7 +334,7 @@ Returns the decrypted environment variables of a function, as a flat JSON object
 
 ---
 
-## 6. List a Function's Files
+## 7. List a Function's Files
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -300,7 +361,7 @@ Returns **one level** of the function's folder on disk. Never recursive.
 
 ---
 
-## 7. Read a Function's File
+## 8. Read a Function's File
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files/content`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -330,7 +391,7 @@ Both endpoints are read-only. There is no counterpart that writes, deletes or up
 
 ---
 
-## 8. Health Check
+## 9. Health Check
 **Endpoint**: `GET /health`
 
 **No Authentication Required.**
@@ -358,4 +419,4 @@ Since FaaSBox is built on PocketBase, you can also use the standard PocketBase W
 
 Refer to the [PocketBase API Documentation](https://pocketbase.io/docs/api-records/) for details on listing, creating, and updating records in these collections. **Note**: these collections have `nil` API rules, so **only a superuser reaches them** — and a superuser token is full power over the instance: dropping collections, reading every secret in clear, changing the password.
 
-For writing functions, prefer [Manage Functions](#3-manage-functions) above. It needs an API key rather than that token, and it publishes a contract rather than the record: the internal columns (`env`, `bunLock`, and whatever the install machinery adds next) can change without breaking what you built on it.
+For writing functions, prefer [Manage Functions](#3-manage-functions) above; for reading their history, prefer [Read a Function's Logs](#4-read-a-functions-logs). Both need an API key rather than that token, and both publish a contract rather than the record: the internal columns (`env`, `bunLock`, and whatever the install machinery adds next) can change without breaking what you built on them.
