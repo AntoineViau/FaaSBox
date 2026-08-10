@@ -59,10 +59,21 @@ func broadcastDepsState(app core.App, functionId, functionName, status, errMsg s
 		if !client.HasSubscription(depsRealtimeTopic) {
 			continue
 		}
-		// Comma-ok rather than a nil comparison: Get returns an interface, and a
-		// typed nil inside one does not satisfy `== nil`. This is the form
-		// PocketBase itself uses to read the same key.
-		if _, ok := client.Get(apis.RealtimeClientAuthKey).(*core.Record); !ok {
+		// Comma-ok *and* a nil check, because they answer different questions.
+		// PocketBase sets this key on every subscription, unconditionally, so for
+		// an anonymous client it holds a typed nil `*core.Record`. The comma-ok
+		// reads the dynamic type, which matches, and says yes; only the nil check
+		// reads the value. This is the form PocketBase itself uses on the same key
+		// — it asserts, then compares to nil.
+		rec, ok := client.Get(apis.RealtimeClientAuthKey).(*core.Record)
+		if !ok || rec == nil {
+			continue
+		}
+		// Superusers only. The editor is the sole legitimate consumer and it opens
+		// a superuser session; anything else authenticated has no business reading
+		// the function inventory. Should a user collection ever appear, "someone is
+		// authenticated" would silently reopen this channel to it.
+		if rec.Collection().Name != core.CollectionNameSuperusers {
 			continue
 		}
 		// Detached, exactly as PocketBase sends its own record messages. A client
