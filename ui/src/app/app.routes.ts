@@ -1,5 +1,6 @@
 import { Routes, type UrlMatchResult, type UrlSegment } from '@angular/router';
 
+import { AgentsComponent } from '@/agents/agents.component';
 import { ApiKeysComponent } from '@/api-keys/api-keys.component';
 import { authGuard } from '@/auth/auth.guard';
 import { LoginComponent } from '@/auth/login.component';
@@ -57,6 +58,14 @@ export const routes: Routes = [
     component: ApiKeysComponent,
     canActivate: [authGuard],
     title: 'FaaSBox - API keys',
+  },
+  {
+    // Not 'mcp': the server serves the MCP endpoint at /mcp, and an API route
+    // wins over the SPA fallback - same trap as 'functions' above.
+    path: 'agents',
+    component: AgentsComponent,
+    canActivate: [authGuard],
+    title: 'FaaSBox - AI agents',
   },
   {
     path: '',

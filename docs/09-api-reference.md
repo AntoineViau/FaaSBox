@@ -283,7 +283,43 @@ curl -s "http://localhost:8080/api/faasbox/functions/noisy/logs?limit=5" \
 
 ---
 
-## 5. Create API Key
+## 5. MCP Endpoint
+**Endpoint**: `POST /mcp`
+
+Serves this instance's functions to an AI agent over the [Model Context Protocol](https://modelcontextprotocol.io), in **Streamable HTTP**. It is not a REST endpoint: the body is JSON-RPC, and a client speaks it for you. See [13 - AI Agents](13-ai-agents.md) for how to plug one in.
+
+**Authentication**: an API key carrying the `canManage` flag, in the same `X-API-Key` header as everywhere else, or a superuser session. The right required is the one [Manage Functions](#3-manage-functions) requires, and for the same reason: a tool that writes a function decides what this server executes.
+
+The endpoint is **stateless**: every request carries its own authorization, and no session outlives the request that opened it. `GET /mcp` therefore answers `405` — there is no server-to-client stream to open.
+
+**Scope**: the key's `allowedFunctions` applies to every tool exactly as it applies to the routes they mirror. A key with a restricted scope reads, changes, runs and deletes the functions it names, and — as on `POST /api/faasbox/functions` — **creates none**.
+
+- **Tools**:
+
+    | Tool | Mirrors |
+    |---|---|
+    | `list_functions` | `GET /functions` |
+    | `get_function` | `GET /api/faasbox/functions/{idOrName}` |
+    | `create_function` | `POST /api/faasbox/functions` |
+    | `update_function` | `GET` then `PUT`, merged — see below |
+    | `delete_function` | `DELETE /api/faasbox/functions/{idOrName}` |
+    | `invoke_function` | `POST /invoke/{idOrName}` |
+    | `get_function_logs` | `GET /api/faasbox/functions/{idOrName}/logs` |
+
+    Each one calls the same code its route calls, so the refusals above are the refusals a tool reports — they arrive as a tool error the agent can read and act on, rather than as an HTTP status. A refused name, a refused field, an invalid cron expression and a scope refusal therefore reach the agent **word for word**. A failure on the server's side does not: it is written to the server log and the agent is told only that the call failed, exactly as the matching route answers `500` with a fixed wording.
+
+    `update_function` is the one that is not a plain relay. `PUT` replaces the function whole, so the tool **reads it first and merges** what the caller sent onto what is stored: a call carrying only `script` keeps the `packageJson`, the triggers and the secrets. The explicit empty values still mean what they mean everywhere else — `plainEnv` as `{}` deletes every secret, `crons` as `[]` deletes every trigger, and `packageJson` as `""` clears the dependencies.
+
+- **Instructions**: the session receives the contract for writing a FaaSBox function at initialization — the `stdin`/`stdout` contract, the naming rule, the size caps, the background install, the cron format, and what a write replaces. Nothing has to be pasted into the agent.
+- **Error Codes**:
+    - `400`: the body is not a valid MCP message, or `Accept` does not carry both `application/json` and `text/event-stream`.
+    - `401`: missing or invalid `X-API-Key`.
+    - `403`: the key lacks `canManage`, or carries a scope that cannot be read.
+    - `405`: on `GET` and `DELETE`, which a stateless server does not serve.
+
+---
+
+## 6. Create API Key
 **Endpoint**: `POST /api/faasbox/keys`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -314,7 +350,7 @@ Creates a new hashed API key.
 
 ---
 
-## 6. Read a Function's Environment
+## 7. Read a Function's Environment
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/env`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -334,7 +370,7 @@ Returns the decrypted environment variables of a function, as a flat JSON object
 
 ---
 
-## 7. List a Function's Files
+## 8. List a Function's Files
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -361,7 +397,7 @@ Returns **one level** of the function's folder on disk. Never recursive.
 
 ---
 
-## 8. Read a Function's File
+## 9. Read a Function's File
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files/content`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -391,7 +427,7 @@ Both endpoints are read-only. There is no counterpart that writes, deletes or up
 
 ---
 
-## 9. Health Check
+## 10. Health Check
 **Endpoint**: `GET /health`
 
 **No Authentication Required.**

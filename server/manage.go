@@ -29,6 +29,11 @@ import (
 // operation, turn what comes back into a status and some JSON. The deciding is
 // in manageops.go, where a caller that is not a request can reach it.
 //
+// One exception, and it is deliberate: classifyManageFailure below knows no
+// transport. It answers "may this failure be published, and as what" — a
+// question the MCP tools ask too, and the one thing the two transports must not
+// answer separately.
+//
 // The request body is bounded by the router's own BodyLimit (32 MB by default),
 // which every route inherits — this file adds no unbounded read.
 
@@ -128,56 +133,68 @@ func deleteFunctionHandler(e *core.RequestEvent) error {
 	return e.NoContent(http.StatusNoContent)
 }
 
-// answerManageFailure is where an operation's refusal becomes a response, for
-// every management route. One mapping rather than one per handler: the refusals
-// are the operations' vocabulary, and a route that invented its own status for
-// one of them would be a divergence waiting to happen.
+// manageRefusal is what a refused management operation publishes, once the
+// transport is out of the picture: the status an HTTP caller is answered with,
+// the wording written for whoever asked, and the fields a refused record names.
+type manageRefusal struct {
+	status  int
+	message string
+	fields  validation.Errors
+}
+
+// classifyManageFailure says what a failed operation may publish, and returns
+// nil when it may publish nothing.
 //
-// fallback is the wording the route uses for a fault of ours — the only case the
-// refusals below do not cover, and the one thing each route names differently.
-func answerManageFailure(e *core.RequestEvent, err error, fallback string) error {
+// **It is the only enumeration of the refusals**, and that is why it exists
+// apart from the handler it used to sit inside. There are two transports now —
+// the routes of this file and the MCP tools of mcptools.go — and they render
+// differently: one picks a status and a JSON body, the other hands the error
+// back to an agent that reads it and corrects itself. What they must not decide
+// separately is *which* failures are the caller's business. A second list would
+// drift, and it would drift towards relaying a database error to whoever asked.
+//
+// A nil result is the fault-of-ours class — the fall-through below. Nothing of
+// it is publishable: the cause belongs in the server log and the caller gets a
+// generic label. errTriggersUnreadable is not part of that class despite its
+// 500; its wording is written for the caller, and its cause is already logged
+// where it happens (manageops.go).
+//
+// The two record-level cases at the end were once a function of their own,
+// shared by the record and its triggers. They stay together for the same reason
+// they were merged: two unwrappings had drifted, and a trigger refused on a
+// required field answered 500 where the same refusal on the function answered
+// 400.
+func classifyManageFailure(err error) *manageRefusal {
 	switch {
 	case errors.Is(err, errInvalidFunctionName):
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
+		return &manageRefusal{status: http.StatusBadRequest, message: "Invalid function name"}
 	case errors.Is(err, errBadPlainEnv), errors.Is(err, errNameNotTheTarget):
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return &manageRefusal{status: http.StatusBadRequest, message: err.Error()}
 	case errors.Is(err, errScopeRestricted):
-		return e.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+		return &manageRefusal{status: http.StatusForbidden, message: err.Error()}
 	case errors.Is(err, errScopeUnreadable):
-		return e.JSON(http.StatusForbidden, map[string]string{"error": errScopeUnreadable.Error()})
+		return &manageRefusal{status: http.StatusForbidden, message: errScopeUnreadable.Error()}
 	case errors.Is(err, errNameTaken):
-		return e.JSON(http.StatusConflict, map[string]string{"error": errNameTaken.Error()})
+		return &manageRefusal{status: http.StatusConflict, message: errNameTaken.Error()}
 	case errors.Is(err, errTriggersUnreadable):
-		return e.JSON(http.StatusInternalServerError, map[string]string{"error": errTriggersUnreadable.Error()})
+		return &manageRefusal{status: http.StatusInternalServerError, message: errTriggersUnreadable.Error()}
 	}
 
 	var notFound *errNotFound
 	if errors.As(err, &notFound) {
-		return e.JSON(http.StatusNotFound, map[string]string{"error": "Function not found"})
+		return &manageRefusal{status: http.StatusNotFound, message: "Function not found"}
 	}
 
-	return answerSaveFailure(e, err, fallback)
-}
-
-// answerSaveFailure turns a refused write into its response, for the function
-// record and its triggers alike. One mapping rather than one per caller: the two
-// had drifted apart, and a trigger refused on a required field answered 500
-// where the same refusal on the function answered 400.
-//
-// Three cases, and only the last is ours:
-//
-//   - an ApiError carries its own status and wording — that is how the cron hook
-//     reports an invalid expression, and its message names the expression;
-//   - field validation is the caller's data. 400 naming the fields, never 500,
-//     which would blame the server for a body the caller can fix and hide which
-//     field to fix;
-//   - anything else is a fault of ours, logged and answered 500.
-func answerSaveFailure(e *core.RequestEvent, err error, fallback string) error {
+	// An ApiError carries its own status and wording — that is how the cron hook
+	// reports an invalid expression, and its message names the expression.
 	var apiErr *router.ApiError
 	if errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 {
-		return e.JSON(apiErr.Status, map[string]string{"error": apiErr.Message})
+		return &manageRefusal{status: apiErr.Status, message: apiErr.Message}
 	}
 
+	// Field validation is the caller's data. 400 naming the fields, never 500,
+	// which would blame the server for a body the caller can fix and hide which
+	// field to fix.
 	var refused validation.Errors
 	if errors.As(err, &refused) {
 		// A function and a trigger share field names — both carry a "name" — so
@@ -187,15 +204,39 @@ func answerSaveFailure(e *core.RequestEvent, err error, fallback string) error {
 		if errors.As(err, &trigger) {
 			subject = trigger.subject() + " was refused"
 		}
-		return e.JSON(http.StatusBadRequest, map[string]any{
-			"error":  subject,
-			"fields": contractFields(refused),
-		})
+		return &manageRefusal{
+			status:  http.StatusBadRequest,
+			message: subject,
+			fields:  contractFields(refused),
+		}
 	}
 
-	e.App.Logger().Error("faasbox: a management operation failed",
-		"answer", fallback, "error", err)
-	return e.JSON(http.StatusInternalServerError, map[string]string{"error": fallback})
+	return nil
+}
+
+// answerManageFailure is where an operation's refusal becomes a response, for
+// every management route. One rendering rather than one per handler: the
+// refusals are the operations' vocabulary, and a route that invented its own
+// status for one of them would be a divergence waiting to happen.
+//
+// fallback is the wording the route uses for a fault of ours — the only case
+// classifyManageFailure does not cover, and the one thing each route names
+// differently.
+func answerManageFailure(e *core.RequestEvent, err error, fallback string) error {
+	refusal := classifyManageFailure(err)
+	if refusal == nil {
+		e.App.Logger().Error("faasbox: a management operation failed",
+			"answer", fallback, "error", err)
+		return e.JSON(http.StatusInternalServerError, map[string]string{"error": fallback})
+	}
+
+	if refusal.fields != nil {
+		return e.JSON(refusal.status, map[string]any{
+			"error":  refusal.message,
+			"fields": refusal.fields,
+		})
+	}
+	return e.JSON(refusal.status, map[string]string{"error": refusal.message})
 }
 
 // contractFields renames the refused columns the caller never wrote.

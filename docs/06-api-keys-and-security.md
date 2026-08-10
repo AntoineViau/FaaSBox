@@ -47,7 +47,7 @@ A key has two independent dimensions of authority. The **scope** says *which* fu
 | `canManage` | What the key can do |
 |-------------|---------------------|
 | Absent or `false` | Invoke functions and list them. This is what every key could do before the flag existed. |
-| `true` | The above, plus create, replace and delete functions — see [09 - API Reference](09-api-reference.md). |
+| `true` | The above, plus create, replace and delete functions, read their execution history, and open an [MCP session](13-ai-agents.md) that does all of it — see [09 - API Reference](09-api-reference.md). |
 
 **Read that second row again before you tick the box.** Replacing a function means writing the code this server executes. A leaked invocation key lets someone call what you already wrote; a leaked management key lets them write anything and have it run, with your secrets in its environment and your network within reach. The two are not on the same scale, and the flag is off by default for that reason.
 
@@ -58,6 +58,8 @@ Three things follow:
 - **The flag does not grant secrets.** A management key can *write* environment variables, never read them back: `GET /api/faasbox/functions/{idOrName}/env` stays superuser-only. Writing them is part of deploying a function; reading them is not.
 
 Creating keys is not part of it either — `POST /api/faasbox/keys` remains superuser-only, so a management key cannot mint itself a better one.
+
+The second point deserves a warning of its own when the holder is an **AI agent**: an agent that has to *create* functions needs an unrestricted key, so it reaches every function of the instance. Read [13 - AI Agents](13-ai-agents.md) before you hand one out.
 
 ```bash
 curl -X POST http://localhost:8080/api/faasbox/keys \

@@ -276,6 +276,16 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	manage.DELETE("/{name}", deleteFunctionHandler)
 	manage.GET("/{name}/logs", functionLogsHandler)
 
+	// The MCP server, mounted exactly as main.go mounts it — the middleware
+	// chain is what the endpoint's refusals are made of.
+	mcpRoutes := e.Router.Group("/mcp")
+	mcpRoutes.Bind(requireAPIKey(e.App))
+	mcpRoutes.Bind(requireManageKey())
+	mcpRoutes.Bind(exposeKeyScope())
+	mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir))
+	mcpRoutes.POST("", mcpServe)
+	mcpRoutes.GET("", mcpServe)
+
 	// Key management (superuser only)
 	e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
 		return createKeyHandler(re)

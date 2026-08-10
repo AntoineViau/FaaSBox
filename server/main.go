@@ -118,6 +118,23 @@ func main() {
 			// payload and the output of runs the key holder never triggered.
 			manage.GET("/{name}/logs", functionLogsHandler)
 
+			// The MCP server, behind the same two middlewares — writing a
+			// function through a tool is the same right as writing it through
+			// the route — plus exposeKeyScope, which carries the key onto the
+			// standard request context the wrapped handler receives.
+			//
+			// Mounted through the router rather than beside it: a handler
+			// registered outside this group would answer without a key. GET is
+			// mounted so a browser hitting /mcp gets the transport's own 405
+			// instead of the SPA the catch-all below would serve it.
+			mcpRoutes := e.Router.Group("/mcp")
+			mcpRoutes.Bind(requireAPIKey(e.App))
+			mcpRoutes.Bind(requireManageKey())
+			mcpRoutes.Bind(exposeKeyScope())
+			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir))
+			mcpRoutes.POST("", mcpServe)
+			mcpRoutes.GET("", mcpServe)
+
 			// Key management (superuser only, no API key needed)
 			e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
 				return createKeyHandler(re)

@@ -19,6 +19,10 @@ import { ZardIconComponent } from '@shared/components/icon';
           <z-icon zType="shield" class="mr-1.5 h-4 w-4" />
           API keys
         </a>
+        <a z-button zType="ghost" zSize="sm" class="w-full justify-start" routerLink="/agents">
+          <z-icon zType="sparkles" class="mr-1.5 h-4 w-4" />
+          AI agents
+        </a>
       </div>
       <div class="flex items-center justify-between border-b border-border px-3 py-2">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Functions</span>

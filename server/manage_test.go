@@ -174,7 +174,7 @@ func TestCreateFunctionHandler(t *testing.T) {
 			Headers:        manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus: 400,
 			// The refusal reaches this route through the hook, so what is checked
-			// here is that answerSaveFailure hands the wording back intact.
+			// here is that classifyManageFailure hands the wording back intact.
 			ExpectedContent: []string{
 				`Invalid function name \"../escape\"`,
 				`letters, digits and hyphens only`,

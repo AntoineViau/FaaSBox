@@ -26,6 +26,7 @@ FaaSBox is perfect for:
 4.  **Integrated Editor**: A modern Angular-based web editor to write and test functions directly.
 5.  **Execution Logs**: Detailed history of every function call, including duration, status, and output.
 6.  **Automatic Dependencies**: Just add a `package.json`, and FaaSBox handles the `bun install` for you.
+7.  **MCP Server**: An AI agent can write, run and inspect your functions over the Model Context Protocol, and is handed the writing contract when it connects.
 
 ## Philosophy
 

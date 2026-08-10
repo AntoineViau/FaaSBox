@@ -22,7 +22,7 @@ and rewrites the files at startup. Its location follows the `--functionsDir`
 flag, which defaults to `./functions` relative to where the server was started.
 
 ## Prerequisites
-- **Go 1.24+**
+- **Go 1.25+**
 - **Node.js 22+** & **npm**
 - **Bun** (required to run functions)
 
