@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"net/http"
 
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
@@ -74,20 +73,14 @@ func functionFromPath(e *core.RequestEvent) (*core.Record, error) {
 	return resolveFunction(e.App, segment)
 }
 
-// answerFunctionLookup turns a functionFromPath failure into its response. The
-// three refusals are distinct on purpose: a malformed segment is a rule (400), a
-// segment designating nothing is an absence (404), and anything else is ours to
-// own (500) rather than to disguise as either.
+// answerFunctionLookup turns a lookup failure into its response, for the routes
+// whose only fault of their own is the lookup itself. The refusals are distinct
+// on purpose: a malformed segment is a rule (400), a segment designating nothing
+// is an absence (404), a scope that does not cover it is a refusal (403), and
+// anything else is ours to own (500) rather than to disguise as any of them.
+//
+// The mapping lives in answerManageFailure, which every management route shares:
+// the same refusals reach these routes, and two tables would drift.
 func answerFunctionLookup(e *core.RequestEvent, err error) error {
-	if errors.Is(err, errInvalidFunctionName) {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
-	}
-	var notFound *errNotFound
-	if errors.As(err, &notFound) {
-		return e.JSON(http.StatusNotFound, map[string]string{"error": "Function not found"})
-	}
-	e.App.Logger().Error("faasbox: failed to resolve the function", "error", err)
-	return e.JSON(http.StatusInternalServerError, map[string]string{
-		"error": "Failed to resolve the function",
-	})
+	return answerManageFailure(e, err, "Failed to resolve the function")
 }

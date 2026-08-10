@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
@@ -62,8 +61,12 @@ type logContract struct {
 }
 
 // functionLogsHandler answers GET /api/faasbox/functions/{idOrName}/logs.
+//
+// The query string is read here and the reading is done by functionLogs: what a
+// `?limit` of "abc" means is a transport's question, what a limit of 3 returns
+// is not.
 func functionLogsHandler(e *core.RequestEvent) error {
-	record, err := functionFromPath(e)
+	allowed, err := requestKeyScope(e)
 	if err != nil {
 		return answerFunctionLookup(e, err)
 	}
@@ -75,26 +78,9 @@ func functionLogsHandler(e *core.RequestEvent) error {
 		})
 	}
 
-	// The filter is on the *relation*, never on functionName: that is what keeps
-	// the history attached to the function across a rename. Descending on
-	// created — whoever is debugging wants the last run, not the first.
-	records, err := e.App.FindRecordsByFilter(
-		faasboxLogsCollection,
-		"function = {:id}",
-		"-created", limit, 0,
-		dbx.Params{"id": record.Id},
-	)
+	logs, err := functionLogs(e.App, allowed, e.Request.PathValue("name"), limit)
 	if err != nil {
-		e.App.Logger().Error("faasbox: failed to read the logs of a function",
-			"functionId", record.Id, "error", err)
-		return e.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to read the logs of this function",
-		})
-	}
-
-	logs := make([]logContract, 0, len(records))
-	for _, entry := range records {
-		logs = append(logs, logContractOf(entry))
+		return answerManageFailure(e, err, "Failed to read the logs of this function")
 	}
 
 	return e.JSON(http.StatusOK, map[string]any{

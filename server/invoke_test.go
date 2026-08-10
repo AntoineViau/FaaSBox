@@ -260,10 +260,10 @@ func TestInvokeHandler_FunctionNotFound(t *testing.T) {
 	scenario.Test(t)
 }
 
-// invokeFunction drives one HTTP invocation through the real route stack, so
+// invokeOverHTTP drives one HTTP invocation through the real route stack, so
 // the dependency safety net, the execution log and the response all go through
 // the code path an operator actually hits.
-func invokeFunction(t *testing.T, app *tests.TestApp, functionsDir, name string, wantStatus int, wantContent []string) {
+func invokeOverHTTP(t *testing.T, app *tests.TestApp, functionsDir, name string, wantStatus int, wantContent []string) {
 	t.Helper()
 	key := createTestAPIKey(t, app, "deps-"+name, []string{"*"})
 	scenario := tests.ApiScenario{
@@ -300,7 +300,7 @@ func TestInvokeHandler_DependencyFailureLeavesEveryTrace(t *testing.T) {
 	record := saveTestFunction(t, app, functionsDir, "broken-deps",
 		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
 
-	invokeFunction(t, app, functionsDir, "broken-deps", 500,
+	invokeOverHTTP(t, app, functionsDir, "broken-deps", 500,
 		[]string{"failed to install dependencies", "nope@1.0.0 not found"})
 
 	// An invocation that failed to install did take place: it earns its line.
@@ -353,7 +353,7 @@ func TestInvokeHandler_SafetyNetPublishesReady(t *testing.T) {
 	// invocation reinstalls and must say so.
 	setDepsState(app, record.Id, "fresh-deps", depsStatusReady, "")
 
-	invokeFunction(t, app, functionsDir, "fresh-deps", 200, []string{`"function":"fresh-deps"`})
+	invokeOverHTTP(t, app, functionsDir, "fresh-deps", 200, []string{`"function":"fresh-deps"`})
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -383,7 +383,7 @@ func TestInvokeHandler_SafetyNetPersistsLockfile(t *testing.T) {
 	record := saveTestFunction(t, app, functionsDir, "http-pins",
 		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 
-	invokeFunction(t, app, functionsDir, "http-pins", 200, []string{`"function":"http-pins"`})
+	invokeOverHTTP(t, app, functionsDir, "http-pins", 200, []string{`"function":"http-pins"`})
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -411,12 +411,12 @@ func TestInvokeHandler_HashCheckExitWritesNothing(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
 
 	// First invocation installs and publishes.
-	invokeFunction(t, app, functionsDir, "settled-deps", 200, []string{`"function":"settled-deps"`})
+	invokeOverHTTP(t, app, functionsDir, "settled-deps", 200, []string{`"function":"settled-deps"`})
 
 	// A sentinel no code path would ever write: only an unwanted write shows up.
 	setDepsState(app, record.Id, "settled-deps", depsStatusPending, "sentinel")
 
-	invokeFunction(t, app, functionsDir, "settled-deps", 200, []string{`"function":"settled-deps"`})
+	invokeOverHTTP(t, app, functionsDir, "settled-deps", 200, []string{`"function":"settled-deps"`})
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -442,7 +442,7 @@ func TestInvokeHandler_NotFoundStaysOutOfTheLogs(t *testing.T) {
 
 	functionsDir := setupTestFunctionsDir(t, map[string]string{})
 
-	invokeFunction(t, app, functionsDir, "ghost", 404, []string{"not found"})
+	invokeOverHTTP(t, app, functionsDir, "ghost", 404, []string{"not found"})
 
 	if got := countExecutionLogs(t, app, "ghost"); got != 0 {
 		t.Errorf("faasbox_logs holds %d entries for a function that does not exist, want 0", got)

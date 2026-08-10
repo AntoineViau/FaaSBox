@@ -11,8 +11,8 @@ import (
 	"github.com/pocketbase/pocketbase/tools/router"
 )
 
-// This file carries the management contract: create, read, replace and delete a
-// function over HTTP, with an API key rather than a superuser token.
+// This file carries the management contract over HTTP: create, read, replace and
+// delete a function with an API key rather than a superuser token.
 //
 // It exists because the only way to write a function used to be the PocketBase
 // collections API, which needs full powers over the instance — dropping
@@ -24,12 +24,13 @@ import (
 // never `env`, never `bunLock`. Those are mechanics, and a caller that never saw
 // them cannot be broken by them moving.
 //
+// What is left in this file is transport, and only transport: read the path
+// segment, decode the body, read the scope off the request context, call the
+// operation, turn what comes back into a status and some JSON. The deciding is
+// in manageops.go, where a caller that is not a request can reach it.
+//
 // The request body is bounded by the router's own BodyLimit (32 MB by default),
 // which every route inherits — this file adds no unbounded read.
-//
-// Past the 300-line guideline, deliberately: it carries one responsibility, the
-// management contract, and the neighbouring domain — reconciling the triggers —
-// already lives in managecrons.go.
 
 // manageRequest is the body POST and PUT accept.
 //
@@ -63,66 +64,41 @@ type functionContract struct {
 
 // createFunctionHandler answers POST /api/faasbox/functions.
 func createFunctionHandler(e *core.RequestEvent) error {
-	// The scope cannot be checked by the middleware here: this route carries no
-	// function in its path, and there is nothing to compare a scope against for a
-	// function that does not exist yet. A key naming precise functions therefore
-	// changes and deletes those, and creates none — the alternative would let it
-	// grant itself a function it was never given.
 	allowed, err := requestKeyScope(e)
 	if err != nil {
 		e.App.Logger().Error("faasbox: unreadable allowedFunctions, denying creation", "error", err)
-		return e.JSON(http.StatusForbidden, map[string]string{"error": "API key scope cannot be read"})
-	}
-	if !scopeIsUnrestricted(allowed) {
-		return e.JSON(http.StatusForbidden, map[string]string{
-			"error": "API key with a restricted scope cannot create a function",
-		})
+		return answerFunctionLookup(e, err)
 	}
 
 	var body manageRequest
 	if err := json.NewDecoder(e.Request.Body).Decode(&body); err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
 	}
-	// The name is not checked here. validateFunctionNameHook refuses it at the
-	// write, for this route as for the editor, and answerSaveFailure hands its
-	// ApiError back as the same 400 — with a message that names the rule, which
-	// a second check here could only repeat and let drift.
-	if _, err := e.App.FindFirstRecordByData(faasboxFunctionsCollection, "name", body.Name); err == nil {
-		return e.JSON(http.StatusConflict, map[string]string{"error": "A function already carries this name"})
-	}
 
-	col, err := e.App.FindCollectionByNameOrId(faasboxFunctionsCollection)
+	contract, err := createFunction(e.App, allowed, body)
 	if err != nil {
-		e.App.Logger().Error("faasbox: functions collection not found", "error", err)
-		return e.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save the function"})
+		return answerManageFailure(e, err, "Failed to save the function")
 	}
-
-	record := core.NewRecord(col)
-	record.Set("name", body.Name)
-	record.Set("script", body.Script)
-	record.Set("packageJson", body.PackageJson)
-	if err := applyPlainEnv(record, body.PlainEnv); err != nil {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	return saveAndAnswer(e, record, http.StatusCreated, body.Crons)
+	return e.JSON(http.StatusCreated, contract)
 }
 
 // getFunctionHandler answers GET /api/faasbox/functions/{idOrName}.
 func getFunctionHandler(e *core.RequestEvent) error {
-	record, err := functionFromPath(e)
+	allowed, err := requestKeyScope(e)
 	if err != nil {
 		return answerFunctionLookup(e, err)
 	}
-	return answerFunctionContract(e, http.StatusOK, record)
+
+	contract, err := getFunction(e.App, allowed, e.Request.PathValue("name"))
+	if err != nil {
+		return answerFunctionLookup(e, err)
+	}
+	return e.JSON(http.StatusOK, contract)
 }
 
 // replaceFunctionHandler answers PUT /api/faasbox/functions/{idOrName}.
-//
-// It replaces, it never creates: a PUT on a segment designating nothing is a
-// 404. Creation has its own route, and its own scope rule.
 func replaceFunctionHandler(e *core.RequestEvent) error {
-	record, err := functionFromPath(e)
+	allowed, err := requestKeyScope(e)
 	if err != nil {
 		return answerFunctionLookup(e, err)
 	}
@@ -132,84 +108,55 @@ func replaceFunctionHandler(e *core.RequestEvent) error {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid JSON body"})
 	}
 
-	// The path identifies. A name in the body may repeat that identity — either
-	// spelling of it, so a GET response can be edited and sent straight back —
-	// but it never changes it: a silent rename would break every URL wired on the
-	// old one, with nothing in the exchange saying so.
-	if body.Name != "" && body.Name != record.GetString("name") && body.Name != record.Id {
-		return e.JSON(http.StatusBadRequest, map[string]string{
-			"error": `"name" does not designate the function in the path; this route never renames`,
-		})
+	contract, err := replaceFunction(e.App, allowed, e.Request.PathValue("name"), body)
+	if err != nil {
+		return answerManageFailure(e, err, "Failed to save the function")
 	}
-
-	record.Set("script", body.Script)
-	record.Set("packageJson", body.PackageJson)
-	if err := applyPlainEnv(record, body.PlainEnv); err != nil {
-		return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	return saveAndAnswer(e, record, http.StatusOK, body.Crons)
+	return e.JSON(http.StatusOK, contract)
 }
 
 // deleteFunctionHandler answers DELETE /api/faasbox/functions/{idOrName}.
-//
-// Nothing is cleaned up here on purpose: the cron and log relations carry
-// CascadeDelete, so the triggers and the history go with the record, and the
-// AfterDeleteSuccess hook removes the directory from disk.
 func deleteFunctionHandler(e *core.RequestEvent) error {
-	record, err := functionFromPath(e)
+	allowed, err := requestKeyScope(e)
 	if err != nil {
 		return answerFunctionLookup(e, err)
 	}
 
-	if err := e.App.Delete(record); err != nil {
-		e.App.Logger().Error("faasbox: failed to delete a function",
-			"functionId", record.Id, "error", err)
-		return e.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to delete the function",
-		})
+	if err := deleteFunction(e.App, allowed, e.Request.PathValue("name")); err != nil {
+		return answerManageFailure(e, err, "Failed to delete the function")
 	}
-
 	return e.NoContent(http.StatusNoContent)
 }
 
-// saveAndAnswer persists the function, reconciles its triggers when the body
-// carried any, and answers with the contract. Create and replace differ only by
-// the record they hand over and the status they answer with.
+// answerManageFailure is where an operation's refusal becomes a response, for
+// every management route. One mapping rather than one per handler: the refusals
+// are the operations' vocabulary, and a route that invented its own status for
+// one of them would be a divergence waiting to happen.
 //
-// The record and its triggers go in **one** transaction. Writing the record
-// first and reconciling afterwards made a refused trigger answer 400 with the
-// function already written: a POST left behind a function that turned the
-// corrected retry into a 409, and a PUT carrying `"plainEnv": {}` destroyed the
-// secrets while reporting a failure. What the caller is told did not happen must
-// not have happened.
-func saveAndAnswer(e *core.RequestEvent, record *core.Record, status int, crons []manageCron) error {
-	err := e.App.RunInTransaction(func(txApp core.App) error {
-		if err := txApp.Save(record); err != nil {
-			return err
-		}
-		// A nil list is an absent key: the triggers are left alone. An empty one
-		// is an instruction, and removes them all.
-		if crons != nil {
-			return replaceCronJobs(txApp, record, crons)
-		}
-		return nil
-	})
-	if err != nil {
-		return answerSaveFailure(e, record, err)
+// fallback is the wording the route uses for a fault of ours — the only case the
+// refusals below do not cover, and the one thing each route names differently.
+func answerManageFailure(e *core.RequestEvent, err error, fallback string) error {
+	switch {
+	case errors.Is(err, errInvalidFunctionName):
+		return e.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid function name"})
+	case errors.Is(err, errBadPlainEnv), errors.Is(err, errNameNotTheTarget):
+		return e.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case errors.Is(err, errScopeRestricted):
+		return e.JSON(http.StatusForbidden, map[string]string{"error": err.Error()})
+	case errors.Is(err, errScopeUnreadable):
+		return e.JSON(http.StatusForbidden, map[string]string{"error": errScopeUnreadable.Error()})
+	case errors.Is(err, errNameTaken):
+		return e.JSON(http.StatusConflict, map[string]string{"error": errNameTaken.Error()})
+	case errors.Is(err, errTriggersUnreadable):
+		return e.JSON(http.StatusInternalServerError, map[string]string{"error": errTriggersUnreadable.Error()})
 	}
 
-	// Re-read, and *after the commit*. Two reasons in one: the in-memory row
-	// never sees depsStatus, which the install publishes by direct SQL, and
-	// PocketBase defers the AfterSuccess hooks to the end of the transaction, so
-	// the install is only scheduled once we are out of it. The response says what
-	// the record says at that instant and does not wait for the install — the
-	// caller polls with GET, or simply invokes and lets the safety net absorb it.
-	if fresh, err := e.App.FindRecordById(faasboxFunctionsCollection, record.Id); err == nil {
-		record = fresh
+	var notFound *errNotFound
+	if errors.As(err, &notFound) {
+		return e.JSON(http.StatusNotFound, map[string]string{"error": "Function not found"})
 	}
 
-	return answerFunctionContract(e, status, record)
+	return answerSaveFailure(e, err, fallback)
 }
 
 // answerSaveFailure turns a refused write into its response, for the function
@@ -225,7 +172,7 @@ func saveAndAnswer(e *core.RequestEvent, record *core.Record, status int, crons 
 //     which would blame the server for a body the caller can fix and hide which
 //     field to fix;
 //   - anything else is a fault of ours, logged and answered 500.
-func answerSaveFailure(e *core.RequestEvent, record *core.Record, err error) error {
+func answerSaveFailure(e *core.RequestEvent, err error, fallback string) error {
 	var apiErr *router.ApiError
 	if errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 {
 		return e.JSON(apiErr.Status, map[string]string{"error": apiErr.Message})
@@ -246,11 +193,9 @@ func answerSaveFailure(e *core.RequestEvent, record *core.Record, err error) err
 		})
 	}
 
-	e.App.Logger().Error("faasbox: failed to save a function",
-		"function", record.GetString("name"), "error", err)
-	return e.JSON(http.StatusInternalServerError, map[string]string{
-		"error": "Failed to save the function",
-	})
+	e.App.Logger().Error("faasbox: a management operation failed",
+		"answer", fallback, "error", err)
+	return e.JSON(http.StatusInternalServerError, map[string]string{"error": fallback})
 }
 
 // contractFields renames the refused columns the caller never wrote.
@@ -269,50 +214,4 @@ func contractFields(refused validation.Errors) validation.Errors {
 	delete(renamed, "env")
 	renamed["plainEnv"] = message
 	return renamed
-}
-
-// applyPlainEnv relays the secrets the caller sent, and only those.
-//
-// The three cases belong to encryptPlainEnvHook and are reproduced nowhere:
-// absent or null preserves what is stored, `{}` erases every variable, a
-// non-empty object replaces the lot. Writing the field on the handler's own
-// initiative would turn an ordinary save into one of those three answers by
-// accident — which is why nothing is set when the body says nothing.
-func applyPlainEnv(record *core.Record, raw json.RawMessage) error {
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil
-	}
-
-	// Decoded into a map of strings rather than relayed verbatim: the hook
-	// encrypts whatever it is handed, and a list or a nested object would only
-	// come back as an undecryptable environment much later.
-	var env map[string]string
-	if err := json.Unmarshal(raw, &env); err != nil {
-		return errors.New(`"plainEnv" must be an object whose values are strings`)
-	}
-
-	record.Set("plainEnv", env)
-	return nil
-}
-
-// answerFunctionContract writes the public shape of a function record.
-func answerFunctionContract(e *core.RequestEvent, status int, record *core.Record) error {
-	crons, err := functionCronContracts(e.App, record.Id)
-	if err != nil {
-		e.App.Logger().Error("faasbox: failed to read the triggers of a function",
-			"functionId", record.Id, "error", err)
-		return e.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "Failed to read the triggers of this function",
-		})
-	}
-
-	return e.JSON(status, functionContract{
-		Id:          record.Id,
-		Name:        record.GetString("name"),
-		Script:      record.GetString("script"),
-		PackageJson: record.GetString("packageJson"),
-		DepsStatus:  record.GetString("depsStatus"),
-		DepsError:   record.GetString("depsError"),
-		Crons:       crons,
-	})
 }

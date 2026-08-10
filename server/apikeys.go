@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -14,6 +15,28 @@ import (
 	"github.com/pocketbase/pocketbase/tools/security"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
+
+// This file carries what an API key is, end to end: its shape and its storage,
+// the two dimensions of its authority, and the middleware that validates it.
+//
+// The two dimensions are not the same question and must not collapse into one.
+// allowedFunctions says *which* functions a key reaches — the scope. canManage
+// says *what it may do* with them. Losing an invoke-only key lets someone call
+// code that already exists; losing a canManage key lets them write the code this
+// server executes.
+//
+// The scope lives here whole: how it is read off a record (readKeyScope), how it
+// is decided (scopeIsUnrestricted, scopeAllows), and how it is refused
+// (errScopeUnreadable, errScopeRestricted, scopeRefusalFor). The refusals sit
+// next to the rules that produce them on purpose — they are returned by the
+// operations in manageops.go and invokeops.go, which check the scope they are
+// handed rather than assume a middleware did (cf. backend.md » Gestion des
+// fonctions par l'API » Une couche appelable sans requete). A sentinel kept away
+// from its rule is a sentinel that stops matching it.
+//
+// Past the 300-line guideline, and it was already past it before the refusals
+// arrived. The responsibility is single; splitting it would separate a refusal
+// from the check that raises it, or the middleware from the format it validates.
 
 const (
 	apiKeyPrefix = "fbx_"
@@ -142,6 +165,34 @@ func createKeyHandler(e *core.RequestEvent) error {
 	})
 }
 
+// errScopeUnreadable marks a scope that is declared but cannot be decoded. It
+// is a refusal and not an absence of restriction: reading it as "no scope" would
+// widen access instead of narrowing it. Every transport answers 403.
+var errScopeUnreadable = errors.New("API key scope cannot be read")
+
+// errScopeRestricted marks an operation refused by the scope it was handed.
+// Every transport answers 403; what differs is the wording, which the refusal
+// carries — a scope that does not cover the function asked about, or a
+// restricted scope that may create none.
+var errScopeRestricted = errors.New("API key is not authorized for this function")
+
+// refusedScope is one such refusal, spelled out for the caller. Same shape as
+// refusedTrigger in managecrons.go: a sentinel says what class of refusal it is,
+// the value says which one.
+type refusedScope struct{ message string }
+
+func (r *refusedScope) Error() string { return r.message }
+func (r *refusedScope) Unwrap() error { return errScopeRestricted }
+
+// scopeRefusalFor is the refusal every per-function operation returns. Its
+// wording matches what requireAPIKey answers on a route that carries a segment,
+// so the same refusal reads the same whichever barrier caught it.
+func scopeRefusalFor(idOrName string) error {
+	return &refusedScope{
+		message: fmt.Sprintf("API key is not authorized for function %q", idOrName),
+	}
+}
+
 // readKeyScope reads the function scope declared by an API key record.
 //
 // It returns the authorized function ids; an empty result means no restriction.
@@ -150,10 +201,10 @@ func createKeyHandler(e *core.RequestEvent) error {
 // function created since under the old name. PocketBase hands a JSON field back
 // under several shapes depending on the access path, hence the type switch.
 //
-// A field that is present but cannot be decoded yields an error. Callers must
-// deny on that error: an unreadable restriction is not an absence of
-// restriction, and treating it as such would widen access instead of
-// narrowing it.
+// A field that is present but cannot be decoded yields an error wrapping
+// errScopeUnreadable. Callers must deny on that error: an unreadable restriction
+// is not an absence of restriction, and treating it as such would widen access
+// instead of narrowing it.
 func readKeyScope(record *core.Record) ([]string, error) {
 	raw := record.Get("allowedFunctions")
 	if raw == nil {
@@ -172,14 +223,14 @@ func readKeyScope(record *core.Record) ([]string, error) {
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("cannot re-encode allowedFunctions: %w", err)
+			return nil, fmt.Errorf("%w: cannot re-encode allowedFunctions: %w", errScopeUnreadable, err)
 		}
 		encoded = b
 	}
 
 	var allowed []string
 	if err := json.Unmarshal(encoded, &allowed); err != nil {
-		return nil, fmt.Errorf("allowedFunctions is not a list of function ids: %w", err)
+		return nil, fmt.Errorf("%w: allowedFunctions is not a list of function ids: %w", errScopeUnreadable, err)
 	}
 	return allowed, nil
 }
