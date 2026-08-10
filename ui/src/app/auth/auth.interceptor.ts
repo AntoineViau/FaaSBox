@@ -15,13 +15,23 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
   return next(req).pipe(
     catchError((error: HttpErrorResponse) => {
-      // 401 means the server rejected the token. 403 is what PocketBase answers
-      // when a superuser-only rule is hit without any credentials at all, which
-      // is exactly what happens once getToken() has dropped an expired token:
-      // the request goes out unauthenticated. Only treat it as a dead session
-      // when the token is indeed gone, so a genuine authorization refusal on a
-      // live session still reaches the caller.
-      if (error.status === 401 || (error.status === 403 && !authService.isAuthenticated())) {
+      // Both statuses mean the same thing here: the session is dead. 401 is an
+      // outright rejection; 403 is what PocketBase answers when a superuser-only
+      // rule is hit without usable credentials, and that covers two cases the
+      // client cannot tell apart.
+      //
+      // The first is an expiry detected locally: getToken() dropped the expired
+      // token, so the request went out bare. The second is a token the server no
+      // longer recognises — a restarted instance whose superuser record was
+      // rebuilt, a restored database. There the JWT still parses and its exp is
+      // still in the future, so isAuthenticated() says yes and nothing on this
+      // side can know better. Keying on it left the user in a working-looking
+      // editor that answered 403 to everything and never sent them back.
+      //
+      // No 403 reaches this app on a live session: every route the SPA calls is
+      // superuser-only, and the scope refusals that answer 403 belong to the
+      // API-key routes, which a browser navigation never carries a key for.
+      if (error.status === 401 || error.status === 403) {
         authService.logout();
       }
       return throwError(() => error);
