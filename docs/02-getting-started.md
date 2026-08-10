@@ -74,6 +74,7 @@ If you started the server without superuser credentials, open `http://localhost:
 - **Secrets.** Encrypted environment variables are edited as key/value pairs in the **Environment** tab. See [04 - Environment Variables](04-environment-variables.md).
 - **Look at the disk.** The **Files** tab browses the function's own folder as it exists on the server — `index.ts`, `package.json`, `bun.lock`, `node_modules` and whatever else is in there. Read-only. See [03 - Writing Functions](03-writing-functions.md).
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
+- **Share what you are looking at.** The address bar names the open function and the open tab — `/editor/<id>/tab/script` — so a link can be bookmarked or sent to someone, a reload comes back exactly where you left off, and the browser Back button walks back through the functions and tabs you visited. The link carries the function's id rather than its name, so it survives a rename.
 - **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
 
 #### Keyboard shortcuts

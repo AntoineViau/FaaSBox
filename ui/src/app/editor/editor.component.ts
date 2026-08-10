@@ -1,15 +1,34 @@
+/**
+ * Orchestrator of the editor: the open function, the local buffers, and the
+ * five tabs. The URL is the source of truth for what is open — applyRoute below
+ * is the only writer of the selection and of the active tab.
+ *
+ * This file is knowingly past the 300-line readability soft limit, and two
+ * things put it there. The tab bar is written here rather than borrowed: the
+ * vendored tab group kept its active index to itself, so the URL could neither
+ * drive it nor read it. And the five panels belong to the orchestrator, since
+ * they must all be rendered at once and merely hidden — destroying them would
+ * drop unsaved input and break the isDirty() the switch confirmation
+ * aggregates. The lever, the day it is worth pulling, is to extract the <nav>
+ * into a presentational tab-bar component; the panels stay here.
+ */
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
   effect,
+  type ElementRef,
   HostListener,
   inject,
   type OnInit,
   signal,
+  untracked,
   viewChild,
+  viewChildren,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from '@/auth/auth.service';
@@ -18,6 +37,13 @@ import { FunctionsStore } from '@/editor/functions.store';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { CronEditorComponent } from '@/editor/cron-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
+import {
+  DEFAULT_EDITOR_TAB,
+  EDITOR_TABS,
+  EDITOR_TAB_SLUGS,
+  type EditorTabSlug,
+  isEditorTabSlug,
+} from '@/editor/editor-tabs';
 import { EnvEditorComponent } from '@/editor/env-editor.component';
 import { errorText } from '@/editor/error-text';
 import { FilesTabComponent } from '@/editor/files-tab.component';
@@ -29,7 +55,6 @@ import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
 import { ZardInputDirective } from '@shared/components/input';
-import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs';
 
 @Component({
   selector: 'app-editor',
@@ -38,8 +63,6 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
     ZardButtonComponent,
     ZardIconComponent,
     ZardInputDirective,
-    ZardTabGroupComponent,
-    ZardTabComponent,
     CodeEditorComponent,
     CronEditorComponent,
     DepsStatusComponent,
@@ -168,44 +191,91 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
               </div>
             }
 
-            <!-- Tabs -->
-            <z-tab-group class="flex flex-1 flex-col overflow-hidden" zTabsPosition="top" [zShowArrow]="false">
-              <z-tab label="Script">
-                <div class="h-full">
-                  <app-code-editor
-                    [content]="localScript()"
-                    language="typescript"
-                    (contentChange)="localScript.set($event)"
-                  />
-                </div>
-              </z-tab>
-              <z-tab label="package.json">
-                <div class="flex h-full flex-col">
-                  <!-- Install state, pushed by the server as it changes. -->
-                  <app-deps-status [status]="fn.depsStatus" [error]="fn.depsError" />
-                  <div class="min-h-0 flex-1">
-                    <app-code-editor
-                      [content]="localPackageJson()"
-                      language="json"
-                      (contentChange)="localPackageJson.set($event)"
-                    />
+            <!-- Tabs, written here rather than taken from shared/: the vendored
+                 tab group keeps its active index to itself, so the URL could
+                 neither drive it nor read it. -->
+            <div class="flex flex-1 flex-col overflow-hidden">
+              <nav
+                role="tablist"
+                aria-label="Function"
+                class="tab-bar mb-4 flex flex-row justify-start gap-4 overflow-auto border-b"
+                (keydown)="onTabKeydown($event)"
+              >
+                @for (t of TABS; track t.slug) {
+                  <button
+                    #tabButton
+                    type="button"
+                    role="tab"
+                    [id]="'tab-' + t.slug"
+                    [attr.aria-controls]="'panel-' + t.slug"
+                    [attr.aria-selected]="activeTab() === t.slug"
+                    [attr.tabindex]="activeTab() === t.slug ? 0 : -1"
+                    class="inline-flex h-8 shrink-0 cursor-pointer select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-none border border-transparent bg-clip-padding px-2.5 text-sm font-medium outline-none transition-all hover:text-foreground dark:hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    [class.border-b-2]="activeTab() === t.slug"
+                    [class.border-b-primary]="activeTab() === t.slug"
+                    (click)="goToTab(t.slug)"
+                  >
+                    {{ t.label }}
+                  </button>
+                }
+              </nav>
+
+              <!-- Every panel is rendered and merely hidden. Destroying them
+                   would drop what was typed in the Environment tab and break
+                   the isDirty() the switch confirmation aggregates by
+                   viewChild. The switch below is keyed on a constant, so each
+                   panel renders its own branch once and keeps it. -->
+              <div class="tab-content flex-1">
+                @for (t of TABS; track t.slug) {
+                  <div
+                    role="tabpanel"
+                    [id]="'panel-' + t.slug"
+                    [attr.aria-labelledby]="'tab-' + t.slug"
+                    tabindex="0"
+                    [hidden]="activeTab() !== t.slug"
+                    class="outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  >
+                    @switch (t.slug) {
+                      @case ('script') {
+                        <div class="h-full">
+                          <app-code-editor
+                            [content]="localScript()"
+                            language="typescript"
+                            (contentChange)="localScript.set($event)"
+                          />
+                        </div>
+                      }
+                      @case ('package-json') {
+                        <div class="flex h-full flex-col">
+                          <!-- Install state, pushed by the server as it changes. -->
+                          <app-deps-status [status]="fn.depsStatus" [error]="fn.depsError" />
+                          <div class="min-h-0 flex-1">
+                            <app-code-editor
+                              [content]="localPackageJson()"
+                              language="json"
+                              (contentChange)="localPackageJson.set($event)"
+                            />
+                          </div>
+                        </div>
+                      }
+                      @case ('triggers') {
+                        <app-cron-editor
+                          [functionId]="fn.id"
+                          [functionName]="fn.name"
+                          (cronCountChange)="loadCronFunctions()"
+                        />
+                      }
+                      @case ('environment') {
+                        <app-env-editor [functionId]="fn.id" />
+                      }
+                      @case ('files') {
+                        <app-files-tab [functionId]="fn.id" [functionName]="fn.name" />
+                      }
+                    }
                   </div>
-                </div>
-              </z-tab>
-              <z-tab label="Triggers">
-                <app-cron-editor
-                  [functionId]="fn.id"
-                  [functionName]="fn.name"
-                  (cronCountChange)="loadCronFunctions()"
-                />
-              </z-tab>
-              <z-tab label="Environment">
-                <app-env-editor [functionId]="fn.id" />
-              </z-tab>
-              <z-tab label="Files">
-                <app-files-tab [functionId]="fn.id" [functionName]="fn.name" />
-              </z-tab>
-            </z-tab-group>
+                }
+              </div>
+            </div>
 
             <!-- Runner panel -->
             @if (showRunner()) {
@@ -240,11 +310,20 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
       display: block;
       height: 100vh;
     }
-    z-tab-group {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      overflow: hidden;
+    /* These three hold the tab group up, and they live here now that the markup
+       is the editor's own — they had to be global while it was built by the
+       vendored tab group and carried its scope attribute. Without them the
+       panel is sized by its content: a long script grows the column, and the
+       tab bar, a scroll container so shrinkable to nothing, simply vanishes. */
+    .tab-content {
+      min-height: 0;
+    }
+    [role='tabpanel'] {
+      height: 100%;
+      overflow: auto;
+    }
+    .tab-bar {
+      flex-shrink: 0;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -253,7 +332,36 @@ export class EditorComponent implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly cronService = inject(CronService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   protected readonly store = inject(FunctionsStore);
+
+  protected readonly TABS = EDITOR_TABS;
+
+  /**
+   * The address bar is the source of truth: these two are the only inputs of
+   * the selection and of the active tab, and applyRoute is the only writer of
+   * either. One direction, so no state here can drift away from the URL.
+   */
+  private readonly params = toSignal(this.route.paramMap, { requireSync: true });
+  private readonly routeId = computed(() => this.params().get('id'));
+  private readonly routeTab = computed(() => this.params().get('tab'));
+
+  protected readonly activeTab = signal<EditorTabSlug>(DEFAULT_EDITOR_TAB);
+
+  /**
+   * What applyRoute last acted on: what a change of id is measured against, and
+   * what tells a refused switch from an accepted one. A signal rather than a
+   * field because the unknown-id effect below reads it - and would otherwise
+   * depend on the order the two effects happen to run in.
+   */
+  private readonly appliedId = signal<string | null>(null);
+
+  /**
+   * Until the list is in, an id that matches nothing means nothing: on a cold
+   * load the route lands long before the functions do.
+   */
+  private readonly listLoaded = signal(false);
 
   protected readonly localName = signal('');
   protected readonly localScript = signal('');
@@ -266,9 +374,10 @@ export class EditorComponent implements OnInit {
 
   private readonly runner = viewChild(RunnerComponent);
   private readonly envEditor = viewChild(EnvEditorComponent);
-  // Both resolve from any tab: the tab group hides panels, it does not destroy
+  // Both resolve from any tab: the tab bar hides panels, it does not destroy
   // them, so what was typed in one is still there while another is on screen.
   private readonly cronEditor = viewChild(CronEditorComponent);
+  private readonly tabButtons = viewChildren<ElementRef<HTMLButtonElement>>('tabButton');
 
   /** Guards the sync effect below: see why it keys on the id and not the record. */
   private lastSyncedId: string | null = null;
@@ -320,16 +429,134 @@ export class EditorComponent implements OnInit {
       this.localScript.set(fn?.script ?? '');
       this.localPackageJson.set(fn?.packageJson ?? '');
     });
+
+    // URL -> state. Reading the parameters is all this effect tracks; what it
+    // then decides depends on the buffers, and re-running on those would ask
+    // for confirmation at every keystroke.
+    effect(() => {
+      const id = this.routeId();
+      const tab = this.routeTab();
+      untracked(() => this.applyRoute(id, tab));
+    });
+
+    // An id nothing answers to - a stale link, a function deleted here or
+    // elsewhere - lands on the empty state rather than on a dead screen.
+    //
+    // Only once that id has actually been applied. A refused switch never
+    // applies it, and bouncing it to /editor all the same would ask for
+    // confirmation a second time on the way back.
+    effect(() => {
+      const id = this.routeId();
+      const applied = this.appliedId();
+      const loaded = this.listLoaded();
+      const known = this.store.functions().some((f) => f.id === id);
+      if (!id || applied !== id || !loaded || known) return;
+      untracked(() => void this.router.navigate(['/editor'], { replaceUrl: true }));
+    });
   }
 
   ngOnInit(): void {
-    this.store.loadFunctions();
+    void this.store.loadFunctions().then(() => this.listLoaded.set(true));
     this.loadCronFunctions();
 
     // The install runs in the background for up to a minute after the save
     // answered, so the save response alone would show one frozen value. The
     // server pushes instead — nothing here polls.
     this.destroyRef.onDestroy(this.store.startDepsStateSync());
+  }
+
+  /** The one spelling of an editor address, so no caller builds it by hand. */
+  private tabLink(id: string | null, tab: EditorTabSlug): unknown[] {
+    return id ? ['/editor', id, 'tab', tab] : ['/editor'];
+  }
+
+  /**
+   * Brings the selection and the active tab in line with the URL. It is the
+   * only writer of both, and the only place the switch confirmation can live:
+   * the browser Back button changes the function without going through any
+   * click, and canDeactivate never fires on a parameter change.
+   */
+  private applyRoute(id: string | null, tab: string | null): void {
+    if (id !== this.appliedId() && !this.mayLeave()) {
+      // Refused: put the address bar back on the function being edited, in
+      // place - a refusal has no business leaving a history entry behind.
+      void this.router.navigate(this.tabLink(this.appliedId(), this.activeTab()), {
+        replaceUrl: true,
+      });
+      return;
+    }
+
+    this.appliedId.set(id);
+    this.store.selectFunction(id);
+
+    if (!id) {
+      this.activeTab.set(DEFAULT_EDITOR_TAB);
+      return;
+    }
+
+    // A bare /editor/<id> and an unknown slug both land on the default tab,
+    // and the address is corrected in place rather than stacked on.
+    if (!isEditorTabSlug(tab)) {
+      this.activeTab.set(DEFAULT_EDITOR_TAB);
+      void this.router.navigate(this.tabLink(id, DEFAULT_EDITOR_TAB), { replaceUrl: true });
+      return;
+    }
+    this.activeTab.set(tab);
+  }
+
+  /**
+   * The Environment and Triggers tabs save themselves, so neither is part of
+   * isDirty - but leaving either behind unsaved loses just as much. Triggers
+   * especially: the panel discards its rows as soon as the function changes.
+   *
+   * A function that is already gone asks nothing: its deletion was confirmed on
+   * its own, and there is nothing left to go back to.
+   */
+  private mayLeave(): boolean {
+    const previous = this.appliedId();
+    if (!previous || !this.store.functions().some((f) => f.id === previous)) return true;
+
+    const dirty =
+      this.isDirty() ||
+      (this.envEditor()?.isDirty() ?? false) ||
+      (this.cronEditor()?.isDirty() ?? false);
+    return !dirty || confirm('You have unsaved changes. Discard and switch?');
+  }
+
+  protected goToTab(slug: EditorTabSlug): void {
+    const id = this.routeId();
+    if (!id) return;
+    void this.router.navigate(this.tabLink(id, slug));
+  }
+
+  /**
+   * Arrows move the active tab, Home and End go to the ends. Without them the
+   * roving tabindex would be a regression: the inactive tabs are out of the tab
+   * order, so the keyboard would only ever reach the one already active.
+   */
+  protected onTabKeydown(event: KeyboardEvent): void {
+    const count = EDITOR_TAB_SLUGS.length;
+    const current = EDITOR_TAB_SLUGS.indexOf(this.activeTab());
+    let next: number;
+    switch (event.key) {
+      case 'ArrowLeft':
+        next = (current - 1 + count) % count;
+        break;
+      case 'ArrowRight':
+        next = (current + 1) % count;
+        break;
+      case 'Home':
+        next = 0;
+        break;
+      case 'End':
+        next = count - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    this.goToTab(EDITOR_TAB_SLUGS[next]);
+    this.tabButtons()[next]?.nativeElement.focus();
   }
 
   /**
@@ -424,18 +651,13 @@ export class EditorComponent implements OnInit {
     }
   }
 
+  /**
+   * The sidebar navigates instead of selecting; the effect on the route
+   * parameters does the rest, confirmation included. The open tab is carried
+   * over - switching function is not a reason to change what one is looking at.
+   */
   protected onSelectFunction(id: string): void {
-    // The Environment and Triggers tabs save themselves, so neither is part of
-    // isDirty - but leaving either behind unsaved loses just as much. Triggers
-    // especially: the panel discards its rows as soon as the function changes.
-    const dirty =
-      this.isDirty() ||
-      (this.envEditor()?.isDirty() ?? false) ||
-      (this.cronEditor()?.isDirty() ?? false);
-    if (dirty && !confirm('You have unsaved changes. Discard and switch?')) {
-      return;
-    }
-    this.store.selectFunction(id);
+    void this.router.navigate(this.tabLink(id, this.activeTab()));
   }
 
   protected async onCreateFunction(): Promise<void> {
@@ -443,7 +665,10 @@ export class EditorComponent implements OnInit {
     if (!name?.trim()) return;
 
     try {
-      await this.store.createFunction(name.trim());
+      // The store does not select what it creates: opening it is a navigation
+      // like any other, so the URL follows and stays the only source of truth.
+      const created = await this.store.createFunction(name.trim());
+      void this.router.navigate(this.tabLink(created.id, this.activeTab()));
     } catch (e) {
       alert(`Failed to create function: ${errorText(e)}`);
     }

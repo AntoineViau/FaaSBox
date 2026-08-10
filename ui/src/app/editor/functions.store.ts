@@ -111,7 +111,9 @@ export const FunctionsStore = signalStore(
         const created = await firstValueFrom(
           functionsService.create({ name, script: defaultScript, packageJson: '' }),
         );
-        patchState(store, { functions: [...store.functions(), created], selectedId: created.id });
+        // The selection is not touched here: it belongs to the URL, and the
+        // editor navigates to the new function so the address bar follows.
+        patchState(store, { functions: [...store.functions(), created] });
         return created;
       },
 
@@ -141,11 +143,11 @@ export const FunctionsStore = signalStore(
 
       async deleteFunction(id: string): Promise<void> {
         await firstValueFrom(functionsService.delete(id));
-        const remaining = store.functions().filter((f) => f.id !== id);
-        patchState(store, {
-          functions: remaining,
-          selectedId: store.selectedId() === id ? null : store.selectedId(),
-        });
+        // The selection is not cleared here: it belongs to the URL, and clearing
+        // it would be redundant anyway - selectedFunction resolves to null as
+        // soon as the record leaves the list, and the editor navigates back to
+        // the empty state on an id nothing answers to.
+        patchState(store, { functions: store.functions().filter((f) => f.id !== id) });
       },
     };
   }),

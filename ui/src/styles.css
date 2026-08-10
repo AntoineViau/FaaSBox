@@ -31,28 +31,6 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* Tab group internals, from the editor only.
-   These elements are built by the vendored ZardTabGroupComponent, so they carry
-   its scope attribute and not the editor's: a `styles` block in
-   editor.component.ts compiles to `.tab-content[_ngcontent-...]` and matches
-   nothing. The rules have to be global, and touching shared/ for an
-   application need is out. Without them the panel is sized by its content, so
-   a long script pushes the tab bar out of the group and the tabs vanish. */
-app-editor .tab-content {
-  min-height: 0;
-}
-
-app-editor [role="tabpanel"] {
-  height: 100%;
-  overflow: auto;
-}
-
-/* The tab bar is a scroll container, so it may shrink to nothing under
-   pressure. It is the one part that must always stay reachable. */
-app-editor .nav-tab-scroll {
-  flex-shrink: 0;
-}
-
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
