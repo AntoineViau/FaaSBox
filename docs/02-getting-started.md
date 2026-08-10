@@ -109,7 +109,7 @@ One thing it cannot do: **creating an API key record by hand gives you no usable
 ## 4. Create Your First Function
 
 1.  Open the **FaaS Editor**.
-2.  Click the **+** button next to *Functions* in the left sidebar.
+2.  Click the **+** button next to *Functions* in the left sidebar. The reload button beside it re-reads the list from the server — the sidebar is filled when the page loads, so a function created from the [management API](09-api-reference.md), from the PocketBase admin UI or in another tab appears when you ask for it.
 3.  Name it `hello-world`.
 4.  In the **Script** tab, write the following:
 

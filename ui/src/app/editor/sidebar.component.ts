@@ -11,21 +11,35 @@ import { ZardIconComponent } from '@shared/components/icon';
   imports: [RouterLink, ZardButtonComponent, ZardIconComponent],
   template: `
     <div class="flex h-full flex-col">
-      <!-- A key only ever grants access to functions, so it has nothing to
-           govern until at least one exists. -->
-      @if (functions().length > 0) {
-        <div class="border-b border-border p-1">
-          <a z-button zType="ghost" zSize="sm" class="w-full justify-start" routerLink="/keys">
-            <z-icon zType="shield" class="mr-1.5 h-4 w-4" />
-            API keys
-          </a>
-        </div>
-      }
+      <!-- Always here, functions or not: a key with an open scope is written
+           before the functions it will govern, and hiding the entry until the
+           first function exists made the page unreachable from the editor. -->
+      <div class="border-b border-border p-1">
+        <a z-button zType="ghost" zSize="sm" class="w-full justify-start" routerLink="/keys">
+          <z-icon zType="shield" class="mr-1.5 h-4 w-4" />
+          API keys
+        </a>
+      </div>
       <div class="flex items-center justify-between border-b border-border px-3 py-2">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Functions</span>
-        <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="create.emit()">
-          <z-icon zType="plus" class="h-4 w-4" />
-        </button>
+        <div class="flex items-center">
+          <!-- The list is only read on load: a function written from the API, or
+               from another tab, shows up here on demand and not before. -->
+          <button
+            z-button
+            zType="ghost"
+            zSize="icon"
+            class="h-7 w-7"
+            title="Reload the list"
+            [disabled]="loading()"
+            (click)="refresh.emit()"
+          >
+            <z-icon zType="refresh-cw" class="h-4 w-4" [class.animate-spin]="loading()" />
+          </button>
+          <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="create.emit()">
+            <z-icon zType="plus" class="h-4 w-4" />
+          </button>
+        </div>
       </div>
       <div class="flex-1 overflow-y-auto p-1">
         @if (functions().length === 0) {
@@ -65,8 +79,11 @@ export class SidebarComponent {
   readonly selectedId = input.required<string | null>();
   /** Ids of the functions carrying at least one active trigger. */
   readonly cronFunctions = input<Set<string>>(new Set());
+  /** Spins the reload icon and holds the button, so a click reads as an action. */
+  readonly loading = input(false);
 
   readonly select = output<string>();
   readonly create = output<void>();
   readonly deleteItem = output<string>();
+  readonly refresh = output<void>();
 }

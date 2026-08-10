@@ -10,6 +10,7 @@ import {
   isUnrestrictedScope,
   type ScopeFunction,
 } from '@/api-keys/function-scope.component';
+import { AuthService } from '@/auth/auth.service';
 import { FunctionsService } from '@/editor/functions.service';
 import type { FaasboxApiKey } from '@/models/faasbox-api-key.model';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
@@ -57,7 +58,13 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
           </a>
           <h1 class="text-lg font-semibold">API keys</h1>
         </div>
-        <app-theme-toggle />
+        <div class="flex items-center gap-2">
+          <app-theme-toggle />
+          <button z-button zType="outline" zSize="sm" (click)="logout()">
+            <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
+            Sign out
+          </button>
+        </div>
       </header>
 
       <div class="flex-1 overflow-y-auto p-4">
@@ -141,6 +148,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
 })
 export class ApiKeysComponent implements OnInit {
   private readonly apiKeysService = inject(ApiKeysService);
+  private readonly authService = inject(AuthService);
   private readonly functionsService = inject(FunctionsService);
 
   protected readonly keys = signal<ApiKeyRow[]>([]);
@@ -235,6 +243,10 @@ export class ApiKeysComponent implements OnInit {
   /** PocketBase dates read "YYYY-MM-DD HH:MM:SS.sssZ"; the day is what matters here. */
   protected day(value: string): string {
     return value ? value.slice(0, 10) : '';
+  }
+
+  protected logout(): void {
+    this.authService.logout();
   }
 
   private report(error: unknown, fallback: string): void {

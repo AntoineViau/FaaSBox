@@ -100,9 +100,11 @@ import { ZardTabGroupComponent, ZardTabComponent } from '@shared/components/tabs
             [functions]="store.sortedFunctions()"
             [selectedId]="store.selectedId()"
             [cronFunctions]="cronFunctions()"
+            [loading]="store.isLoading()"
             (select)="onSelectFunction($event)"
             (create)="onCreateFunction()"
             (deleteItem)="onDeleteFunction($event)"
+            (refresh)="onRefresh()"
           />
         </div>
 
@@ -328,6 +330,18 @@ export class EditorComponent implements OnInit {
     // answered, so the save response alone would show one frozen value. The
     // server pushes instead — nothing here polls.
     this.destroyRef.onDestroy(this.store.startDepsStateSync());
+  }
+
+  /**
+   * Re-reads what the sidebar shows: the functions and their trigger markers.
+   * The two go together — a function written from the API may arrive with its
+   * crons, and reloading one without the other would show it without its mark.
+   *
+   * The open buffers are left alone: the sync effect keys on the selected id,
+   * which a reload does not change, so nothing typed here is discarded.
+   */
+  protected async onRefresh(): Promise<void> {
+    await Promise.all([this.store.loadFunctions(), this.loadCronFunctions()]);
   }
 
   protected async loadCronFunctions(): Promise<void> {
