@@ -74,12 +74,45 @@ Only one is genuinely required, and only for a feature you may not use:
 |---|---|---|
 | `FAASBOX_ENCRYPTION_KEY` | **Required to use secrets.** 64 hex characters — `openssl rand -hex 32`. | Secrets are disabled with a warning; everything else runs. A malformed value is fatal at startup, on purpose. |
 | `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. | The step is skipped; create the account at `/_/` on first boot instead. |
+| `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
 | `LITESTREAM_*` | Optional, see below. | No replication; the database stays local. |
 | `FAASBOX_MAX_*` | Optional sizing, see below. | Defaults apply. |
 
 > ⚠️ Lose `FAASBOX_ENCRYPTION_KEY` and the secrets encrypted with it are gone.
 > Change it, and existing secrets stop being readable — the Environment tab
 > answers `500` rather than showing you an empty set you would then overwrite.
+
+#### Telling the instance its own address
+
+`FAASBOX_PUBLIC_URL` is the only place FaaSBox learns what it is called from
+outside, and it never guesses. An OAuth authorization server has to publish its
+own issuer and the URL of the resource it protects, and a value derived from a
+proxy header or from a database setting would put whatever the proxy said — or
+`http://localhost:8090` — in a document clients trust.
+
+It has to be a **bare origin**: scheme and host, an optional port, nothing else.
+A trailing slash is dropped; a path, a query, a fragment or credentials are
+refused. `http://` is accepted on `localhost`, `127.0.0.1` or `::1` only —
+anywhere else it is what a reverse proxy wired wrong looks like, and OAuth 2.1
+forbids it.
+
+```bash
+# Behind a reverse proxy on a domain
+FAASBOX_PUBLIC_URL=https://faasbox.example.com
+
+# A droplet reached by its address, TLS terminated in front
+FAASBOX_PUBLIC_URL=https://203.0.113.10
+
+# Clever Cloud: the domain of the application, not the internal port it binds
+FAASBOX_PUBLIC_URL=https://app-xxxxxxxx.cleverapps.io
+
+# Local development — infra/dev/dev.sh sets this one for you
+FAASBOX_PUBLIC_URL=http://127.0.0.1:8080
+```
+
+Anything wrong with the value takes the OAuth endpoints down and leaves the rest
+of the server running: an agent then connects with an API key, as before. The
+startup log names the reason.
 
 #### Sizing an instance
 

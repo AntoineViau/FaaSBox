@@ -87,6 +87,7 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `SUPERUSER_EMAIL` | Admin superuser email | *(required)* |
 | `SUPERUSER_PASSWORD` | Admin superuser password | *(required)* |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key for secrets encryption | *(disabled)* |
+| `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin | *(OAuth disabled)* |
 | `FAASBOX_MAX_CONCURRENCY` | Max concurrent function executions | `4` |
 | `FAASBOX_MAX_LOG_RETENTION` | Max number of execution logs to keep | `1000` |
 | `FAASBOX_MAX_OUTPUT_SIZE` | Bytes captured per output stream, `stdout` and `stderr` alike | `1048576` |
@@ -96,6 +97,8 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `FAASBOX_MAX_FILE_VIEW` | Bytes a file may hold and still be shown in the **Files** tab | `262144` |
 
 Every numeric setting behaves the same way: an absent variable uses the default silently, and a value that is unparsable, negative or zero falls back to the default with a message in the server log. A bad setting never prevents startup.
+
+`FAASBOX_PUBLIC_URL` is the exception to the "has a default" rule, because no guessed address would be right: it is what the OAuth authorization server publishes as its own identity. Absent or malformed, the OAuth endpoints are not mounted and a startup line says why; an agent then connects with an API key, as it does today. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints and [10 - Deployment](10-deployment.md#telling-the-instance-its-own-address) for what to put in it.
 
 ### Notes on the size limits
 

@@ -319,7 +319,67 @@ The endpoint is **stateless**: every request carries its own authorization, and 
 
 ---
 
-## 6. Create API Key
+## 6. OAuth Authorization
+
+FaaSBox can also act as an **OAuth 2.1 authorization server**, so an agent connects by opening a browser and clicking *Authorize* instead of being handed a key to paste. The endpoints below are what a client drives; the tokens they issue are not accepted on `/mcp` yet, which still authenticates by `X-API-Key`.
+
+**They only exist if `FAASBOX_PUBLIC_URL` is set.** An authorization server has to publish its own address, and FaaSBox refuses to guess it: without that variable every route in this section answers `404`, and a line at startup says so. See [10 - Deployment](10-deployment.md#the-environment-variables).
+
+The value must be a bare origin — `https://faasbox.example.com`, no path, no query, no fragment — and `http://` is accepted on a loopback host only. Anything else is refused with a message naming the reason, and the routes stay down.
+
+### Discovery
+
+Three public documents, no authentication, readable cross-origin.
+
+| Endpoint | Standard | What it says |
+|---|---|---|
+| `GET /.well-known/oauth-protected-resource` | RFC 9728 | `/mcp` is the resource, and this instance is the authorization server guarding it |
+| `GET /.well-known/oauth-protected-resource/mcp` | RFC 9728 §3 | the same document, at the form that carries the resource path |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 | where `/authorize`, `/token` and `/register` are, and what the server supports |
+
+The last one declares `S256` as the only PKCE method, `none` as the only token endpoint authentication method, `faasbox` as the only scope, and `authorization_response_iss_parameter_supported: true`.
+
+### `POST /oauth/register`
+
+Dynamic client registration (RFC 7591), **unauthenticated**, as the standard requires. Registering is not access: a registered client holds nothing until a human authorizes it.
+
+- **Request Body**: `{"client_name": "my agent", "redirect_uris": ["http://127.0.0.1:41234/callback"]}`. At least one absolute redirect URI is required.
+- **Response**: `201` with the metadata echoed back plus a `client_id`. **No `client_secret` is ever issued** — an agent on your machine cannot keep one, so the client is public and PKCE secures the exchange.
+- **400** with `invalid_redirect_uri` if `redirect_uris` is missing, empty, relative, or carries a fragment.
+
+Registrations that no authorization ever follows are deleted after twenty-four hours.
+
+### `GET /oauth/authorize`
+
+Takes `response_type=code`, `client_id`, `redirect_uri`, `code_challenge`, `code_challenge_method=S256`, `resource`, and optionally `state`. PKCE and `resource` (RFC 8707) are both **required**.
+
+- An unknown `client_id`, or a `redirect_uri` that does not match one the client registered, is refused **on the spot** with `400`. Nothing is redirected: sending a browser to an unvalidated URI is an open redirect.
+- A loopback redirect URI — `http://127.0.0.1:<port>/...` or `http://localhost:<port>/...` — matches whatever port it listens on (RFC 8252). Every other URI has to match exactly.
+- Any other problem redirects to the registered URI with an OAuth `error`, the `state` you sent, and an `iss` naming this server (RFC 9207).
+- A valid request records the demand and redirects the browser to `/consent`, in the editor. You sign in if you are not already, read what the token would grant, and click. Approving mints an authorization code, valid **one minute and one use**.
+
+### `POST /oauth/token`
+
+Form-encoded, no client authentication.
+
+| `grant_type` | Parameters |
+|---|---|
+| `authorization_code` | `code`, `code_verifier`, `client_id`, `redirect_uri`, `resource` |
+| `refresh_token` | `refresh_token`, `client_id`, `resource` |
+
+- **Response**: `access_token`, `token_type: Bearer`, `expires_in` (one hour), `refresh_token` (ninety days), `scope: faasbox`.
+- **The refresh token rotates.** Every use returns a new one and retires the old, and presenting a retired one **revokes the whole authorization** — it means two holders. The same is true of an authorization code presented twice.
+- **400** with the OAuth error code: `invalid_grant` for an unknown, replayed, expired or mismatched credential, `invalid_target` for a missing or foreign `resource`, `unsupported_grant_type` otherwise.
+
+### One scope, and it grants everything
+
+There is nothing to choose on the consent screen. A token issued here is worth an API key carrying `canManage` with no scope restriction: read, write, run and delete any function of the instance, and read its logs. The consent screen says so in words before you click, which is why it is worth reading rather than clicking through.
+
+Tokens are opaque strings, stored only as a SHA-256 hash — a stolen database yields nothing usable.
+
+---
+
+## 7. Create API Key
 **Endpoint**: `POST /api/faasbox/keys`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -350,7 +410,7 @@ Creates a new hashed API key.
 
 ---
 
-## 7. Read a Function's Environment
+## 8. Read a Function's Environment
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/env`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -370,7 +430,7 @@ Returns the decrypted environment variables of a function, as a flat JSON object
 
 ---
 
-## 8. List a Function's Files
+## 9. List a Function's Files
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -397,7 +457,7 @@ Returns **one level** of the function's folder on disk. Never recursive.
 
 ---
 
-## 9. Read a Function's File
+## 10. Read a Function's File
 **Endpoint**: `GET /api/faasbox/functions/{idOrName}/files/content`
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`).
@@ -427,7 +487,7 @@ Both endpoints are read-only. There is no counterpart that writes, deletes or up
 
 ---
 
-## 10. Health Check
+## 11. Health Check
 **Endpoint**: `GET /health`
 
 **No Authentication Required.**

@@ -4,6 +4,7 @@ import { AgentsComponent } from '@/agents/agents.component';
 import { ApiKeysComponent } from '@/api-keys/api-keys.component';
 import { authGuard } from '@/auth/auth.guard';
 import { LoginComponent } from '@/auth/login.component';
+import { ConsentComponent } from '@/consent/consent.component';
 import { EditorComponent } from '@/editor/editor.component';
 
 /**
@@ -66,6 +67,15 @@ export const routes: Routes = [
     component: AgentsComponent,
     canActivate: [authGuard],
     title: 'FaaSBox - AI agents',
+  },
+  {
+    // Where /oauth/authorize sends the browser. Not a path the server claims -
+    // it could not be, since the guard below needs a session the server never
+    // sees on a top-level navigation.
+    path: 'consent',
+    component: ConsentComponent,
+    canActivate: [authGuard],
+    title: 'FaaSBox - Authorize an agent',
   },
   {
     path: '',

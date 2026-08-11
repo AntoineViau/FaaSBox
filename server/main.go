@@ -77,9 +77,12 @@ func main() {
 			// Report the triggers that were due while the server was down
 			reportMissedCronRuns(e.App, time.Now())
 
-			// Internal cron to prune old logs every hour
+			// Internal hourly cron: prunes the logs, and behind them the OAuth
+			// registrations and grants that /oauth/register lets anyone create.
+			// The OAuth pass returns silently when those collections are absent.
 			e.App.Cron().Add("__faasboxLogPrune", "0 * * * *", func() {
 				pruneOldLogs(e.App)
+				pruneOAuthRecords(e.App)
 			})
 
 			// Health check (public, no API key)
@@ -134,6 +137,17 @@ func main() {
 			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir))
 			mcpRoutes.POST("", mcpServe)
 			mcpRoutes.GET("", mcpServe)
+
+			// The OAuth authorization server, mounted only when
+			// FAASBOX_PUBLIC_URL says what this instance is called from
+			// outside: a server that cannot name itself cannot publish a
+			// discovery document. Absent or invalid, nothing goes up and the
+			// reason is printed — /mcp keeps answering to an API key.
+			if oauth, err := oauthConfigFromEnv(); err != nil {
+				reportOAuthDisabled(err)
+			} else if err := mountOAuth(e, oauth); err != nil {
+				return err
+			}
 
 			// Key management (superuser only, no API key needed)
 			e.Router.POST("/api/faasbox/keys", func(re *core.RequestEvent) error {
