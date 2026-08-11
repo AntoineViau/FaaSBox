@@ -106,7 +106,7 @@ Returns the functions **the presented key is allowed to invoke** — not necessa
 
 The same `allowedFunctions` scope that governs `/invoke/{idOrName}` governs this listing (see [06 - API Keys & Security](06-api-keys-and-security.md)). A key restricted to one function sees that one and nothing else; `count` reflects the filtered list, not the real total. A superuser session sees everything.
 
-What decides whether a function is listed is the presence of its `index.ts` **on disk**, not the state of its record. A function saved with an empty script has never had one written, so it is not invocable and does not show up. Clearing the script of a function that already had one is a different matter: the file stays where it is, so the function keeps being listed and keeps running its previous code until you save a new script over it.
+What decides whether a function is listed is the presence of its `index.ts` **on disk**, not the state of its record. A function whose script is empty has none, whatever its history: saving an empty script removes the file, so the function stops being listed and `/invoke` answers `404` until you save a script over it again. Its directory stays where it is, `package.json` and installed dependencies included.
 
 A key whose scope names only functions that no longer exist gets `{"functions": [], "count": 0}` — an empty list, not an error.
 

@@ -275,9 +275,12 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 	return e.Next()
 }
 
-// syncRecordToDisk writes a single faasbox_functions record to disk.
-// Creates the function directory and writes index.ts (and package.json and
-// bun.lock if non-empty).
+// syncRecordToDisk writes a single faasbox_functions record to disk. It creates
+// the function directory and mirrors the three artefacts the record carries:
+// index.ts, package.json and bun.lock. A field that is empty removes its file
+// rather than leaving the previous one in place. The directory itself stays: it
+// may still hold a valid package.json and its node_modules, which clearing a
+// script has nothing to do with — removing it is what deleting the function does.
 //
 // The directory is named by the record id, never by the name: a rename then
 // moves nothing, loses no node_modules and triggers no reinstall. The name is
@@ -293,11 +296,19 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
+	// The three artefacts follow one rule: an empty field removes its file. A
+	// script left behind by a record that no longer carries one would keep the
+	// function listed and keep running code the database has forgotten — until a
+	// restart on a fresh filesystem stopped writing it, and the function turned
+	// into a 404 with nothing having been touched in between.
+	scriptPath := filepath.Join(dir, "index.ts")
 	script := record.GetString("script")
 	if script != "" {
-		if err := writeIfChanged(filepath.Join(dir, "index.ts"), []byte(script), 0o644); err != nil {
+		if err := writeIfChanged(scriptPath, []byte(script), 0o644); err != nil {
 			return fmt.Errorf("failed to write index.ts for %s: %w", name, err)
 		}
+	} else {
+		os.Remove(scriptPath) // no script on the record: do not leave a stale one
 	}
 
 	pkgPath := filepath.Join(dir, "package.json")

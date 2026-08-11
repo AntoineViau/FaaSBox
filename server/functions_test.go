@@ -640,6 +640,120 @@ func TestSyncRecordToDisk_Lockfile(t *testing.T) {
 	}
 }
 
+// TestSyncRecordToDisk_ClearedScript puts the script under the same rule as the two
+// other artefacts: an empty field removes its file. What it must not remove is the
+// directory, which still carries a package.json, a lockfile and a node_modules that
+// clearing a script has nothing to do with.
+func TestSyncRecordToDisk_ClearedScript(t *testing.T) {
+	functionsDir := t.TempDir()
+	record := newDetachedFunction("k9m2xq7p4wz1n3v", "cleared")
+	record.Set("script", "console.log('hi')")
+	record.Set("packageJson", `{"dependencies":{"dayjs":"^1.11.0"}}`)
+	record.Set("bunLock", "resolved")
+
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(functionsDir, record.Id)
+	scriptPath := filepath.Join(dir, "index.ts")
+	if _, err := os.Stat(scriptPath); err != nil {
+		t.Fatalf("index.ts not written: %v", err)
+	}
+
+	// Stand in for what an install left behind.
+	modules := filepath.Join(dir, "node_modules")
+	if err := os.MkdirAll(modules, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	record.Set("script", "")
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+		t.Errorf("index.ts still on disk with an empty script (stat error: %v)", err)
+	}
+	// The other two are untouched: only the field that was cleared loses its file.
+	for _, name := range []string{"package.json", "bun.lock", "node_modules"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s did not survive the cleared script: %v", name, err)
+		}
+	}
+
+	// Writing a script again puts the function back where it was.
+	record.Set("script", "console.log('back')")
+	if err := syncRecordToDisk(record, functionsDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		t.Fatalf("index.ts not restored: %v", err)
+	}
+	if string(data) != "console.log('back')" {
+		t.Errorf("index.ts = %q, want %q", data, "console.log('back')")
+	}
+}
+
+// TestClearedScript_IsNoLongerServed is what the removal is for: the listing and the
+// invocation both read the disk, so a stale index.ts made the record and what runs
+// disagree — and the disagreement only surfaced at the next restart on a fresh
+// filesystem, where nothing gets written for an empty script.
+func TestClearedScript_IsNoLongerServed(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	saveTestFunction(t, app, functionsDir, "echo", defaultTestScript, "")
+
+	listed, err := listFunctions(app, functionsDir, []string{"*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("listFunctions returned %d entries before clearing, want 1", len(listed))
+	}
+
+	// Same record, no script left on it.
+	saveTestFunction(t, app, functionsDir, "echo", "", "")
+
+	listed, err = listFunctions(app, functionsDir, []string{"*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 0 {
+		t.Errorf("listFunctions returned %d entries for a cleared script, want 0", len(listed))
+	}
+	invokeOverHTTP(t, app, functionsDir, "echo", 404, []string{"not found"})
+
+	// The container is thrown away: the boot-time restore must reach the same
+	// state, not resurrect a script the record no longer carries.
+	freshDir := t.TempDir()
+	syncDiskFromDB(app, freshDir)
+
+	listed, err = listFunctions(app, freshDir, []string{"*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 0 {
+		t.Errorf("listFunctions returned %d entries after a restart, want 0", len(listed))
+	}
+	invokeOverHTTP(t, app, freshDir, "echo", 404, []string{"not found"})
+
+	// And a script written again is served again, on the rebuilt filesystem.
+	saveTestFunction(t, app, freshDir, "echo", defaultTestScript, "")
+	listed, err = listFunctions(app, freshDir, []string{"*"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 {
+		t.Errorf("listFunctions returned %d entries once the script was written back, want 1", len(listed))
+	}
+}
+
 // TestSyncDiskFromDB_RestoresLockfile is the point of persisting it: a restart on a
 // fresh filesystem must find the pinning again, not re-resolve every version range.
 func TestSyncDiskFromDB_RestoresLockfile(t *testing.T) {
