@@ -997,6 +997,199 @@ func TestScheduleDepsInstall_ScriptOnlyChangeSkipsInstall(t *testing.T) {
 	}
 }
 
+// waitInstalls polls the fake bun counter until it reaches want. The install is
+// detached from the save, so the count settles some time after the call returns —
+// and unlike a state transition, it cannot be waited on through the record when
+// the state it would publish is the one already stored.
+func waitInstalls(t testing.TB, runs func() int, want int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	got := 0
+	for time.Now().Before(deadline) {
+		if got = runs(); got >= want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("bun install ran %d times, want %d", got, want)
+}
+
+// markerModTime reports when the dependency marker was last written, which is
+// when the last install finished: ensureDeps clears node_modules and rewrites it.
+func markerModTime(t testing.TB, funcDir string) time.Time {
+	t.Helper()
+	info, err := os.Stat(filepath.Join(funcDir, "node_modules", depsHashFile))
+	if err != nil {
+		t.Fatalf("no dependency marker in %s: %v", funcDir, err)
+	}
+	return info.ModTime()
+}
+
+// TestScheduleDepsInstall_SaveForeignToTheDepsPublishesNothing covers the flap the
+// advisory filter exists to remove. A save touching neither package.json nor the
+// lockfile used to republish pending, installing then ready on a function whose
+// node_modules was already built for that exact spec — three writes, three
+// broadcasts, a full rewrite of bunLock, and a flicker in the open editor, all
+// announcing an install that ensureDeps was going to skip anyway.
+func TestScheduleDepsInstall_SaveForeignToTheDepsPublishesNothing(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := fakeBun(t, "mkdir -p node_modules\necho resolved-by-bun > bun.lock\nexit 0")
+	const pkg = `{"dependencies":{"left-pad":"1.0.0"}}`
+
+	record := saveTestFunction(t, app, functionsDir, "settled-deps", "console.log('v1')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	installed := waitDepsStatus(t, app, record.Id, depsStatusReady)
+
+	// A sentinel in depsError, because an empty field cannot tell an overwrite from
+	// an untouched value.
+	setDepsState(app, record.Id, "settled-deps", depsStatusReady, "sentinel")
+	lockBefore := installed.GetString("bunLock")
+	markerBefore := markerModTime(t, filepath.Join(functionsDir, record.Id))
+
+	// Registered now: the broadcasts of the install above targeted the client set as
+	// it stood then, so nothing of it can land here.
+	client := registerRealtimeClient(t, app, core.CollectionNameSuperusers, depsRealtimeTopic)
+
+	// The script changes, the dependency spec does not.
+	record = saveTestFunction(t, app, functionsDir, "settled-deps", "console.log('v2')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+
+	if state, ok := receivedState(t, client); ok {
+		t.Errorf("the save broadcast %+v, want nothing on a save foreign to the dependencies", state)
+	}
+
+	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stored.GetString("depsStatus"); got != depsStatusReady {
+		t.Errorf("depsStatus = %q, want it left at %q", got, depsStatusReady)
+	}
+	if got := stored.GetString("depsError"); got != "sentinel" {
+		t.Errorf("depsError = %q, want the sentinel left untouched", got)
+	}
+	if got := stored.GetString("bunLock"); got != lockBefore {
+		t.Errorf("bunLock was rewritten (%q), want the stored lockfile left alone", got)
+	}
+	if got := markerModTime(t, filepath.Join(functionsDir, record.Id)); !got.Equal(markerBefore) {
+		t.Errorf("the dependency marker was rewritten at %s, want it untouched since %s", got, markerBefore)
+	}
+	if got := runs(); got != 1 {
+		t.Errorf("expected no reinstall for a save foreign to the dependencies, got %d installs", got)
+	}
+}
+
+// TestScheduleDepsInstall_SpecChangeStillPublishesTheFullSequence is the other
+// half of the filter: it must not swallow the save that does change the spec, on a
+// function whose tree was up to date until then.
+func TestScheduleDepsInstall_SpecChangeStillPublishesTheFullSequence(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := fakeBun(t, "mkdir -p node_modules\nexit 0")
+
+	record := saveTestFunction(t, app, functionsDir, "growing-deps", "console.log('hi')",
+		`{"dependencies":{"left-pad":"1.0.0"}}`)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusReady)
+
+	client := registerRealtimeClient(t, app, core.CollectionNameSuperusers, depsRealtimeTopic)
+
+	record = saveTestFunction(t, app, functionsDir, "growing-deps", "console.log('hi')",
+		`{"dependencies":{"left-pad":"1.0.0","ms":"2.1.3"}}`)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+
+	// Every state write broadcasts, so the three published states land here. Which
+	// order they arrive in is not asserted: each send is detached in its own
+	// goroutine, and racing them would buy a flaky test rather than a stricter one.
+	seen := map[string]bool{}
+	for i := 0; i < 3; i++ {
+		state, ok := receivedState(t, client)
+		if !ok {
+			break
+		}
+		seen[state.DepsStatus] = true
+	}
+	for _, want := range []string{depsStatusPending, depsStatusInstalling, depsStatusReady} {
+		if !seen[want] {
+			t.Errorf("no %q broadcast for a save that changed the dependency spec, got %v", want, seen)
+		}
+	}
+	if got := runs(); got != 2 {
+		t.Errorf("expected a reinstall for the new spec, got %d installs", got)
+	}
+}
+
+// TestScheduleDepsInstall_MissingNodeModulesStillInstalls guards the case the
+// filter must never read as settled: the marker lives inside node_modules, so a
+// tree removed by hand takes it along and the fingerprint cannot match.
+func TestScheduleDepsInstall_MissingNodeModulesStillInstalls(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := fakeBun(t, "mkdir -p node_modules\nexit 0")
+	const pkg = `{"dependencies":{"left-pad":"1.0.0"}}`
+
+	record := saveTestFunction(t, app, functionsDir, "wiped-tree", "console.log('hi')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusReady)
+
+	if err := os.RemoveAll(filepath.Join(functionsDir, record.Id, "node_modules")); err != nil {
+		t.Fatal(err)
+	}
+
+	// Nothing else changes: the state on the record still says ready, which is
+	// exactly the lie the install has to correct.
+	record = saveTestFunction(t, app, functionsDir, "wiped-tree", "console.log('hi')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+
+	waitInstalls(t, runs, 2)
+	waitDepsStatus(t, app, record.Id, depsStatusReady)
+	if _, err := os.Stat(filepath.Join(functionsDir, record.Id, "node_modules", depsHashFile)); err != nil {
+		t.Errorf("no marker after the reinstall: %v", err)
+	}
+}
+
+// TestScheduleDepsInstall_RetriesAfterAFailedInstall pins what makes a failure
+// self-repairing: it leaves neither node_modules nor a marker, so the filter reads
+// the function as needing an install and the next save tries again.
+func TestScheduleDepsInstall_RetriesAfterAFailedInstall(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	functionsDir := t.TempDir()
+	runs := fakeBun(t, `echo "error: package nope@1.0.0 not found" >&2`+"\nexit 1")
+	const pkg = `{"dependencies":{"nope":"1.0.0"}}`
+
+	record := saveTestFunction(t, app, functionsDir, "retried-deps", "console.log('v1')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+	waitDepsStatus(t, app, record.Id, depsStatusError)
+
+	// Same spec, and the previous attempt failed: the save must retry rather than
+	// take the stored error for a settled state.
+	record = saveTestFunction(t, app, functionsDir, "retried-deps", "console.log('v2')", pkg)
+	scheduleDepsInstall(context.Background(), app, record, functionsDir)
+
+	waitInstalls(t, runs, 2)
+}
+
 // TestSetDepsState_WritesWithoutFiringTheSaveHooks pins a mechanism, not a
 // style. app.Save would fire OnRecordAfterUpdateSuccess, which is precisely what
 // schedules an install — the record would save itself in an endless loop.

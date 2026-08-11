@@ -10,7 +10,8 @@ import (
 
 // This file carries the startup dependency pass: reinstalling what the disk lost
 // while the record kept saying it was there. deps.go runs an install, depsstate.go
-// records its outcome; here we only decide who needs one at boot.
+// records its outcome; here we decide who needs one at boot — and, through
+// depsUpToDate, who needs one at all, the save trigger asking the same question.
 
 // installMissingDeps reinstalls what the disk has lost. It is the startup
 // counterpart of scheduleDepsInstall: the disk may have been rebuilt from the
@@ -68,9 +69,15 @@ func installMissingDeps(ctx context.Context, app core.App, functionsDir string) 
 //
 // Both ways to be wrong are benign. A false positive skips the preinstall, and the
 // safety net on the invocation path catches it; a false negative calls ensureDeps,
-// which leaves on its own check. What the filter buys is a warm restart costing
-// one fingerprint per function and zero writes — without it, every function would
-// be published installing then ready for nothing, flickering in an open editor.
+// which leaves on its own check. What the filter buys is one fingerprint against
+// zero writes — without it, a function whose tree is already built would be
+// published installing then ready for nothing, flickering in an open editor.
+//
+// It gates both triggers, and for the same reason on each side: the pass above,
+// where the waste is N functions at every warm restart, and scheduleDepsInstall,
+// where it is every save that touches neither the spec nor the lockfile. Its
+// advisory nature is the same in both places — do not harden it for one caller
+// without reopening the arbitrage for the other.
 func depsUpToDate(funcDir string) bool {
 	want, err := depsHash(funcDir)
 	if err != nil {

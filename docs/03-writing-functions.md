@@ -124,7 +124,7 @@ There is nothing to do and nothing to look at: no file to commit, no file to edi
 
 ### Following the Installation
 
-The **package.json** tab of the editor shows where the install stands, right above the code. It updates **on its own**, without reloading the page: the server pushes each change as it happens, so a save shows the install start, run and finish while you watch. A function with no `package.json` shows nothing at all.
+The **package.json** tab of the editor shows where the install stands, right above the code. It updates **on its own**, without reloading the page: the server pushes each change as it happens, so a save that changes your dependencies shows the install start, run and finish while you watch. A save that leaves them alone — a script edit, a secret, a cron trigger — moves nothing there: with no install to run, the panel keeps saying what it already said. A function with no `package.json` shows nothing at all.
 
 A failed install is shown there in full, with the `bun` output preformatted in a scrollable block — the same text the record carries.
 

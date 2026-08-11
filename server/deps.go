@@ -257,6 +257,23 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 		return
 	}
 
+	// Spec unchanged and node_modules built for it: there is nothing to install,
+	// and nothing to publish. The state already on the record describes the tree on
+	// disk, and rewriting it would flap pending -> installing -> ready for nothing —
+	// three writes, three broadcasts and a flicker in the open editor, on a save
+	// that never touched the dependencies.
+	//
+	// Same advisory filter as the startup pass, taken outside the lock for the same
+	// reason: ensureDeps redoes the check under it and stays the only authority.
+	// It has to sit here, after syncRecordToDisk has written the new package.json
+	// and restored bun.lock, so the fingerprint compared is the one of the spec just
+	// saved; and after the empty-packageJson branch, so a dropped spec still clears
+	// the state. Taking it inside the goroutine instead would mean publishing
+	// pending and then retracting it — worse than the symptom being cured.
+	if depsUpToDate(filepath.Join(functionsDir, record.Id)) {
+		return
+	}
+
 	setDepsState(app, record.Id, name, depsStatusPending, "")
 
 	recordId := record.Id
@@ -278,10 +295,12 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 func runDepsInstall(ctx context.Context, app core.App, functionsDir, recordId, name string) (interrupted bool) {
 	setDepsState(app, recordId, name, depsStatusInstalling, "")
 
-	// ensureDeps returns on the hash check alone when the spec is unchanged, so a
-	// save that only touched the script costs nothing here. Whether it installed is
-	// of no use: this path publishes the state either way, having claimed it from
-	// installing onwards.
+	// ensureDeps returns on the hash check alone when the spec is unchanged, which
+	// is what the callers' advisory filter is meant to have caught already: getting
+	// here means the fingerprint differed when it was taken, so an install is
+	// expected to run. Whether it did is of no use here — a race that makes it
+	// unnecessary in the meantime is precisely the false negative the filter
+	// accepts, and republishing ready costs one write.
 	if _, err := ensureDeps(ctx, filepath.Join(functionsDir, recordId)); err != nil {
 		// A shutdown interrupted the install, it did not fail: the work is still
 		// owed, and the safety net on the invocation path will do it. Reporting
