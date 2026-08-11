@@ -61,17 +61,39 @@ The backend is a single `main` package in `server/`, split one file per domain.
 No sub-packages: the tests live in the same package and reach unexported
 identifiers without ceremony.
 
+**Bootstrap and execution**
+
 - `main.go`: Entry point, hooks, route registration, and app bootstrap.
 - `exec.go`: The shared execution engine — spawning and bounding Bun processes.
-- `invoke.go`: The HTTP path, request body limit and concurrency semaphore.
+- `resolve.go`: The one rule that says what a path segment designates, id first then name.
 - `cron.go` / `cronmissed.go`: The scheduled path, and the report of the runs that came due while the server was down.
-- `deps.go` / `depsstate.go` / `depsstartup.go`: Running `bun install`, recording its outcome on the record, and reinstalling at startup.
+- `limitedwriter.go` / `config.go`: Bounded output capture, and reading tunable bounds from the environment.
+
+**Transport and operation.** Several domains are cut in two: a file that reads a
+request and writes a response, and a file that carries what the verb *is* once
+the request is out of the picture. The second is what the MCP tools call, which
+is why the pair exists at all — a tool has no request to read.
+
+- `invoke.go` / `invokeops.go`: The HTTP path with its body limit, and invoking a function as an operation. The concurrency semaphore lives on the operation side.
+- `manage.go` / `manageops.go` / `managecrons.go`: The four management routes, the verbs behind them, and the triggers a write carries.
+- `logs.go` / `logsread.go`: Writing and pruning execution logs, and reading them back through the API.
 - `functions.go` / `files.go`: The functions collection and disk sync, and the read-only routes that browse a function's folder.
+- `deps.go` / `depsstate.go` / `depsstartup.go`: Running `bun install`, recording its outcome on the record, and reinstalling at startup.
+
+**Credentials**
+
 - `apikeys.go`: Middleware, hashing and scope enforcement.
 - `crypto.go`: AES-256-GCM encryption of the secrets.
-- `logs.go`: Writing and pruning execution logs.
+- `ratelimit.go`: Turning PocketBase's rate limiter on at startup, without writing its rules.
+
+**Agents**
+
+- `mcp.go` / `mcptools.go`: The MCP transport and the instructions a session receives, and the seven tools with their schemas.
+- `oauth.go`: Whether the OAuth endpoints go up at all, and the primitives the other OAuth files share.
+- `oauthmeta.go` / `oauthclients.go`: The three discovery documents, and dynamic client registration.
+- `oauthauthorize.go` / `oauthconsent.go`: The authorization endpoint, and the two endpoints the consent page talks to.
+- `oauthgrants.go` / `oauthtoken.go` / `oauthbearer.go`: The grant collection and its purge, the token exchange and its rotation, and what a token is worth on the way back in.
 - `realtime.go`: Pushing the dependency state to subscribed clients.
-- `limitedwriter.go` / `config.go`: Bounded output capture, and reading tunable bounds from the environment.
 
 ### Running Tests
 ```bash

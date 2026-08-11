@@ -159,7 +159,7 @@ When a subprocess is spawned, it does **not** inherit the environment variables 
 - Only explicitly configured secrets are added.
 
 ### 4. Non-Root Execution
-In the official Docker image, the application runs as a dedicated `faas` user, not as `root`. This follows the principle of least privilege.
+In the official Docker image, the application runs as a dedicated `faasbox` user, not as `root`. This follows the principle of least privilege.
 
 ### 5. Rate Limiting
 PocketBase's built-in rate limiter is switched on at startup. The rules are PocketBase's own — FaaSBox adds none and rewrites none:

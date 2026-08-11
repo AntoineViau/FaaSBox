@@ -47,7 +47,7 @@ docker build -f infra/production/Dockerfile -t faasbox .
 
 ### 2. Run locally (without Docker)
 
-Requires **Go 1.24+**, **Bun**, and **Node.js** (for the Angular build).
+Requires **Go 1.25+**, **Bun**, and **Node.js 22+** (for the Angular build).
 
 ```bash
 # All-in-one: builds the UI then starts the Go server

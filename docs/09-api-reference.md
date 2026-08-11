@@ -537,7 +537,7 @@ Used for container health checks or load balancer heartbeat. Verifies that the S
 ---
 
 ## Internal Collections API
-Since FaaSBox is built on PocketBase, you can also use the standard PocketBase Web APIs to manage the collections (`faasbox_api_keys`, `faasbox_cron_jobs`, `faasbox_logs`, `faasbox_functions`).
+Since FaaSBox is built on PocketBase, you can also use the standard PocketBase Web APIs to manage the collections (`faasbox_api_keys`, `faasbox_cron_jobs`, `faasbox_logs`, `faasbox_functions`, and — on an instance that publishes its address — `faasbox_oauth_clients` and `faasbox_oauth_grants`).
 
 Refer to the [PocketBase API Documentation](https://pocketbase.io/docs/api-records/) for details on listing, creating, and updating records in these collections. **Note**: these collections have `nil` API rules, so **only a superuser reaches them** — and a superuser token is full power over the instance: dropping collections, reading every secret in clear, changing the password.
 

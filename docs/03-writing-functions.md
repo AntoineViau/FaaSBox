@@ -51,6 +51,8 @@ console.log(JSON.stringify(result));
 
 You do not have to type that skeleton from memory: in the **Script** tab, type `faasbox` and the completion popup offers it as `faasbox-handler`. The individual steps are there too — `faasbox-input` to read the payload, `faasbox-output` to return a JSON result, `faasbox-log` to write to stderr, and `faasbox-env` to read a secret.
 
+> **Clearing the script un-serves the function.** `index.ts` is written from what you save, so saving an empty **Script** tab removes the file. The function stops being listed and `POST /invoke` answers `404` until you save a script over it again. Nothing else is lost: the record, its secrets, its triggers, its folder and its installed dependencies all stay where they are.
+
 ## Input and Output
 
 - **Input**: Passed as a JSON string to `stdin`. Access it via `Bun.stdin.text()`.
@@ -222,7 +224,12 @@ Renaming a function changes that URL. The Editor warns you as soon as the name f
 | Max Request Payload Stored in Logs | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`)      |
 | Max Concurrent Executions          | 4 (global, `FAASBOX_MAX_CONCURRENCY`) |
 | Max File Shown in the Files Tab    | 256 KB (`FAASBOX_MAX_FILE_VIEW`)      |
+| Log Records Kept                   | 1000 (`FAASBOX_MAX_LOG_RETENTION`)    |
+| Max `index.ts` / `package.json`    | 1,048,576 characters each             |
+| Max Secrets per Function           | ~75 KB in clear                       |
 
 Every limit that names a variable is a **default**, not a hard ceiling: set the variable on the server and restart. See [04 - Environment Variables](04-environment-variables.md).
+
+The last two rows are **constants**, and they are the two you can hit while writing rather than while running. They are counted in characters, not bytes, so a non-ASCII file gets more than a megabyte of room. Past either one the save is refused and the response names the field — nothing is ever trimmed behind your back.
 
 Capture limits and log limits are separate: the HTTP response carries the full captured output, while the copy written to `faasbox_logs` is trimmed. See [07 - Execution Logs](07-execution-logs.md).

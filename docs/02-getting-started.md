@@ -5,7 +5,7 @@ This guide will help you get your first function running on FaaSBox.
 ## Prerequisites
 
 - **Docker** (recommended)
-- Or **Go 1.24+** and **Bun** (for local development)
+- Or **Go 1.25+** and **Bun** (for local development)
 
 ## 1. Quick Start with Docker
 
@@ -36,7 +36,7 @@ how to check where the image came from before you run it.
 
 ## 2. Local Development (without Docker)
 
-Requires **Go 1.24+**, **Bun**, and **Node.js** (for the Angular build).
+Requires **Go 1.25+**, **Bun**, and **Node.js 22+** (for the Angular build).
 
 The quickest way is the all-in-one dev script:
 
@@ -74,6 +74,7 @@ If you started the server without superuser credentials, open `http://localhost:
 - **Secrets.** Encrypted environment variables are edited as key/value pairs in the **Environment** tab. See [04 - Environment Variables](04-environment-variables.md).
 - **Look at the disk.** The **Files** tab browses the function's own folder as it exists on the server — `index.ts`, `package.json`, `bun.lock`, `node_modules` and whatever else is in there. Read-only. See [03 - Writing Functions](03-writing-functions.md).
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
+- **Plug in an AI agent.** The **AI MCP** page, just under **API keys**, carries the ready-made snippet for each client and lists the agents you have authorized, with a **Revoke** button for each. See [13 - AI Agents](13-ai-agents.md).
 - **Share what you are looking at.** The address bar names the open function and the open tab — `/editor/<id>/tab/script` — so a link can be bookmarked or sent to someone, a reload comes back exactly where you left off, and the browser Back button walks back through the functions and tabs you visited. The link carries the function's id rather than its name, so it survives a rename.
 - **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
 
@@ -101,9 +102,9 @@ That last one is not a curiosity. Because `Tab` indents, it no longer moves focu
 
 `http://localhost:8080/_/` is the standard PocketBase dashboard. You no longer need it for day-to-day work; it is there when you want the raw data:
 
-- Browse and query the four collections directly (`faasbox_functions`, `faasbox_cron_jobs`, `faasbox_logs`, `faasbox_api_keys`).
-- Read fields the editor does not surface yet, such as `depsStatus` and `depsError`.
-- Manage the instance itself: superuser accounts, backups, server settings.
+- Browse and query the collections directly: `faasbox_functions`, `faasbox_cron_jobs`, `faasbox_logs` and `faasbox_api_keys`, plus `faasbox_oauth_clients` and `faasbox_oauth_grants` on an instance where `FAASBOX_PUBLIC_URL` is set — those last two are created the first time the OAuth endpoints go up.
+- Read a field in its raw form rather than through the editor's rendering — `depsStatus` and `depsError`, for instance, which the **package.json** tab already shows you.
+- Manage the instance itself: superuser accounts, backups, server settings, and the rate limiter rules.
 
 One thing it cannot do: **creating an API key record by hand gives you no usable key**, because only a hash is stored. Use the editor or the API — see step 5.
 

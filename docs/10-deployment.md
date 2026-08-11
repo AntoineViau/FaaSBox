@@ -292,7 +292,7 @@ configuration lives in `infra/production/litestream.yml`.
 If you would rather not use Docker, you are providing by hand what section 1
 lists.
 
-1.  Install **Go 1.24+**, **Node.js** (to build the editor) and **Bun**. Bun
+1.  Install **Go 1.25+**, **Node.js 22+** (to build the editor) and **Bun**. Bun
     must be on the `PATH` of the account that will run the server.
 2.  Clone the repository.
 3.  Build the backend:
@@ -332,8 +332,15 @@ Everything is in SQLite, so a backup is a file:
 1.  Pull the latest code or image.
 2.  Rebuild and restart the container or service.
 3.  PocketBase applies its own migrations at startup. FaaSBox creates its four
-    collections if they are absent, adds missing fields to `faasbox_functions`
-    and `faasbox_cron_jobs`, and resizes the `stdout` and `stderr` fields of
-    `faasbox_logs` to match the current `FAASBOX_MAX_LOG_OUTPUT`
+    collections if they are absent — `faasbox_functions`, `faasbox_api_keys`,
+    `faasbox_cron_jobs`, `faasbox_logs` — adds missing fields to
+    `faasbox_functions` and `faasbox_cron_jobs`, and resizes the `stdout` and
+    `stderr` fields of `faasbox_logs` to match the current
+    `FAASBOX_MAX_LOG_OUTPUT`
     (see [04 - Environment Variables](04-environment-variables.md)). It never
     removes or renames a field.
+
+    Two more — `faasbox_oauth_clients` and `faasbox_oauth_grants` — are created
+    the first time the OAuth endpoints go up, which is to say the first startup
+    with a valid `FAASBOX_PUBLIC_URL`. An instance that never sets it never
+    carries them.
