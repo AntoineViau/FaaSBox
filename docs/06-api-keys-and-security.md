@@ -161,6 +161,29 @@ When a subprocess is spawned, it does **not** inherit the environment variables 
 ### 4. Non-Root Execution
 In the official Docker image, the application runs as a dedicated `faas` user, not as `root`. This follows the principle of least privilege.
 
+### 5. Rate Limiting
+PocketBase's built-in rate limiter is switched on at startup. The rules are PocketBase's own — FaaSBox adds none and rewrites none:
+
+| Covered | Limit |
+|---|---|
+| Authentication, superuser sign-in included | 2 requests / 3 s |
+| Record creation through the collections API | 20 requests / 5 s |
+| `/api/batch` | 3 requests / 1 s |
+| Everything else under `/api/`, including the function management routes | 300 requests / 10 s |
+
+This is why a **third wrong password in a row answers `429 Too Many Requests`** instead of `400`: it puts a ceiling on how fast anyone can guess your superuser password. Wait a few seconds and the next attempt goes through normally — nothing is locked, only slowed.
+
+Two things are deliberately **not** covered:
+
+- **`/invoke/{name}` is under no rule.** Calling your functions is not throttled by request rate. What bounds it is `FAASBOX_MAX_CONCURRENCY`, which answers `429` when too many runs are already in flight — a different `429`, with a different cause. See [09 - API Reference](09-api-reference.md).
+- **The OAuth endpoints are under no rule either**, `/oauth/register` included. What keeps the registrations it creates from piling up is the hourly cleanup, not the limiter.
+
+**The rules are yours to change** from the PocketBase admin at `/_/`, in the settings. FaaSBox never writes them — edit, add or remove a rule and it stays exactly as you left it, across restarts.
+
+**The on/off switch is not.** FaaSBox turns the limiter on at every startup where it finds it off, so switching it off in the admin holds until the next restart and no longer. There is no environment variable to keep it off either — the limiter is meant to be on, and the rules above are where you shape what it does.
+
+If you run behind a reverse proxy, read [Behind a reverse proxy](10-deployment.md#behind-a-reverse-proxy) — it changes who the limits apply to.
+
 ---
 
 ## Best Practices

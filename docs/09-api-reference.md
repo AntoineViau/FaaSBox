@@ -8,6 +8,9 @@ Use the `X-API-Key` header with a valid API key.
 X-API-Key: fbx_your_key_here
 ```
 
+## Rate limits
+Every endpoint under `/api/` — the management routes below, the key creation route, and PocketBase's own — is behind a rate limiter: 300 requests per 10 seconds, and 2 per 3 seconds on authentication. Over the limit, the answer is `429 Too Many Requests`. `POST /invoke/{idOrName}` is under no such rule; the `429` it can return means something else entirely, and is documented with it. See [Rate Limiting](06-api-keys-and-security.md#5-rate-limiting).
+
 ---
 
 ## 1. Invoke a Function

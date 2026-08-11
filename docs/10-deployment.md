@@ -66,6 +66,27 @@ One HTTP port, and nothing else listens.
   editor at `/`, the PocketBase admin at `/_/`, `/invoke/{name}`, `/functions`
   and the public `/health`.
 
+### Behind a reverse proxy
+
+FaaSBox runs the rate limiter described in
+[06 - API Keys & Security](06-api-keys-and-security.md#5-rate-limiting), and it
+counts requests **per client IP**. The IP it sees is the one on the TCP
+connection. Put a proxy in front — nginx, Caddy, a platform router — and every
+request arrives from the proxy, so the limits stop being per-caller and become
+global to the instance. On a single-owner instance that difference is mostly
+academic; the limit on sign-in attempts still does its job. On one several
+people reach, one busy caller spends everybody's budget.
+
+The setting that fixes it is PocketBase's **trusted proxy**, in the admin at
+`/_/`: you name the header your proxy writes the real client IP into
+(`X-Forwarded-For`, `CF-Connecting-IP`, …).
+
+FaaSBox leaves it empty and offers no environment variable for it, on purpose.
+Only you know what your proxy actually rewrites, and naming a header it does
+*not* overwrite is **worse than naming none**: callers can then send that header
+themselves, pick whatever IP they like, and walk past the limiter entirely. An
+empty setting is merely coarse; a wrong one is an open door.
+
 ### The environment variables
 
 Only one is genuinely required, and only for a feature you may not use:

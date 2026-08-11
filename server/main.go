@@ -63,6 +63,15 @@ func main() {
 				return fmt.Errorf("failed to create %s collection: %w", faasboxLogsCollection, err)
 			}
 
+			// Arm PocketBase's own rate limiter, off by default. Same reason
+			// the collections are created here: a setting that lives in the
+			// database has to be posed by code, or a fresh one comes up
+			// without it. A server that starts announcing a limiter it failed
+			// to arm is worse than one with none.
+			if err := ensureRateLimits(e.App); err != nil {
+				return fmt.Errorf("failed to enable the rate limiter: %w", err)
+			}
+
 			// Restore functions from DB to disk (recreate files after container restart)
 			syncDiskFromDB(e.App, functionsDir)
 
