@@ -568,9 +568,9 @@ func TestEnsureDeps_InstallArgsIgnoreTheLockfile(t *testing.T) {
 	}
 }
 
-// TestEnsureDeps_AddingADependencyToAnInstalledFunction is the unblocking this
-// ticket is about: the sequence that produced "lockfile had changes, but lockfile
-// is frozen" must now succeed.
+// TestEnsureDeps_AddingADependencyToAnInstalledFunction pins the sequence that
+// used to produce "lockfile had changes, but lockfile is frozen": adding a
+// dependency to a function already installed must succeed.
 func TestEnsureDeps_AddingADependencyToAnInstalledFunction(t *testing.T) {
 	dir := t.TempDir()
 	pkgPath := filepath.Join(dir, "package.json")

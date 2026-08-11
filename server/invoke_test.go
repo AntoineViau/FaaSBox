@@ -282,9 +282,9 @@ func invokeOverHTTP(t *testing.T, app *tests.TestApp, functionsDir, name string,
 	scenario.Test(t)
 }
 
-// TestInvokeHandler_DependencyFailureLeavesEveryTrace covers the blind spot this
-// ticket closes: the HTTP path used to answer 500 and record nothing anywhere —
-// no log line, no faasbox_logs entry, no state on the record. The cron path had
+// TestInvokeHandler_DependencyFailureLeavesEveryTrace covers a blind spot the
+// HTTP path once had: it answered 500 and recorded nothing anywhere — no log
+// line, no faasbox_logs entry, no state on the record. The cron path had
 // always done both.
 func TestInvokeHandler_DependencyFailureLeavesEveryTrace(t *testing.T) {
 	app, err := tests.NewTestApp()

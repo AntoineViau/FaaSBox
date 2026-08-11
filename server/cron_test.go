@@ -386,7 +386,7 @@ func TestDeleteFunction_CascadesToItsTriggers(t *testing.T) {
 	}
 }
 
-// TestSyncAllCronJobs_SurvivesARename is the other half of the ticket: the
+// TestSyncAllCronJobs_SurvivesARename pins the other half of the rule: the
 // scheduler is only rebuilt when a *cron* record changes, so a job registered
 // before a rename must still find its function when it fires.
 func TestSyncAllCronJobs_SurvivesARename(t *testing.T) {

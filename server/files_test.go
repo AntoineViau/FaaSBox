@@ -110,7 +110,7 @@ func registerFilesFixtureFunctions(t testing.TB, app core.App) {
 	}
 }
 
-// TestResolveFunctionPath is where the ticket's real risk is covered: the
+// TestResolveFunctionPath covers the real risk of the browsing routes: the
 // confinement of a directory the executed code can write into.
 func TestResolveFunctionPath(t *testing.T) {
 	root := setupFilesFixture(t)

@@ -332,9 +332,8 @@ func TestRecordExecution_TiesTheEntryToTheRecord(t *testing.T) {
 	}
 }
 
-// TestDeleteFunction_CascadesToItsLogs is the choice the ticket makes explicit:
-// deleting a function destroys its history, exactly as the retention purge
-// already does.
+// TestDeleteFunction_CascadesToItsLogs pins a deliberate choice: deleting a
+// function destroys its history, exactly as the retention purge already does.
 func TestDeleteFunction_CascadesToItsLogs(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -518,9 +517,10 @@ func TestEnsureLogsCollection_SavesTheCollectionOnce(t *testing.T) {
 	}
 }
 
-// TestRecordExecution_SurvivesARaisedSetting is the behaviour the ticket repairs,
-// read from the far end: what matters is that the row exists at all. Before the
-// fix the invocation still answered, and the log line silently disappeared.
+// TestRecordExecution_SurvivesARaisedSetting reads a raised setting from the far
+// end: what matters is that the row exists at all. When the declared size stayed
+// behind the setting, the invocation still answered and the log line silently
+// disappeared.
 func TestRecordExecution_SurvivesARaisedSetting(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {

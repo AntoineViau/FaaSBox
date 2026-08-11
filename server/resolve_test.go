@@ -125,8 +125,8 @@ func TestInvokeHandler_ResolvesEitherSpelling(t *testing.T) {
 	}
 }
 
-// TestRequireAPIKey_ScopeFollowsARename is the regression this ticket exists
-// for. A scope written in names stopped granting what it named the day the
+// TestRequireAPIKey_ScopeFollowsARename pins why a scope holds ids and not
+// names. A scope written in names stopped granting what it named the day the
 // function was renamed — and could start granting a different function created
 // since under the old name.
 func TestRequireAPIKey_ScopeFollowsARename(t *testing.T) {
