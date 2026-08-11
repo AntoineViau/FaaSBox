@@ -249,8 +249,16 @@ func countExecutionLogs(t testing.TB, app core.App, functionName string) int {
 	return len(records)
 }
 
-// registerFaaSRoutes registers the FaaS HTTP routes on the test server's router.
+// registerFaaSRoutes registers the FaaS HTTP routes on the test server's router,
+// on an instance where FAASBOX_PUBLIC_URL is not set: no OAuth, so /mcp answers
+// to an API key and to nothing else.
 func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir string) {
+	registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly)
+}
+
+// registerFaaSRoutesFor is registerFaaSRoutes with the OAuth footing chosen, the
+// way main.go hands it to the /mcp group alone.
+func registerFaaSRoutesFor(app *tests.TestApp, e *core.ServeEvent, functionsDir string, oauth oauthConfig) {
 	// Health check (public)
 	e.Router.GET("/health", func(re *core.RequestEvent) error {
 		return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -258,7 +266,7 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 
 	// Routes protected by API key
 	faas := e.Router.Group("")
-	faas.Bind(requireAPIKey(e.App))
+	faas.Bind(requireAPIKey(e.App, apiKeysOnly))
 	faas.POST("/invoke/{name}", func(re *core.RequestEvent) error {
 		return invokeHandler(re, functionsDir)
 	})
@@ -268,7 +276,7 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 
 	// Function management (API key with canManage, or superuser)
 	manage := e.Router.Group("/api/faasbox/functions")
-	manage.Bind(requireAPIKey(e.App))
+	manage.Bind(requireAPIKey(e.App, apiKeysOnly))
 	manage.Bind(requireManageKey())
 	manage.POST("", createFunctionHandler)
 	manage.GET("/{name}", getFunctionHandler)
@@ -279,7 +287,7 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 	// The MCP server, mounted exactly as main.go mounts it — the middleware
 	// chain is what the endpoint's refusals are made of.
 	mcpRoutes := e.Router.Group("/mcp")
-	mcpRoutes.Bind(requireAPIKey(e.App))
+	mcpRoutes.Bind(requireAPIKey(e.App, oauth))
 	mcpRoutes.Bind(requireManageKey())
 	mcpRoutes.Bind(exposeKeyScope())
 	mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir))

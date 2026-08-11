@@ -96,9 +96,20 @@ func main() {
 				return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
 			})
 
+			// What this instance is called from outside, read once: it says
+			// whether the OAuth authorization server goes up at all, and it is
+			// what /mcp is handed so a token opens it and its 401 says where
+			// to go and get one. Absent or invalid, the reason is printed and
+			// the zero configuration leaves every route on API keys alone.
+			oauth, oauthErr := oauthConfigFromEnv()
+			if oauthErr != nil {
+				reportOAuthDisabled(oauthErr)
+				oauth = apiKeysOnly
+			}
+
 			// Routes protected by API key
 			faas := e.Router.Group("")
-			faas.Bind(requireAPIKey(e.App))
+			faas.Bind(requireAPIKey(e.App, apiKeysOnly))
 			faas.POST("/invoke/{name}", func(re *core.RequestEvent) error {
 				return invokeHandler(re, functionsDir)
 			})
@@ -111,7 +122,7 @@ func main() {
 			// different rights, and only the second lets a key decide what this
 			// server executes.
 			manage := e.Router.Group("/api/faasbox/functions")
-			manage.Bind(requireAPIKey(e.App))
+			manage.Bind(requireAPIKey(e.App, apiKeysOnly))
 			manage.Bind(requireManageKey())
 			manage.POST("", createFunctionHandler)
 			manage.GET("/{name}", getFunctionHandler)
@@ -126,12 +137,16 @@ func main() {
 			// the route — plus exposeKeyScope, which carries the key onto the
 			// standard request context the wrapped handler receives.
 			//
+			// It is the one group handed the OAuth configuration: an access
+			// token opens it, and its 401 carries the signpost that starts the
+			// flow. Every other route above stays on API keys alone.
+			//
 			// Mounted through the router rather than beside it: a handler
 			// registered outside this group would answer without a key. GET is
 			// mounted so a browser hitting /mcp gets the transport's own 405
 			// instead of the SPA the catch-all below would serve it.
 			mcpRoutes := e.Router.Group("/mcp")
-			mcpRoutes.Bind(requireAPIKey(e.App))
+			mcpRoutes.Bind(requireAPIKey(e.App, oauth))
 			mcpRoutes.Bind(requireManageKey())
 			mcpRoutes.Bind(exposeKeyScope())
 			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir))
@@ -139,14 +154,14 @@ func main() {
 			mcpRoutes.GET("", mcpServe)
 
 			// The OAuth authorization server, mounted only when
-			// FAASBOX_PUBLIC_URL says what this instance is called from
+			// FAASBOX_PUBLIC_URL said what this instance is called from
 			// outside: a server that cannot name itself cannot publish a
-			// discovery document. Absent or invalid, nothing goes up and the
-			// reason is printed — /mcp keeps answering to an API key.
-			if oauth, err := oauthConfigFromEnv(); err != nil {
-				reportOAuthDisabled(err)
-			} else if err := mountOAuth(e, oauth); err != nil {
-				return err
+			// discovery document. Absent or invalid, nothing goes up — /mcp
+			// keeps answering to an API key, and to nothing else.
+			if oauth != apiKeysOnly {
+				if err := mountOAuth(e, oauth); err != nil {
+					return err
+				}
 			}
 
 			// Key management (superuser only, no API key needed)

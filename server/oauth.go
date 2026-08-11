@@ -42,10 +42,12 @@ import (
 //     depend on whatever a proxy feels like saying.
 //
 // Absent or invalid, the routes are simply not mounted: /mcp keeps answering to
-// an API key and nothing is broken. That is the whole failure mode.
+// an API key and nothing is broken. That is the whole failure mode — and it is
+// also what turns the token off, since a route only accepts one when it is
+// handed the configuration this file derives (cf. oauthbearer.go).
 //
-// The tokens issued here are opaque and stored hashed. Consuming them on /mcp is
-// not this file's job — the endpoint still authenticates by API key.
+// The tokens issued here are opaque and stored hashed. What one is worth on the
+// way back in is oauthbearer.go's subject.
 
 const (
 	// publicURLEnv names the only source of this instance's public address.
@@ -62,6 +64,7 @@ const (
 	// their hash is looked up in, never by their shape.
 	oauthSecretPrefix = "fbo_"
 	oauthSecretRandom = 40
+	oauthSecretLen    = len(oauthSecretPrefix) + oauthSecretRandom
 
 	// The four lifetimes of a grant.
 	//
@@ -90,6 +93,21 @@ type oauthConfig struct {
 func (c oauthConfig) authorizeEndpoint() string { return c.Issuer + "/oauth/authorize" }
 func (c oauthConfig) tokenEndpoint() string     { return c.Issuer + "/oauth/token" }
 func (c oauthConfig) registerEndpoint() string  { return c.Issuer + "/oauth/register" }
+
+// bearerChallenge is the signpost a 401 carries: the address of the document
+// that tells a client where to go and authenticate (RFC 9728 §5.1). Without it
+// an agent handed nothing but a URL has no starting point at all.
+//
+// The zero configuration yields an empty string, which is how a route that
+// takes API keys only, and an instance with no FAASBOX_PUBLIC_URL, both end up
+// posting no challenge: announcing a discovery document that is not mounted
+// would walk the agent into a wall.
+func (c oauthConfig) bearerChallenge() string {
+	if c.Issuer == "" {
+		return ""
+	}
+	return `Bearer resource_metadata="` + c.Issuer + `/.well-known/oauth-protected-resource"`
+}
 
 // oauthConfigFromEnv reads FAASBOX_PUBLIC_URL. The error is the reason the OAuth
 // routes will not be mounted, worded for whoever is reading the startup output.

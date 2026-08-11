@@ -12,11 +12,12 @@ import (
 
 // The three documents a client reads before it talks to anything.
 //
-// A client hitting /mcp is told where to look by the challenge 0475 will pose;
-// from there it fetches the protected resource metadata (RFC 9728) to learn which
-// authorization server guards the resource, then the authorization server
-// metadata (RFC 8414) to learn where /authorize and /token are. All three are
-// public and cacheable — they carry configuration, never a credential.
+// A client hitting /mcp is told where to look by the WWW-Authenticate challenge
+// on its 401 (cf. apikeys.go); from there it fetches the protected resource
+// metadata (RFC 9728) to learn which authorization server guards the resource,
+// then the authorization server metadata (RFC 8414) to learn where /authorize
+// and /token are. All three are public and cacheable — they carry
+// configuration, never a credential.
 //
 // The types come from the MCP SDK's oauthex package rather than from hand-written
 // structs: the field names of a wire format are exactly the thing not to retype.

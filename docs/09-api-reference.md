@@ -288,11 +288,24 @@ curl -s "http://localhost:8080/api/faasbox/functions/noisy/logs?limit=5" \
 
 Serves this instance's functions to an AI agent over the [Model Context Protocol](https://modelcontextprotocol.io), in **Streamable HTTP**. It is not a REST endpoint: the body is JSON-RPC, and a client speaks it for you. See [13 - AI Agents](13-ai-agents.md) for how to plug one in.
 
-**Authentication**: an API key carrying the `canManage` flag, in the same `X-API-Key` header as everywhere else, or a superuser session. The right required is the one [Manage Functions](#3-manage-functions) requires, and for the same reason: a tool that writes a function decides what this server executes.
+**Authentication**: two forms, and this is the one endpoint that takes either.
+
+- An API key carrying the `canManage` flag, in the same `X-API-Key` header as everywhere else, or a superuser session. The right required is the one [Manage Functions](#3-manage-functions) requires, and for the same reason: a tool that writes a function decides what this server executes.
+- An **OAuth access token**, in `Authorization: Bearer fbo_...`, obtained through the flow in [OAuth Authorization](#6-oauth-authorization). A token is worth an API key carrying `canManage` with no scope restriction — nothing downstream tells the two apart.
+
+Presenting both is not an error: the **key wins** and the token is ignored. One credential is weighed per request.
+
+A request with no credential answers `401` carrying the signpost that starts the flow, provided `FAASBOX_PUBLIC_URL` is set:
+
+```text
+WWW-Authenticate: Bearer resource_metadata="https://your-instance/.well-known/oauth-protected-resource"
+```
+
+**This header is served on `/mcp` and nowhere else.** `/invoke`, `/functions` and the management routes take an API key and only an API key, so advertising a discovery document to them would send a caller with a `curl` on a whole OAuth journey to obtain a token they do not accept. It is also absent when `FAASBOX_PUBLIC_URL` is unset, since the document it names is then not served.
 
 The endpoint is **stateless**: every request carries its own authorization, and no session outlives the request that opened it. `GET /mcp` therefore answers `405` — there is no server-to-client stream to open.
 
-**Scope**: the key's `allowedFunctions` applies to every tool exactly as it applies to the routes they mirror. A key with a restricted scope reads, changes, runs and deletes the functions it names, and — as on `POST /api/faasbox/functions` — **creates none**.
+**Scope**: the key's `allowedFunctions` applies to every tool exactly as it applies to the routes they mirror. A key with a restricted scope reads, changes, runs and deletes the functions it names, and — as on `POST /api/faasbox/functions` — **creates none**. A token declares no scope, so it reaches every function.
 
 - **Tools**:
 
@@ -313,15 +326,15 @@ The endpoint is **stateless**: every request carries its own authorization, and 
 - **Instructions**: the session receives the contract for writing a FaaSBox function at initialization — the `stdin`/`stdout` contract, the naming rule, the size caps, the background install, the cron format, and what a write replaces. Nothing has to be pasted into the agent.
 - **Error Codes**:
     - `400`: the body is not a valid MCP message, or `Accept` does not carry both `application/json` and `text/event-stream`.
-    - `401`: missing or invalid `X-API-Key`.
-    - `403`: the key lacks `canManage`, or carries a scope that cannot be read.
+    - `401`: no credential, an invalid `X-API-Key`, or a token that does not pass — unknown, expired, revoked, or issued for another resource. The refusal never says which, and carries the `WWW-Authenticate` above.
+    - `403`: the key lacks `canManage`, is disabled or expired, or carries a scope that cannot be read.
     - `405`: on `GET` and `DELETE`, which a stateless server does not serve.
 
 ---
 
 ## 6. OAuth Authorization
 
-FaaSBox can also act as an **OAuth 2.1 authorization server**, so an agent connects by opening a browser and clicking *Authorize* instead of being handed a key to paste. The endpoints below are what a client drives; the tokens they issue are not accepted on `/mcp` yet, which still authenticates by `X-API-Key`.
+FaaSBox can also act as an **OAuth 2.1 authorization server**, so an agent connects by opening a browser and clicking *Authorize* instead of being handed a key to paste. The endpoints below are what a client drives; the tokens they issue are accepted on [`/mcp`](#5-mcp-endpoint) and nowhere else.
 
 **They only exist if `FAASBOX_PUBLIC_URL` is set.** An authorization server has to publish its own address, and FaaSBox refuses to guess it: without that variable every route in this section answers `404`, and a line at startup says so. See [10 - Deployment](10-deployment.md#the-environment-variables).
 
@@ -376,6 +389,16 @@ Form-encoded, no client authentication.
 There is nothing to choose on the consent screen. A token issued here is worth an API key carrying `canManage` with no scope restriction: read, write, run and delete any function of the instance, and read its logs. The consent screen says so in words before you click, which is why it is worth reading rather than clicking through.
 
 Tokens are opaque strings, stored only as a SHA-256 hash — a stolen database yields nothing usable.
+
+### Presenting a token
+
+`Authorization: Bearer fbo_...` on `/mcp`. What is checked, in order: the shape this server mints, the authorization the token belongs to, that the authorization is still active, that the token has not expired, and that the `resource` it was issued for is this server's. Every failure is a `401` that does not say which check caught it.
+
+The last one is a second barrier — `/oauth/authorize` already refuses to open an authorization for a foreign resource — and it is what stops a token minted for another MCP server from being replayed here.
+
+### Ending an authorization
+
+From the **AI MCP** page of the editor, or by setting `status` to `revoked` on the `faasbox_oauth_grants` record. Either way it takes effect on the agent's **next call**: the authorization is read on every request, and there is no session to invalidate.
 
 ---
 

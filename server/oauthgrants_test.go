@@ -27,6 +27,11 @@ const (
 	testState             = "st-4711"
 )
 
+// testAccessToken is the one credential of the fixtures that has to be shaped
+// like a token this server minted: the resource server weighs its prefix and its
+// length before it looks anything up. The others are only ever hashed.
+var testAccessToken = oauthSecretPrefix + strings.Repeat("a", oauthSecretRandom)
+
 func testCodeChallenge() string {
 	sum := sha256.Sum256([]byte(testCodeVerifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
@@ -82,7 +87,8 @@ func seedOAuthGrant(t testing.TB, app core.App, client *core.Record, status stri
 		record.Set("codeExpiresAt", now.Add(oauthCodeTTL))
 	case grantActive:
 		record.Set("codeHash", hashOAuthSecret(testAuthorizationCode))
-		record.Set("accessTokenHash", hashOAuthSecret("fbo_test-access-token"))
+		record.Set("accessTokenHash", hashOAuthSecret(testAccessToken))
+		record.Set("accessExpiresAt", now.Add(oauthAccessTTL))
 		record.Set("refreshTokenHash", hashOAuthSecret(testRefreshToken))
 		record.Set("refreshExpiresAt", now.Add(oauthRefreshTTL))
 	}

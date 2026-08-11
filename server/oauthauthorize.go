@@ -79,8 +79,8 @@ func authorizeHandler(e *core.RequestEvent, cfg oauthConfig) error {
 	grant.Set("status", grantPending)
 	grant.Set("redirectUri", redirectURI)
 	grant.Set("codeChallenge", challenge)
-	// What the client asked for, kept as it asked for it: 0475 revalidates it
-	// when the token is presented.
+	// What the client asked for, kept as it asked for it: the resource server
+	// weighs it again when the token is presented (oauthbearer.go).
 	grant.Set("resource", resource)
 	grant.Set("state", state)
 	grant.Set("requestExpiresAt", types.NowDateTime().Add(oauthRequestTTL))

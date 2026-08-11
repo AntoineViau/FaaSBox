@@ -4,26 +4,81 @@ FaaSBox speaks [MCP](https://modelcontextprotocol.io) — the Model Context Prot
 
 That last part is the point. The [management API](09-api-reference.md#3-manage-functions) already lets a program write a function with an API key, but it says nothing about *how* a FaaSBox function is written: an agent pointed at it has to be taught the contract by you, at every session, and finds the limits by hitting them. The MCP server declares its tools with their schemas and its instructions with the contract, so "here is a URL and a key, work it out" becomes "write me a function that emails me every morning".
 
-## What You Need
+## Two Ways In, and They Grant the Same Thing
 
-**An API key with `canManage`, and with an open scope.** Both halves matter:
+An agent proves who it is in one of two ways.
 
-- Without `canManage`, the endpoint answers `403`. Invoking a function and rewriting one are two different rights (see [06 - API Keys & Security](06-api-keys-and-security.md)).
-- With a **restricted** scope, the agent can read, change, run and delete the functions the scope names — but it **cannot create any**, because there is nothing to compare a scope against for a function that does not exist yet.
+**By clicking Authorize.** You paste a URL into your client, run its authentication command, and a browser opens on this editor: it names the agent, says what authorizing hands over, and waits for your click. No secret is pasted anywhere, and you can cut the agent off later from the same page. This is the intended path.
 
-> **Read this before you create the key.** An agent that can create functions therefore holds a key with no scope restriction, which reaches **every function of this instance** — reading them, replacing them, running them, deleting them and their history. And a function is arbitrary code that FaaSBox executes with that function's secrets in its environment and your instance's network within reach. This is the real trade-off of plugging an agent in, well ahead of any question of transport. There is no narrower key that creates today.
+**By pasting an API key.** The key carries `canManage` and travels in an `X-API-Key` header in your client's configuration file. This is the shape for a non-interactive integration — and the only one that works on an instance where `FAASBOX_PUBLIC_URL` is not set, since the browser flow needs the instance to know its own public address (see [10 - Deployment](10-deployment.md)).
+
+> **Read this before you do either.** Both grant **everything**: reading, replacing, running and deleting **every function of this instance**, and reading their execution history. And a function is arbitrary code that FaaSBox executes, with that function's secrets in its environment and your instance's network within reach. This is the real trade-off of plugging an agent in, well ahead of any question of transport.
 >
-> Two things follow. Set an **expiry** on that key — the creation form proposes 30 days as soon as you tick the box. And treat losing it as you would treat losing a shell on the machine: revoke it from the [API keys](06-api-keys-and-security.md) page and issue another.
+> There is no narrower grant today. A token carries no selector — the consent screen has nothing to tick, and says so. A key *can* be scoped, but a scoped key **creates nothing**: there is no way to compare a scope against a function that does not exist yet, so an agent that has to create functions holds a key that reaches all of them.
+>
+> Treat losing either as you would treat losing a shell on the machine. Revoke the agent from the **AI MCP** page, or the key from the [API keys](06-api-keys-and-security.md) page, and start over.
 
-Create the key from the **API keys** page of the editor: tick **Can manage functions**, leave the scope on **All functions**, and copy the value — it is shown once and never again.
+If you go the key route, create it from the **API keys** page of the editor: tick **Can manage functions**, leave the scope on **All functions**, set an expiry — the form proposes 30 days as soon as you tick the box — and copy the value. It is shown once and never again.
 
 ## Connecting
 
-The editor has an **AI agents** page, in the sidebar under **API keys**. It carries the snippet for each client with the address of *this* instance already in it: copy it, replace `fbx_your_key_here` with your key, and you are done. Nothing there needs composing by hand.
+The editor has an **AI MCP** page, in the sidebar under **API keys**. It opens on the two ways in, each behind a closed panel — *Signin from your agent* and *Use an API key*. Open the one you mean to use: it explains that way, and carries the snippet for each client with the address of *this* instance already in it. Copy it, and you are done. Nothing there needs composing by hand.
 
-The snippets it shows:
+On an instance with no `FAASBOX_PUBLIC_URL` the first panel is absent and the second is already open, since there is no choice left to make.
 
-**Claude Code** — run it in a terminal:
+The transport is **Streamable HTTP**. There is no stdio variant: it would mean publishing an artifact and asking you to run a second runtime next to the one you already deployed.
+
+### Signing in from the agent
+
+Nothing to fill in but the address.
+
+**Claude Code** — run it in a terminal, then `/mcp` in the session to authenticate:
+
+```bash
+claude mcp add --transport http faasbox https://your-instance/mcp
+```
+
+**Codex** — in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.faasbox]
+url = "https://your-instance/mcp"
+```
+
+**OpenCode** — in `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "faasbox": {
+      "type": "remote",
+      "url": "https://your-instance/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+**Anything else** — most clients read this shape:
+
+```json
+{
+  "mcpServers": {
+    "faasbox": {
+      "type": "http",
+      "url": "https://your-instance/mcp"
+    }
+  }
+}
+```
+
+What happens next is the client's business, not yours: it reads the address of the authorization server off the `401` FaaSBox answers, registers itself, and opens a browser on the consent screen. You read what it asks for and click **Authorize** — or **Deny**, and the agent reports a failure. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints behind it.
+
+### Pasting a key
+
+Replace `fbx_your_key_here` with the key you created.
+
+**Claude Code**:
 
 ```bash
 claude mcp add --transport http faasbox https://your-instance/mcp \
@@ -53,7 +108,7 @@ http_headers = { "X-API-Key" = "fbx_your_key_here" }
 }
 ```
 
-**Anything else** — most clients read this shape:
+**Anything else**:
 
 ```json
 {
@@ -67,7 +122,15 @@ http_headers = { "X-API-Key" = "fbx_your_key_here" }
 }
 ```
 
-The transport is **Streamable HTTP**. There is no stdio variant: it would mean publishing an artifact and asking you to run a second runtime next to the one you already deployed.
+A key and a token presented together is not an error: the key is what the request is weighed on, and the token is ignored.
+
+## Cutting an Agent Off
+
+The **AI MCP** page lists every agent that authorized itself: the name it registered under, the day you approved it, and the day its access expires on its own. **Revoke** ends one.
+
+It takes effect on the agent's **next call** — there is no session to wait out — and it is final: the agent has to go through the consent screen again. An authorization also dies on its own after ninety days without use, and a token it renews with is refused for good if it is ever replayed, which is how a stolen configuration file announces itself.
+
+Revoking an agent does not touch your API keys, and revoking a key does not touch your agents. They are separate lists on separate pages.
 
 ## What the Agent Gets
 
@@ -97,7 +160,7 @@ These are the traps of the underlying contract. The tool descriptions state them
 
 ## What It Cannot Do
 
-The MCP server is exactly as wide as a `canManage` key, no wider:
+The MCP server is exactly as wide as a `canManage` key with an open scope, no wider — and that is true of a token as much as of a key, since a token is worth exactly such a key:
 
 - **It cannot create API keys.** `POST /api/faasbox/keys` stays superuser-only, so an agent cannot forge itself a better key.
 - **It cannot read your secrets back.** It writes environment variables, it never reads them — that endpoint stays superuser-only too.
@@ -107,13 +170,12 @@ The MCP server is exactly as wide as a `canManage` key, no wider:
 
 | What you see | What it means |
 |---|---|
-| `401 Missing X-API-Key header` | The header did not reach the server. Check the quoting in your client's config. |
+| `401 Missing X-API-Key header` | No credential reached the server at all. On an instance with the browser flow available, this same response tells your client where to go and authenticate — if it stops here, it does not speak OAuth, and needs a key. |
+| `401 Invalid access token` | The token was refused: unknown, expired, issued for another server, or its authorization was revoked. Authenticate again from the agent. |
 | `401 Invalid API key` | The value is not a key of this instance, or it was mistyped. |
 | `403 API key is not authorized to manage functions` | The key is valid but lacks `canManage`. Tick the box on a new key; the flag cannot be added afterwards from the editor. |
 | `403 API key has expired` | Exactly that. Create another. |
 | `403 API key scope cannot be read` | The `allowedFunctions` field of the key was hand-edited into something that is not a list of ids. Fix it in the PocketBase admin, or create another key. |
 | The agent connects but creating fails | The key has a restricted scope. A scoped key changes what it names and creates nothing. |
-
-## What Comes Next
-
-Authentication is by API key today, which means the key sits in your client's configuration file. An OAuth flow — where you click "authorise" in a browser and no key is ever pasted anywhere — is the intended installation path and is not here yet. When it lands, the header disappears from the snippets above and nothing else about the tools changes.
+| The agent never opens a browser | The instance has no `FAASBOX_PUBLIC_URL`, so it publishes no authorization server and its `401` carries no signpost. Use a key, or set the variable. |
+| The agent worked yesterday and now gets `401` | Its authorization was revoked — from the **AI MCP** page, or by the server itself after a token was replayed. Authenticate again.  |

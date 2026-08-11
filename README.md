@@ -103,7 +103,7 @@ The **Triggers** tab of a function: a cron expression — fifteen ready-made one
 
 ### 7. Or Let an Agent Write Them
 
-FaaSBox speaks [MCP](https://modelcontextprotocol.io) at `POST /mcp`. Point Claude Code, Codex, OpenCode or any MCP client at it with an API key carrying **Can manage functions**, and it can list, read, write, run and inspect your functions — and is told how to write one when it connects. The **AI agents** page of the editor carries the snippet for each client, with the address of your instance already in it. See [13 - AI Agents](docs/13-ai-agents.md), and read what such a key is allowed to do before you create one.
+FaaSBox speaks [MCP](https://modelcontextprotocol.io) at `POST /mcp`. Point Claude Code, Codex, OpenCode or any MCP client at it with an API key carrying **Can manage functions**, and it can list, read, write, run and inspect your functions — and is told how to write one when it connects. The **AI MCP** page of the editor carries the snippet for each client, with the address of your instance already in it. See [13 - AI Agents](docs/13-ai-agents.md), and read what such a key is allowed to do before you create one.
 
 ---
 

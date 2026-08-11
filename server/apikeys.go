@@ -17,7 +17,9 @@ import (
 )
 
 // This file carries what an API key is, end to end: its shape and its storage,
-// the two dimensions of its authority, and the middleware that validates it.
+// the two dimensions of its authority, and the middleware that validates it —
+// whether the caller proved itself with a key or with an OAuth access token,
+// which deposits an API key record all the same (cf. oauthbearer.go).
 //
 // The two dimensions are not the same question and must not collapse into one.
 // allowedFunctions says *which* functions a key reaches — the scope. canManage
@@ -298,8 +300,85 @@ func requireManageKey() *hook.Handler[*core.RequestEvent] {
 	}
 }
 
-// requireAPIKey returns a middleware that validates the X-API-Key header.
-func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
+// apiKeysOnly is the footing of every route that takes an API key and nothing
+// else: no bearer token is read, and no OAuth challenge is posted on its 401.
+//
+// Only /mcp is mounted on the other footing. Posting the challenge elsewhere
+// would send a caller with a curl on a whole OAuth journey to obtain a token
+// those routes do not accept.
+var apiKeysOnly = oauthConfig{}
+
+// keyRefusal is a credential that did not pass: the status and the wording, kept
+// together so one place renders them and one place decides what rides along.
+type keyRefusal struct {
+	status  int
+	message string
+}
+
+// authenticateCaller reads the credential a request presents and returns the API
+// key record it stands for.
+//
+// **A key and a token presented together: the key wins**, and the token is never
+// looked at. One path per request, decided by what is there rather than by which
+// check happens to pass first.
+//
+// The bearer path is open only on a route mounted with an OAuth configuration —
+// which is to say /mcp, on an instance where FAASBOX_PUBLIC_URL named an issuer.
+func authenticateCaller(app core.App, e *core.RequestEvent, oauth oauthConfig) (*core.Record, *keyRefusal) {
+	rawKey := e.Request.Header.Get("X-API-Key")
+	if rawKey != "" {
+		return authenticateAPIKey(app, rawKey)
+	}
+
+	if token := bearerToken(e.Request); token != "" && oauth.Resource != "" {
+		record, err := bearerAPIKey(app, token, oauth)
+		if err != nil {
+			if !errors.Is(err, errBearerRefused) {
+				app.Logger().Error("faasbox: failed to weigh an OAuth access token", "error", err)
+			}
+			return nil, &keyRefusal{http.StatusUnauthorized, "Invalid access token"}
+		}
+		return record, nil
+	}
+
+	return nil, &keyRefusal{http.StatusUnauthorized, "Missing X-API-Key header"}
+}
+
+// authenticateAPIKey is the key half of the chain: format, lookup, active, and
+// expiry. The scope is not weighed here — it is the middleware's business, and
+// it is the same question whichever credential produced the record.
+func authenticateAPIKey(app core.App, rawKey string) (*core.Record, *keyRefusal) {
+	if len(rawKey) != apiKeyLen || rawKey[:len(apiKeyPrefix)] != apiKeyPrefix {
+		return nil, &keyRefusal{http.StatusUnauthorized, "Invalid API key format"}
+	}
+
+	record, err := app.FindFirstRecordByData(faasboxAPIKeysCollection, "keyHash", hashAPIKey(rawKey))
+	if err != nil {
+		return nil, &keyRefusal{http.StatusUnauthorized, "Invalid API key"}
+	}
+
+	if !record.GetBool("active") {
+		return nil, &keyRefusal{http.StatusForbidden, "API key is disabled"}
+	}
+
+	expiresAt := record.GetDateTime("expiresAt")
+	if !expiresAt.IsZero() && expiresAt.Time().Before(time.Now()) {
+		return nil, &keyRefusal{http.StatusForbidden, "API key has expired"}
+	}
+
+	return record, nil
+}
+
+// requireAPIKey returns a middleware that validates the credential a request
+// presents: the X-API-Key header, or — on a route mounted with an OAuth
+// configuration — an Authorization: Bearer access token.
+//
+// **The challenge is a parameter of this middleware, empty everywhere else.**
+// It is already the place that emits the 401 and, since tokens, the place that
+// understands a bearer: a separate middleware posting the signpost would have to
+// guess the answer another one wrote. The zero configuration is what turns both
+// halves off — no token read, no challenge posted.
+func requireAPIKey(app core.App, oauth oauthConfig) *hook.Handler[*core.RequestEvent] {
 	return &hook.Handler[*core.RequestEvent]{
 		Id: "faasboxRequireAPIKey",
 		Func: func(e *core.RequestEvent) error {
@@ -308,43 +387,18 @@ func requireAPIKey(app core.App) *hook.Handler[*core.RequestEvent] {
 				return e.Next()
 			}
 
-			// 1. Read header
-			rawKey := e.Request.Header.Get("X-API-Key")
-			if rawKey == "" {
-				return e.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "Missing X-API-Key header",
-				})
-			}
-
-			// 2. Validate format
-			if len(rawKey) != apiKeyLen || rawKey[:len(apiKeyPrefix)] != apiKeyPrefix {
-				return e.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "Invalid API key format",
-				})
-			}
-
-			// 3. Lookup by hash
-			keyHash := hashAPIKey(rawKey)
-			record, err := app.FindFirstRecordByData(faasboxAPIKeysCollection, "keyHash", keyHash)
-			if err != nil {
-				return e.JSON(http.StatusUnauthorized, map[string]string{
-					"error": "Invalid API key",
-				})
-			}
-
-			// 4. Check active
-			if !record.GetBool("active") {
-				return e.JSON(http.StatusForbidden, map[string]string{
-					"error": "API key is disabled",
-				})
-			}
-
-			// 5. Check expiration
-			expiresAt := record.GetDateTime("expiresAt")
-			if !expiresAt.IsZero() && expiresAt.Time().Before(time.Now()) {
-				return e.JSON(http.StatusForbidden, map[string]string{
-					"error": "API key has expired",
-				})
+			// 1-5. Read and weigh the credential, key or token.
+			record, refused := authenticateCaller(app, e, oauth)
+			if refused != nil {
+				// The signpost rides the 401 and only the 401: a 403 has already
+				// identified its caller, and telling it where to authenticate
+				// would be answering a question it did not ask.
+				if refused.status == http.StatusUnauthorized {
+					if challenge := oauth.bearerChallenge(); challenge != "" {
+						e.Response.Header().Set("WWW-Authenticate", challenge)
+					}
+				}
+				return e.JSON(refused.status, map[string]string{"error": refused.message})
 			}
 
 			// 6. Check function scope

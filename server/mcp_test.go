@@ -623,6 +623,145 @@ func TestMCPEndpointAuth(t *testing.T) {
 		s := manageScenario(app, functionsDir, scenario)
 		s.Test(t)
 	}
+
+	// The signpost is not posted on an instance with no FAASBOX_PUBLIC_URL:
+	// announcing a discovery document that is not mounted walks the agent into
+	// a wall. manageApp mounts /mcp on that footing.
+	noChallenge := manageScenario(app, functionsDir, tests.ApiScenario{
+		Name:            "no OAuth, no challenge",
+		Method:          http.MethodPost,
+		URL:             "/mcp",
+		Body:            strings.NewReader(initialize),
+		Headers:         map[string]string{"Accept": "application/json, text/event-stream"},
+		ExpectedStatus:  401,
+		ExpectedContent: []string{"Missing X-API-Key header"},
+		AfterTestFunc:   expectNoChallenge,
+	})
+	noChallenge.Test(t)
+}
+
+// TestMCPEndpointOAuth pins the endpoint on the other footing: the signpost that
+// starts the flow, a token that opens the session, and the key that still works.
+func TestMCPEndpointOAuth(t *testing.T) {
+	app, functionsDir, _ := bearerApp(t)
+	seedActiveGrant(t, app)
+
+	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{` +
+		`"protocolVersion":"2025-06-18","capabilities":{},` +
+		`"clientInfo":{"name":"test","version":"0"}}}`
+
+	scenarios := []tests.ApiScenario{
+		{
+			// The whole point of the header: an agent handed nothing but a URL
+			// learns from it where to go and authenticate.
+			Name:            "an unauthenticated request is told where to go",
+			Method:          http.MethodPost,
+			URL:             "/mcp",
+			Body:            strings.NewReader(initialize),
+			Headers:         map[string]string{"Accept": "application/json, text/event-stream"},
+			ExpectedStatus:  401,
+			ExpectedContent: []string{"Missing X-API-Key header"},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				want := `Bearer resource_metadata="` + testOAuthConfig.Issuer +
+					`/.well-known/oauth-protected-resource"`
+				if got := res.Header.Get("WWW-Authenticate"); got != want {
+					t.Fatalf("WWW-Authenticate = %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			Name:   "a refused token is told the same thing",
+			Method: http.MethodPost,
+			URL:    "/mcp",
+			Body:   strings.NewReader(initialize),
+			Headers: map[string]string{
+				"Accept":        "application/json, text/event-stream",
+				"Authorization": "Bearer " + oauthSecretPrefix + strings.Repeat("z", oauthSecretRandom),
+			},
+			ExpectedStatus:  401,
+			ExpectedContent: []string{"Invalid access token"},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				if res.Header.Get("WWW-Authenticate") == "" {
+					t.Fatal("a refused token got no challenge")
+				}
+			},
+		},
+		{
+			// requireManageKey and exposeKeyScope have no branch of their own:
+			// the record a token deposits is the record a key deposits.
+			Name:   "an access token reaches the transport",
+			Method: http.MethodPost,
+			URL:    "/mcp",
+			Body:   strings.NewReader(initialize),
+			Headers: map[string]string{
+				"Accept":        "application/json, text/event-stream",
+				"Content-Type":  "application/json",
+				"Authorization": "Bearer " + testAccessToken,
+			},
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"name":"faasbox"`, `"tools"`},
+		},
+		{
+			// The key path is untouched by the token path arriving beside it.
+			Name:   "a management key still reaches the transport",
+			Method: http.MethodPost,
+			URL:    "/mcp",
+			Body:   strings.NewReader(initialize),
+			Headers: map[string]string{
+				"Accept":       "application/json, text/event-stream",
+				"Content-Type": "application/json",
+				"X-API-Key":    createTestManageKey(t, app, "manager-beside-oauth", nil, true),
+			},
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"name":"faasbox"`, `"tools"`},
+		},
+		{
+			// The OAuth footing is handed to the /mcp group alone, so a key
+			// presented anywhere else is weighed exactly as before, scope
+			// included. The scope on /mcp itself is pinned by TestExposeKeyScope
+			// and TestBearerScopeReachesTheHandler.
+			Name:            "a scoped key keeps its scope where OAuth is mounted",
+			Method:          http.MethodGet,
+			URL:             "/functions",
+			Headers:         map[string]string{"X-API-Key": createTestManageKey(t, app, "scoped-beside-oauth", []string{"nothing"}, true)},
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"count":0`},
+		},
+	}
+
+	for _, scenario := range scenarios {
+		s := bearerScenario(app, functionsDir, scenario)
+		s.Test(t)
+	}
+}
+
+// The signpost belongs to /mcp alone. Posting it on the routes below would send
+// a caller with a curl on a whole OAuth journey to obtain a token they do not
+// accept — so these 401s stay bare even where OAuth is mounted.
+func TestChallengeIsMCPOnly(t *testing.T) {
+	app, functionsDir, _ := bearerApp(t)
+
+	scenarios := []tests.ApiScenario{
+		{Name: "invoke", Method: http.MethodPost, URL: "/invoke/echo"},
+		{Name: "list functions", Method: http.MethodGet, URL: "/functions"},
+		{Name: "read a function", Method: http.MethodGet, URL: "/api/faasbox/functions/echo"},
+		{Name: "create a function", Method: http.MethodPost, URL: "/api/faasbox/functions"},
+	}
+
+	for _, scenario := range scenarios {
+		scenario.ExpectedStatus = 401
+		scenario.ExpectedContent = []string{"Missing X-API-Key header"}
+		scenario.AfterTestFunc = expectNoChallenge
+		s := bearerScenario(app, functionsDir, scenario)
+		s.Test(t)
+	}
+}
+
+// expectNoChallenge fails a scenario whose 401 carried the OAuth signpost.
+func expectNoChallenge(t testing.TB, app *tests.TestApp, res *http.Response) {
+	if got := res.Header.Get("WWW-Authenticate"); got != "" {
+		t.Fatalf("WWW-Authenticate = %q, want no challenge on this response", got)
+	}
 }
 
 // TestExposeKeyScope pins the bridge between the two containers: requireAPIKey
@@ -635,7 +774,7 @@ func TestExposeKeyScope(t *testing.T) {
 		registerFaaSRoutes(app, e, functionsDir)
 
 		group := e.Router.Group("/mcp-scope-probe")
-		group.Bind(requireAPIKey(e.App))
+		group.Bind(requireAPIKey(e.App, apiKeysOnly))
 		group.Bind(requireManageKey())
 		group.Bind(exposeKeyScope())
 		group.GET("", apis.WrapStdHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

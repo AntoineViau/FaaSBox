@@ -10,6 +10,26 @@ That is why the protections here are about who may invoke a function and what le
 
 Found a hole on the other side of that boundary? **Do not open a public issue.** [SECURITY.md](../SECURITY.md) has the private reporting channel, the expected response time, and the full in-scope / out-of-scope list.
 
+## Two Ways to Prove Who You Are
+
+There are two credentials on this instance, and they are not interchangeable.
+
+| | An API key | An OAuth token |
+|---|---|---|
+| How you get one | you create it and copy the value | an agent asks, you click **Authorize** |
+| Where it lives | wherever you paste it | in the agent's own storage |
+| Where it works | every FaaS endpoint | [`/mcp`](13-ai-agents.md) only |
+| Reach | a scope you choose, and `canManage` if you tick it | everything, always |
+| How long | forever, or the expiry you set | ninety days, renewed on use |
+| How you end it | uncheck **Active**, or delete the key | **Revoke** on the AI MCP page |
+| Where you manage it | the **API keys** page | the **AI MCP** page |
+
+**A token does not restrict.** There is no selector on the consent screen: authorizing an agent grants it every function of the instance, read and write, exactly as an unscoped key carrying `canManage` would. The screen says so in words before you click. Everything under [Management Keys](#management-keys) about what that costs applies unchanged.
+
+What a token buys you instead is that **no secret is ever pasted anywhere**, that it dies on its own after ninety days, and that renewing it is how a stolen copy announces itself — presenting a token that has already been rotated kills the whole authorization.
+
+Tokens only exist if `FAASBOX_PUBLIC_URL` is set. Without it, the key is the only credential there is.
+
 ## API Key Management
 
 Access to all FaaS endpoints (except `/health`) is restricted by API keys.
@@ -59,7 +79,7 @@ Three things follow:
 
 Creating keys is not part of it either — `POST /api/faasbox/keys` remains superuser-only, so a management key cannot mint itself a better one.
 
-The second point deserves a warning of its own when the holder is an **AI agent**: an agent that has to *create* functions needs an unrestricted key, so it reaches every function of the instance. Read [13 - AI Agents](13-ai-agents.md) before you hand one out.
+The second point deserves a warning of its own when the holder is an **AI agent**: an agent that has to *create* functions needs an unrestricted key, so it reaches every function of the instance. Authorizing one through the browser instead spares you the pasted key but not the reach — a token grants the same thing. Read [13 - AI Agents](13-ai-agents.md) before you hand out either.
 
 ```bash
 curl -X POST http://localhost:8080/api/faasbox/keys \
@@ -115,6 +135,8 @@ The page also lets you narrow or widen the scope of a key that already exists, w
 
 Deleting a **function** does not touch the keys scoped to it: their list keeps an id that now designates nothing, which grants nothing. Tidying it is a matter of hygiene, not of security.
 
+**Agents are revoked elsewhere.** An authorized agent holds no key and does not appear on this page: it is listed, with its dates and its **Revoke** button, on the **AI MCP** page. Revoking one takes effect on its next call, same as here.
+
 ---
 
 ## Security Layers
@@ -122,7 +144,7 @@ Deleting a **function** does not touch the keys scoped to it: their list keeps a
 ### 1. Request Validation
 - **Method**: Functions only respond to `POST` requests.
 - **Body Size**: Requests larger than 1 MB are rejected with a `413 Payload Too Large` error. Configurable via `FAASBOX_MAX_BODY_SIZE`.
-- **Header**: The `X-API-Key` header is mandatory.
+- **Header**: The `X-API-Key` header is mandatory, on every route but `/mcp` — which also takes an `Authorization: Bearer` token.
 
 ### 2. Runtime Isolation
 Every function call spawns a new **Bun subprocess**. This ensures:

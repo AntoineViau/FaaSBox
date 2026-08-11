@@ -21,7 +21,7 @@ import { ZardIconComponent } from '@shared/components/icon';
         </a>
         <a z-button zType="ghost" zSize="sm" class="w-full justify-start" routerLink="/agents">
           <z-icon zType="sparkles" class="mr-1.5 h-4 w-4" />
-          AI agents
+          AI MCP
         </a>
       </div>
       <div class="flex items-center justify-between border-b border-border px-3 py-2">
