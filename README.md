@@ -6,6 +6,8 @@
 
 It allows you to write TypeScript/JavaScript functions, deploy them instantly, invoke them via HTTP with hashed API keys, or schedule them using a flexible cron system. Code, dependencies, secrets, schedules and execution logs are all managed from the built-in editor, with the PocketBase admin UI underneath for direct access to the underlying collections.
 
+An AI agent can do all of it too, over [MCP](https://modelcontextprotocol.io) — and you authorize it by clicking **Authorize** in a browser, not by pasting a key into a config file.
+
 Under the hood: **Go** and **PocketBase** for the server, **Bun** for function execution, **Angular** for the editor, **SQLite** for everything stored. See [08 - Architecture Deep Dive](docs/08-architecture-deep-dive.md) for how the pieces fit together.
 
 <!-- GitHub honours prefers-color-scheme here, so the capture follows the
@@ -103,7 +105,19 @@ The **Triggers** tab of a function: a cron expression — fifteen ready-made one
 
 ### 7. Or Let an Agent Write Them
 
-FaaSBox speaks [MCP](https://modelcontextprotocol.io) at `POST /mcp`. Point Claude Code, Codex, OpenCode or any MCP client at it with an API key carrying **Can manage functions**, and it can list, read, write, run and inspect your functions — and is told how to write one when it connects. The **AI MCP** page of the editor carries the snippet for each client, with the address of your instance already in it. See [13 - AI Agents](docs/13-ai-agents.md), and read what such a key is allowed to do before you create one.
+FaaSBox speaks [MCP](https://modelcontextprotocol.io) at `POST /mcp`. An agent connected there can list, read, write, run and inspect your functions, and is handed the contract for writing one the moment it connects — you never paste it in.
+
+The simplest way in is a click. There is no secret to copy anywhere:
+
+```bash
+claude mcp add --transport http faasbox https://your-instance/mcp
+```
+
+Authenticate from the agent and a browser opens on this editor: it names the agent, says what authorizing hands over, and waits for your click. FaaSBox is its own OAuth 2.1 authorization server, so nothing else is involved — it only has to know its own address, which is what `FAASBOX_PUBLIC_URL` tells it. You cut the agent off later from the same **AI MCP** page.
+
+The other way in is an API key carrying **Can manage functions**, sent in an `X-API-Key` header. That is the shape for a non-interactive integration, and the only one on an instance that does not publish its address. The **AI MCP** page of the editor carries the ready-made snippet for each client — Claude Code, Codex, OpenCode and the generic shape — for both ways.
+
+**They grant the same thing**: every function of the instance, read and write, and its execution history. Read [13 - AI Agents](docs/13-ai-agents.md) before you hand out either.
 
 ---
 

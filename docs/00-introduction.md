@@ -27,6 +27,7 @@ FaaSBox is perfect for:
 5.  **Execution Logs**: Detailed history of every function call, including duration, status, and output.
 6.  **Automatic Dependencies**: Just add a `package.json`, and FaaSBox handles the `bun install` for you.
 7.  **MCP Server**: An AI agent can write, run and inspect your functions over the Model Context Protocol, and is handed the writing contract when it connects.
+8.  **OAuth for Agents**: FaaSBox is its own OAuth 2.1 authorization server, so an agent is authorized by a click in the browser rather than by a key you paste into its configuration.
 
 ## What FaaSBox Deliberately Does Not Do
 
