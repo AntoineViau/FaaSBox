@@ -170,16 +170,20 @@ docker run -d -p 8080:8080 \
 
 ### Which tag to run
 
-Each release lands under three names on GitHub Container Registry:
+Run `:latest`. It follows the newest release, prereleases never take it, and it
+is the tag every command in this documentation uses.
+
+Each release also lands under two fixed names on GitHub Container Registry, if
+you would rather name one:
 
 | Tag | Follows |
 |---|---|
 | `:0.1.0` | That exact release, and never moves. |
 | `:0.1` | The newest patch of that minor version. |
-| `:latest` | The newest release. Prereleases never take it. |
 
-For an instance you intend to keep running, pin `:0.1.0` or `:0.1` and update
-on purpose. `:latest` is for trying it out.
+The difference only shows at the next `docker pull`: `:latest` hands you the
+newest release, a fixed tag hands you the same image as before. Neither of them
+touches a container that is already running.
 
 ### Checking where the image came from
 
@@ -189,7 +193,7 @@ signed during the build, which ties it to the commit and the workflow run that
 produced it:
 
 ```bash
-gh attestation verify oci://ghcr.io/antoineviau/faasbox:0.1.0 --repo AntoineViau/FaaSBox
+gh attestation verify oci://ghcr.io/antoineviau/faasbox:latest --repo AntoineViau/FaaSBox
 ```
 
 A successful verification names the repository, the commit and the workflow.

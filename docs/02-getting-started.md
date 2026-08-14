@@ -21,11 +21,10 @@ docker run -d -p 8080:8080 \
   ghcr.io/antoineviau/faasbox:latest
 ```
 
-`latest` follows the newest release. Pin a version — `:0.1.0`, or `:0.1` to
-follow its patches — for anything you intend to keep running. The image is
-built for `linux/amd64` only; see
-[10 - Deployment](10-deployment.md#2-docker-the-simple-path) for that, and for
-how to check where the image came from before you run it.
+`latest` follows the newest release, and is the tag to run. Fixed version tags
+exist too. The image is built for `linux/amd64` only; see
+[10 - Deployment](10-deployment.md#2-docker-the-simple-path) for that, for the
+tags, and for how to check where the image came from before you run it.
 
 ### Environment Variables:
 
