@@ -1,3 +1,7 @@
+# syntax=docker/dockerfile:1
+# Pins the Dockerfile frontend to a version that understands `ADD --checksum`,
+# whatever the local Docker ships with.
+
 # ---- Go build stage ----
 FROM golang:1.25-alpine AS builder
 
@@ -33,7 +37,14 @@ FROM oven/bun:1.3.10-alpine
 
 RUN apk add --no-cache ca-certificates tini wget
 
-ADD https://github.com/benbjohnson/litestream/releases/download/v0.5.9/litestream-0.5.9-linux-x86_64.tar.gz /tmp/litestream.tar.gz
+# Pinned by content, not just by name: a release asset stays mutable by whoever
+# controls the upstream account, and this archive lands a binary that becomes
+# the container's root process. The digest is the one published in the release's
+# checksums.txt. Bumping the version means bumping this line too — that the
+# change has to be deliberate is the point.
+ADD --checksum=sha256:e8612ef5424802723e8cfa2d07a182df60f9af71839b5ff5ef1e80dff38efbdd \
+    https://github.com/benbjohnson/litestream/releases/download/v0.5.9/litestream-0.5.9-linux-x86_64.tar.gz \
+    /tmp/litestream.tar.gz
 RUN tar -xzf /tmp/litestream.tar.gz -C /usr/local/bin && rm /tmp/litestream.tar.gz
 
 WORKDIR /app
