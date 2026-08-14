@@ -8,6 +8,7 @@
   "nav": {
     "how": "How it works",
     "storage": "Storage",
+    "agents": "AI agents",
     "docs": "Docs",
     "github": "GitHub",
     "skip": "Skip to content",
@@ -16,7 +17,7 @@
     "toLight": "Switch to light theme"
   },
   "hero": {
-    "eyebrow": "Self-hosted · Open source",
+    "eyebrow": "Community Version · Open source",
     "titleClaim": "Lambda without the complexity",
     "titleTop": "A lightweight Function-as-a-Service platform",
     "titleBottom": "for TypeScript. Zero dependencies.",
@@ -60,7 +61,7 @@
         "body": "Two ways to start a run, and a function can carry both at once.",
         "ways": [
           {
-            "text": "<strong>An HTTP call.</strong> <code>POST /invoke/{name}</code> with an API key, created on the <strong>API keys</strong> page. The request body becomes the function's stdin, and the response carries its result and duration.",
+            "text": "<strong>An HTTP call.</strong> <code>POST /invoke/{name}</code> with an API key, created on the <strong>API keys</strong> page. The request body becomes the function's stdin, and the response carries its result and duration. The editor prints that route under the name of the function you have open, with an example <code>curl</code> next to it: the whole call, ready to copy, the key left as a placeholder.",
             "alt": "The API keys page, with the form that creates a key and sets its scope"
           },
           {
@@ -71,8 +72,20 @@
       },
       {
         "title": "Read the log",
-        "body": "Every run records its trigger, status, duration, stdout, stderr, request payload and exit code. Including the runs that never happened: a schedule that came due while the server was down is logged as <code>missed</code>, with the count and the window."
+        "body": "Every run records its trigger, status, duration, stdout, stderr, request payload and exit code. Including the runs that never happened: a schedule that came due while the server was down is logged as <code>missed</code>, with the count and the window. A key that may manage functions reads that history over the API too — the only way to see what a cron trigger did without the credentials of the instance itself."
       }
+    ]
+  },
+  "agents": {
+    "eyebrow": "AI agents",
+    "title": "An agent can write the functions for you.",
+    "lead": "FaaSBox speaks MCP at <code>POST /mcp</code>. An agent that connects is handed the writing contract on the spot — payload on stdin, JSON result on stdout, the naming rule, the size caps, the cron format — so “here is a URL and a key, work it out” becomes “write me a function that emails me every morning”.",
+    "points": [
+      "<strong>Two ways in.</strong> A click: the agent opens a browser on a consent screen that names it and says what it is asking for, you approve, and no secret is pasted anywhere. Or an API key marked <strong>Can manage functions</strong>, carried in a header — the shape for a non-interactive integration, and the only one on an instance that does not know its own public address.",
+      "<strong>Both grant the same thing, and that thing is everything.</strong> Reading, replacing, running and deleting every function of the instance, and reading their execution history. There is no narrower grant today: a scoped key creates nothing, so an agent that has to create functions holds one that reaches them all. Treat losing either as you would treat losing a shell on the machine.",
+      "<strong>Seven tools, one per verb.</strong> <code>list_functions</code>, <code>get_function</code>, <code>create_function</code>, <code>update_function</code>, <code>delete_function</code>, <code>invoke_function</code> and <code>get_function_logs</code>. Each takes the same code path as its HTTP route, so what an agent may do is exactly what its credential may do — refusals included.",
+      "<strong>Revocable, from the editor.</strong> The <strong>AI MCP</strong> page lists every agent that authorized itself, the day you approved it and the day its access expires on its own. <strong>Revoke</strong> takes effect on that agent's next call — there is no session to wait out.",
+      "<strong>Streamable HTTP, and nothing to install.</strong> One endpoint, <code>POST /mcp</code>, on the instance you already deployed. No stdio variant: it would mean shipping an artifact and asking you to run a second runtime next to the first."
     ]
   },
   "storage": {
@@ -101,7 +114,7 @@
     "cards": [
       {
         "title": "An editor, not a pipeline",
-        "body": "Five tabs per function: script, package.json, triggers, secrets, and the files its folder holds on disk. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it."
+        "body": "Five tabs per function: script, package.json, triggers, secrets, and the files its folder holds on disk. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it. Every function and every tab has its own URL — bookmark one, send it to someone, and the back button behaves."
       },
       {
         "title": "Two triggers, one engine",
@@ -113,15 +126,15 @@
       },
       {
         "title": "Keys you can scope",
-        "body": "Hashed on creation, revealed once, optionally restricted to named functions and given an expiry date. An expiry the server can't read is refused at creation rather than quietly dropped."
+        "body": "Hashed on creation, revealed once, optionally restricted to named functions and given an expiry date. Tick <strong>Can manage functions</strong> and the key writes them as well as calls them — create, read, replace, delete, and read their history, without the credentials of the instance. An expiry the server can't read is refused at creation rather than quietly dropped."
       },
       {
         "title": "Logs that answer questions",
-        "body": "Trigger, status, duration, both streams, request payload, exit code, and a flag when something was truncated to fit. Retention is by row count, purged hourly."
+        "body": "Trigger, status, duration, both streams, request payload, exit code, and a flag when something was truncated to fit. Readable from the editor, and over the API with a key that may manage functions. Retention is by row count, purged hourly."
       },
       {
         "title": "Bounded by design",
-        "body": "Nothing runs unbounded: 30 seconds per run, 1 MB per request body, 1 MB captured per output stream, four concurrent runs. The sizes and the concurrency are defaults you change with an environment variable; the two timeouts are fixed."
+        "body": "Nothing runs unbounded: 30 seconds per run, 1 MB per request body, 1 MB captured per output stream, four concurrent runs. The sizes and the concurrency are defaults you change with an environment variable; the two timeouts are fixed. PocketBase's rate limiter is armed at every boot, so a third wrong password in a row answers <strong>429</strong> — it does not cover <code>/invoke</code>, which the concurrency ceiling bounds instead."
       }
     ]
   },
@@ -130,7 +143,7 @@
     "title": "Small enough to hold in your head.",
     "lead": "Every decision below takes a moving part out. What is left behaves the same way every time, and you can reason about all of it at once.",
     "items": [
-      "<strong>One boundary to secure.</strong> A single superuser administers the instance. No permission matrix to audit, no role that quietly grants more than you meant.",
+      "<strong>One boundary to secure.</strong> A single superuser administers the instance. No permission matrix to audit and no roles: an API key carries two switches — which functions it reaches, and whether it may write them — both set on the page that created it.",
       "<strong>Runs are atomic.</strong> A call returns a complete result or an error. Nothing to reassemble on the client, no half-written response to detect.",
       "<strong>Functions stay independent.</strong> Each one is written, invoked and tested on its own. When something breaks there is no hidden call graph to unwind first.",
       "<strong>Nothing fires twice behind your back.</strong> A schedule missed during downtime is reported, never replayed — the distinction matters when the function bills a customer or sends mail.",
@@ -168,6 +181,10 @@
       {
         "text": "Scheduling",
         "doc": "05-scheduling-cron.md"
+      },
+      {
+        "text": "AI agents",
+        "doc": "13-ai-agents.md"
       },
       {
         "text": "API reference",

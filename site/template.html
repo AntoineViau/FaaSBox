@@ -49,6 +49,7 @@
     <nav class="nav__links" aria-label="{{nav.docs}}">
       <a href="#how">{{nav.how}}</a>
       <a href="#storage">{{nav.storage}}</a>
+      <a href="#agents">{{nav.agents}}</a>
       <a href="{{introduction}}">{{nav.docs}}</a>
     </nav>
 
@@ -158,6 +159,22 @@
           </div>
         </li>
       </ol>
+    </div>
+  </section>
+
+  <!-- ── AI agents ────────────────────────────────────────────────────── -->
+  <!-- Text only, unlike every other section: what an agent does happens in
+       the agent's window, not in ours, and there is no screen of ours worth
+       showing for it. -->
+  <section class="sec sec--quiet" id="agents">
+    <div class="wrap">
+      <p class="eyebrow">{{agents.eyebrow}}</p>
+      <h2 class="sec__title">{{agents.title}}</h2>
+      <p class="sec__lead">{{agents.lead}}</p>
+
+      <ul class="traits">
+        {{@agentPoints}}
+      </ul>
     </div>
   </section>
 

@@ -8,6 +8,7 @@
   "nav": {
     "how": "Fonctionnement",
     "storage": "Stockage",
+    "agents": "Agents IA",
     "docs": "Docs",
     "github": "GitHub",
     "skip": "Aller au contenu",
@@ -16,7 +17,7 @@
     "toLight": "Passer au thème clair"
   },
   "hero": {
-    "eyebrow": "Auto-hébergé · Open source",
+    "eyebrow": "Version Community · Open source",
     "titleClaim": "Lambda sans la complexité",
     "titleTop": "Une plateforme légère de Function-as-a-Service",
     "titleBottom": "pour TypeScript. Zéro dépendance.",
@@ -60,7 +61,7 @@
         "body": "Deux façons de lancer une exécution, et une fonction peut porter les deux à la fois.",
         "ways": [
           {
-            "text": "<strong>Un appel HTTP.</strong> <code>POST /invoke/{nom}</code> avec une clé d'API, créée depuis la page <strong>API keys</strong>. Le corps de la requête devient le stdin de la fonction, et la réponse porte son résultat et sa durée.",
+            "text": "<strong>Un appel HTTP.</strong> <code>POST /invoke/{nom}</code> avec une clé d'API, créée depuis la page <strong>API keys</strong>. Le corps de la requête devient le stdin de la fonction, et la réponse porte son résultat et sa durée. L'éditeur affiche cette route sous le nom de la fonction ouverte, avec un exemple <code>curl</code> à côté : l'appel entier, prêt à copier, la clé laissée en placeholder.",
             "alt": "La page des clés d'API, avec le formulaire de création et le choix de la portée"
           },
           {
@@ -71,8 +72,20 @@
       },
       {
         "title": "Lisez le log",
-        "body": "Chaque exécution enregistre son déclencheur, son statut, sa durée, stdout, stderr, le payload de la requête et le code de sortie. Y compris celles qui n'ont jamais eu lieu : une planification due pendant un arrêt du serveur est journalisée en <code>missed</code>, avec le nombre d'occurrences et la période."
+        "body": "Chaque exécution enregistre son déclencheur, son statut, sa durée, stdout, stderr, le payload de la requête et le code de sortie. Y compris celles qui n'ont jamais eu lieu : une planification due pendant un arrêt du serveur est journalisée en <code>missed</code>, avec le nombre d'occurrences et la période. Une clé qui peut gérer les fonctions relit aussi cet historique par l'API — le seul moyen de voir ce qu'un déclencheur cron a fait sans les identifiants de l'instance elle-même."
       }
+    ]
+  },
+  "agents": {
+    "eyebrow": "Agents IA",
+    "title": "Un agent peut écrire vos fonctions.",
+    "lead": "FaaSBox parle MCP sur <code>POST /mcp</code>. Un agent qui s'y connecte reçoit aussitôt le contrat d'écriture — payload sur stdin, résultat JSON sur stdout, la règle de nommage, les plafonds, le format cron — si bien que « voici une URL et une clé, débrouille-toi » devient « écris-moi une fonction qui m'envoie un mail chaque matin ».",
+    "points": [
+      "<strong>Deux façons d'entrer.</strong> Un clic : l'agent ouvre un navigateur sur un écran de consentement qui le nomme et dit ce qu'il demande, vous approuvez, et aucun secret n'est collé nulle part. Ou une clé d'API cochée <strong>Can manage functions</strong>, portée par un en-tête — la forme d'une intégration non interactive, et la seule qui marche sur une instance qui ne connaît pas sa propre adresse publique.",
+      "<strong>Les deux accordent la même chose, et cette chose est tout.</strong> Lire, remplacer, exécuter et supprimer toutes les fonctions de l'instance, et lire leur historique d'exécution. Il n'existe pas d'octroi plus étroit aujourd'hui : une clé à portée restreinte ne crée rien, donc un agent qui doit créer des fonctions en tient une qui les atteint toutes. Perdre l'une ou l'autre revient à perdre un shell sur la machine.",
+      "<strong>Sept outils, un par verbe.</strong> <code>list_functions</code>, <code>get_function</code>, <code>create_function</code>, <code>update_function</code>, <code>delete_function</code>, <code>invoke_function</code> et <code>get_function_logs</code>. Chacun emprunte le même chemin de code que sa route HTTP : ce qu'un agent peut faire est exactement ce que son identifiant peut faire — refus compris.",
+      "<strong>Révocable, depuis l'éditeur.</strong> La page <strong>AI MCP</strong> liste chaque agent qui s'est autorisé, le jour où vous l'avez approuvé et celui où son accès expire de lui-même. <strong>Revoke</strong> prend effet à l'appel suivant de cet agent — il n'y a pas de session à attendre.",
+      "<strong>Streamable HTTP, et rien à installer.</strong> Un seul point d'entrée, <code>POST /mcp</code>, sur l'instance que vous avez déjà déployée. Pas de variante stdio : il faudrait publier un artefact et vous demander de faire tourner un second runtime à côté du premier."
     ]
   },
   "storage": {
@@ -101,7 +114,7 @@
     "cards": [
       {
         "title": "Un éditeur, pas un pipeline",
-        "body": "Cinq onglets par fonction : script, package.json, triggers, secrets, et les fichiers que son dossier porte sur le disque. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère."
+        "body": "Cinq onglets par fonction : script, package.json, triggers, secrets, et les fichiers que son dossier porte sur le disque. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère. Chaque fonction et chaque onglet a son URL — mettez-la en favori, envoyez-la à quelqu'un, et le bouton Retour se comporte comme il faut."
       },
       {
         "title": "Deux déclencheurs, un seul moteur",
@@ -113,15 +126,15 @@
       },
       {
         "title": "Des clés dont vous fixez la portée",
-        "body": "Hachées à la création, révélées une fois, restreintes au besoin à des fonctions nommées et assorties d'une date d'expiration. Une expiration que le serveur ne sait pas lire est refusée à la création plutôt qu'ignorée en silence."
+        "body": "Hachées à la création, révélées une fois, restreintes au besoin à des fonctions nommées et assorties d'une date d'expiration. Cochez <strong>Can manage functions</strong> et la clé les écrit autant qu'elle les appelle — créer, lire, remplacer, supprimer, et relire leur historique, sans les identifiants de l'instance. Une expiration que le serveur ne sait pas lire est refusée à la création plutôt qu'ignorée en silence."
       },
       {
         "title": "Des logs qui répondent",
-        "body": "Déclencheur, statut, durée, les deux flux, payload de la requête, code de sortie, et un drapeau quand quelque chose a été tronqué pour tenir. La rétention se compte en lignes, purgées toutes les heures."
+        "body": "Déclencheur, statut, durée, les deux flux, payload de la requête, code de sortie, et un drapeau quand quelque chose a été tronqué pour tenir. Lisibles depuis l'éditeur, et par l'API avec une clé qui peut gérer les fonctions. La rétention se compte en lignes, purgées toutes les heures."
       },
       {
         "title": "Borné par conception",
-        "body": "Rien ne tourne sans borne : 30 secondes par exécution, 1 Mo de corps de requête, 1 Mo capturé par flux de sortie, quatre exécutions simultanées. Les tailles et la concurrence sont des défauts que vous changez par variable d'environnement ; les deux délais, eux, sont fixes."
+        "body": "Rien ne tourne sans borne : 30 secondes par exécution, 1 Mo de corps de requête, 1 Mo capturé par flux de sortie, quatre exécutions simultanées. Les tailles et la concurrence sont des défauts que vous changez par variable d'environnement ; les deux délais, eux, sont fixes. Le limiteur de débit de PocketBase est armé à chaque démarrage : un troisième mot de passe faux d'affilée répond <strong>429</strong> — il ne couvre pas <code>/invoke</code>, que borne le plafond de concurrence."
       }
     ]
   },
@@ -130,7 +143,7 @@
     "title": "Assez simple pour tenir en tête.",
     "lead": "Chaque décision ci-dessous retire une pièce mobile. Ce qui reste se comporte pareil à chaque fois, et tient dans un seul raisonnement.",
     "items": [
-      "<strong>Une seule frontière à sécuriser.</strong> Un unique superuser administre l'instance. Aucune matrice de permissions à auditer, aucun rôle qui accorde en silence plus que prévu.",
+      "<strong>Une seule frontière à sécuriser.</strong> Un unique superuser administre l'instance. Aucune matrice de permissions à auditer et aucun rôle : une clé d'API porte deux interrupteurs — les fonctions qu'elle atteint, et si elle peut les écrire — tous deux posés sur la page qui l'a créée.",
       "<strong>Les exécutions sont atomiques.</strong> Un appel rend un résultat complet ou une erreur. Rien à réassembler côté client, aucune réponse à moitié écrite à détecter.",
       "<strong>Les fonctions restent indépendantes.</strong> Chacune s'écrit, s'invoque et se teste seule. Quand quelque chose casse, aucun graphe d'appels caché à démêler d'abord.",
       "<strong>Rien ne part deux fois à votre insu.</strong> Une planification manquée pendant un arrêt est signalée, jamais rejouée — la nuance compte quand la fonction facture un client ou envoie du courrier.",
@@ -168,6 +181,10 @@
       {
         "text": "Planification",
         "doc": "05-scheduling-cron.md"
+      },
+      {
+        "text": "Agents IA",
+        "doc": "13-ai-agents.md"
       },
       {
         "text": "Référence API",

@@ -85,7 +85,12 @@ roughly a third of their truecolor size with no visible loss.
 
 ## Publishing
 
-The site is served at **https://faasbox.net/**.
+The site is served at **https://community.faasbox.net/**.
+
+**`faasbox.net` is not served from this repository.** The apex carries the
+commercial landing page, which is built and deployed elsewhere; nothing here
+writes to it, and this page carries no link back to it yet. What this folder
+publishes is the Community edition page, on the `community` subdomain.
 
 Set **Settings → Pages → Source** to **GitHub Actions**. The workflow uploads
 `dist/` as the Pages artifact; the build writes a `CNAME` file into it, so the
@@ -98,23 +103,18 @@ Change it there and nothing else needs touching.
 
 ### DNS
 
-At the registrar, for the apex `faasbox.net`:
+At the registrar, one record:
 
 | Type | Name | Value |
 |---|---|---|
-| A | `@` | `185.199.108.153` |
-| A | `@` | `185.199.109.153` |
-| A | `@` | `185.199.110.153` |
-| A | `@` | `185.199.111.153` |
-| AAAA | `@` | `2606:50c0:8000::153` |
-| AAAA | `@` | `2606:50c0:8001::153` |
-| AAAA | `@` | `2606:50c0:8002::153` |
-| AAAA | `@` | `2606:50c0:8003::153` |
-| CNAME | `www` | `antoineviau.github.io.` |
+| CNAME | `community` | `antoineviau.github.io.` |
 
-GitHub shows the current addresses under **Settings → Pages** once the domain is
-entered — trust that screen over this table if the two ever disagree. With the
-apex set as the custom domain, `www.faasbox.net` redirects to it automatically.
+A subdomain is a `CNAME`, which is why the apex `A`/`AAAA` records GitHub
+publishes have no place here — those belong to whoever serves `faasbox.net`, and
+that is not this repository.
+
+GitHub shows what it expects under **Settings → Pages** once the domain is
+entered — trust that screen over this table if the two ever disagree.
 
 Enable **Enforce HTTPS** once the certificate is issued; it takes up to an hour
 after the DNS propagates.

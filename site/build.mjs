@@ -19,7 +19,7 @@ const ROOT = dirname(fileURLToPath(import.meta.url));
 const DIST = join(ROOT, 'dist');
 
 /** Absolute base of the published site, used for canonical, hreflang and CNAME. */
-const SITE = 'https://faasbox.net/';
+const SITE = 'https://community.faasbox.net/';
 const REPO = 'https://github.com/AntoineViau/FaaSBox';
 const DOCS = `${REPO}/blob/master/docs/`;
 const DEFAULT_LANG = 'en';
@@ -83,6 +83,11 @@ function shotFrame(shot, className, ctx) {
             <span class="shot__path">${shot.src}</span>
             <span class="shot__size">${shot.size}</span>
           </div>`;
+}
+
+/** A plain list of pre-written items: the values already carry their markup. */
+function listItems(items) {
+  return items.map((i) => `<li>${i}</li>`).join('\n        ');
 }
 
 /** Reads a PNG's intrinsic size from its IHDR chunk. */
@@ -151,7 +156,9 @@ const renderers = {
       )
       .join('\n          '),
 
-  scopeItems: (c) => c.scope.items.map((i) => `<li>${i}</li>`).join('\n        '),
+  agentPoints: (c) => listItems(c.agents.points),
+
+  scopeItems: (c) => listItems(c.scope.items),
 
   footerLinks: (c) =>
     c.footer.links
