@@ -60,6 +60,10 @@ jobs:
           # on. Going multi-arch means picking that archive from
           # TARGETPLATFORM first.
           platforms: linux/amd64
+          # What the binary reports over MCP. Without it the image would ship
+          # announcing itself as `dev`, whatever tag it carries.
+          build-args: |
+            FAASBOX_VERSION=${{ steps.meta.outputs.version }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

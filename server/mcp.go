@@ -25,10 +25,11 @@ import (
 // thing this layer adds on top of the HTTP contract is the guardrails that
 // contract cannot carry because it has to stay predictable (cf. mcptools.go).
 
-// faasboxVersion is what the MCP implementation advertises. Nothing injects the
-// release tag into the binary today, so it says "dev" rather than a number that
-// would drift from the image it ships in. A real one would come from
-// -ldflags="-X main.faasboxVersion=...".
+// faasboxVersion is what the MCP implementation advertises. A released image
+// carries its tag, injected at build time through
+// -ldflags="-X main.faasboxVersion=..." from the FAASBOX_VERSION build argument
+// the production Dockerfile takes. Anything built any other way keeps "dev",
+// which is the honest answer for a binary that belongs to no release.
 var faasboxVersion = "dev"
 
 // mcpKeyContextKey names the standard-context slot where exposeKeyScope leaves

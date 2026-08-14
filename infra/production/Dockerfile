@@ -9,7 +9,13 @@ COPY server/go.mod server/go.sum ./server/
 RUN cd server && go mod download
 
 COPY server/ ./server/
-RUN cd server && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /faasbox .
+
+# The version the binary reports over MCP. The release workflow passes the tag;
+# a plain `docker build` leaves the default, which is what an unreleased build
+# should say about itself.
+ARG FAASBOX_VERSION=dev
+RUN cd server && CGO_ENABLED=0 go build -trimpath \
+      -ldflags="-s -w -X main.faasboxVersion=${FAASBOX_VERSION}" -o /faasbox .
 
 # ---- Angular build stage ----
 FROM node:22-alpine AS ng-builder
