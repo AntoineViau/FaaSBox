@@ -9,7 +9,7 @@ Welcome! This guide explains how to set up your local environment to contribute 
 ├── server/             # Go Backend (PocketBase extension)
 │   └── functions/      # Function folders on disk (rebuilt from the database)
 ├── ui/                 # Angular Frontend (FaaS Editor)
-├── site/               # faasbox.net landing page (static generator)
+├── site/               # community.faasbox.net page (static generator)
 ├── infra/              # Deployment & Dev scripts
 ├── data/
 │   ├── pb_data/        # SQLite DB & Settings (Local dev)
