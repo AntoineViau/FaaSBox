@@ -72,7 +72,7 @@ func exposeKeyScope() *hook.Handler[*core.RequestEvent] {
 
 			if _, err := readKeyScope(record); err != nil {
 				e.App.Logger().Error("faasbox: unreadable allowedFunctions, denying the MCP session",
-					"keyName", record.GetString("name"), "error", err)
+					"keyName", apiKeyName(e.App, record), "error", err)
 				return e.JSON(http.StatusForbidden, map[string]string{
 					"error": errScopeUnreadable.Error(),
 				})

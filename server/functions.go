@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -18,14 +20,16 @@ const faasboxFunctionsCollection = "faasbox_functions"
 // maxSourceSize bounds the two fields that carry what the user actually wrote:
 // the script and the package.json manifest.
 //
-// It has to be declared. A core.TextField with no explicit Max takes PocketBase's
-// 5000-rune default and refuses the whole record past it — and 5000 runes is
-// short enough to turn away an ordinary function. The refusal was loud but
-// baffling, since nothing in the product declared such a limit.
+// The unit is the rune, not the byte: a million runes is at least a megabyte of
+// source, and more when it is not ASCII.
 //
-// The unit is the rune, not the byte: PocketBase counts a TextField's length as
-// len([]rune(value)). A million runes is therefore at least a megabyte of source,
-// and more when it is not ASCII.
+// **It is no longer the column that enforces it.** These two fields are
+// encrypted at rest, so what a TextField measures is the sealed value — larger
+// than the plaintext, and by a factor that depends on the encoding. The declared
+// size is therefore cipherMax of this cap, wide enough never to be the binding
+// constraint, and the product limit is checked on the plaintext by
+// validateFunctionSizeHook. Without that check the announced cap would simply
+// cease to exist.
 const maxSourceSize = 1 << 20 // 1,048,576 characters
 
 // maxEnvSize bounds the encrypted environment of a function.
@@ -48,8 +52,8 @@ func ensureFunctionsCollection(app core.App) error {
 			&core.TextField{Name: "name", Required: true},
 			&core.TextField{Name: "env", Hidden: true, Max: maxEnvSize},
 			&core.JSONField{Name: "plainEnv"},
-			&core.TextField{Name: "script", Max: maxSourceSize},
-			&core.TextField{Name: "packageJson", Max: maxSourceSize},
+			&core.TextField{Name: "script", Max: cipherMax(maxSourceSize)},
+			&core.TextField{Name: "packageJson", Max: cipherMax(maxSourceSize)},
 			newDepsStatusField(),
 			newDepsErrorField(),
 			newBunLockField(),
@@ -63,11 +67,11 @@ func ensureFunctionsCollection(app core.App) error {
 	// Collection exists — add missing fields if needed
 	needsSave := false
 	if col.Fields.GetByName("script") == nil {
-		col.Fields.Add(&core.TextField{Name: "script", Max: maxSourceSize})
+		col.Fields.Add(&core.TextField{Name: "script", Max: cipherMax(maxSourceSize)})
 		needsSave = true
 	}
 	if col.Fields.GetByName("packageJson") == nil {
-		col.Fields.Add(&core.TextField{Name: "packageJson", Max: maxSourceSize})
+		col.Fields.Add(&core.TextField{Name: "packageJson", Max: cipherMax(maxSourceSize)})
 		needsSave = true
 	}
 	if col.Fields.GetByName("depsStatus") == nil {
@@ -89,14 +93,14 @@ func ensureFunctionsCollection(app core.App) error {
 		}
 	}
 
-	// Realign the declared size of the three fields whose cap has moved.
+	// Realign the declared size of every capped field of this collection.
 	//
-	// These are the caps on this collection that changed: bunLock and depsError
-	// have carried the same constant since they were created, so nothing can make
-	// them diverge, while a collection created by an earlier version carries the
-	// 5000-rune default on the three below. Left frozen, they would keep refusing
-	// exactly what the raise is meant to accept — an existing instance would see
-	// no effect at all.
+	// A TextField measures the value it *stores*, and four of these now store a
+	// ciphertext — about a third larger than the plaintext, and more when it is
+	// not ASCII. A collection created by an earlier version carries the plaintext
+	// cap and would refuse exactly what the encryption is meant to write through.
+	// env is here for the older reason: it long carried PocketBase's 5000-rune
+	// default, short enough to turn away a single long private key.
 	//
 	// Widening never invalidates what is stored: PocketBase validates a size when
 	// a record is written, not when a schema changes.
@@ -107,8 +111,10 @@ func ensureFunctionsCollection(app core.App) error {
 		name string
 		max  int
 	}{
-		{"script", maxSourceSize},
-		{"packageJson", maxSourceSize},
+		{"script", cipherMax(maxSourceSize)},
+		{"packageJson", cipherMax(maxSourceSize)},
+		{"bunLock", cipherMax(maxLockfileSize)},
+		{"depsError", cipherMax(maxDepsError + logMarkerSlack)},
 		{"env", maxEnvSize},
 	} {
 		field, ok := col.Fields.GetByName(want.name).(*core.TextField)
@@ -136,11 +142,11 @@ func decryptFunctionEnv(record *core.Record) (map[string]string, error) {
 		return map[string]string{}, nil
 	}
 
-	if encryptionKey == nil {
-		return nil, fmt.Errorf("FAASBOX_ENCRYPTION_KEY is not configured")
+	if cipherKey == nil {
+		return nil, fmt.Errorf("%s is not configured", encryptionKeyEnv)
 	}
 
-	plaintext, err := decrypt(encryptedEnv, encryptionKey)
+	plaintext, err := decrypt(encryptedEnv, cipherKey)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt env: %w", err)
 	}
@@ -233,6 +239,65 @@ func validateFunctionNameHook(e *core.RecordEvent) error {
 	return e.Next()
 }
 
+// functionScript, functionPackageJson, functionBunLock and functionDepsError are
+// the only way to read the four encrypted columns of a function record. Nothing
+// else touches them, whichever accessor: a value read by hand ships to the user
+// as base64, and to disk as a script that will not run.
+func functionScript(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "script")
+}
+
+func functionPackageJson(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "packageJson")
+}
+
+func functionBunLock(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "bunLock")
+}
+
+func functionDepsError(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "depsError")
+}
+
+// validateFunctionSizeHook holds the product's source limit where the column no
+// longer can.
+//
+// script and packageJson are encrypted at rest, so their declared size measures
+// the ciphertext and is deliberately wider than what the product announces.
+// Without this check the cap of maxSourceSize characters would simply cease to
+// exist — the field would take whatever it was handed.
+//
+// It counts runes, which is the unit the limit was always expressed in and the
+// one PocketBase itself used. It runs before the encryption hook and reads the
+// submitted value directly, which at that point is still the plaintext.
+//
+// The refusal is an ApiError for the reason validateFunctionNameHook gives: the
+// record endpoints keep only an argument that already is one, and an ordinary
+// error reaches the client as a 400 whose body says nothing.
+func validateFunctionSizeHook(e *core.RecordEvent) error {
+	for _, field := range []string{"script", "packageJson"} {
+		value := functionSourceInput(e.Record, field)
+		if utf8.RuneCountInString(value) <= maxSourceSize {
+			continue
+		}
+		return apis.NewBadRequestError(fmt.Sprintf(
+			"The %s of a function is limited to %d characters.", field, maxSourceSize), nil)
+	}
+	return e.Next()
+}
+
+// functionSourceInput reads one of the two source columns as the request left
+// it. A partial update carries the value loaded from the database, which is
+// already sealed and is not what this check is about — the caller did not submit
+// it, and it passed the check on the save that wrote it.
+func functionSourceInput(record *core.Record, field string) string {
+	value := record.GetString(field)
+	if strings.HasPrefix(value, cipherPrefix) {
+		return ""
+	}
+	return value
+}
+
 // encryptPlainEnvHook is a PocketBase hook that encrypts the plainEnv field
 // into env and clears plainEnv before saving a faasbox_functions record.
 func encryptPlainEnvHook(e *core.RecordEvent) error {
@@ -260,11 +325,11 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 		return e.Next()
 	}
 
-	if encryptionKey == nil {
-		return fmt.Errorf("cannot save encrypted env: FAASBOX_ENCRYPTION_KEY is not configured")
+	if cipherKey == nil {
+		return fmt.Errorf("cannot save encrypted env: %s is not configured", encryptionKeyEnv)
 	}
 
-	encrypted, err := encrypt(jsonBytes, encryptionKey)
+	encrypted, err := encrypt(jsonBytes, cipherKey)
 	if err != nil {
 		return fmt.Errorf("failed to encrypt env: %w", err)
 	}
@@ -285,7 +350,10 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 // The directory is named by the record id, never by the name: a rename then
 // moves nothing, loses no node_modules and triggers no reinstall. The name is
 // kept for the error messages, which are read by a human.
-func syncRecordToDisk(record *core.Record, functionsDir string) error {
+//
+// The three artefacts are read through their accessors: what the record carries
+// is the sealed value, and what belongs on disk is the plaintext bun compiles.
+func syncRecordToDisk(app core.App, record *core.Record, functionsDir string) error {
 	if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 		return nil
 	}
@@ -302,7 +370,7 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	// restart on a fresh filesystem stopped writing it, and the function turned
 	// into a 404 with nothing having been touched in between.
 	scriptPath := filepath.Join(dir, "index.ts")
-	script := record.GetString("script")
+	script := functionScript(app, record)
 	if script != "" {
 		if err := writeIfChanged(scriptPath, []byte(script), 0o644); err != nil {
 			return fmt.Errorf("failed to write index.ts for %s: %w", name, err)
@@ -312,7 +380,7 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	}
 
 	pkgPath := filepath.Join(dir, "package.json")
-	pkg := record.GetString("packageJson")
+	pkg := functionPackageJson(app, record)
 	if pkg != "" {
 		if err := writeIfChanged(pkgPath, []byte(pkg), 0o644); err != nil {
 			return fmt.Errorf("failed to write package.json for %s: %w", name, err)
@@ -324,7 +392,7 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 	// The lockfile is restored like the rest: it is an artefact of the record, not
 	// of the disk, and that is what makes the pinning survive a rebuilt filesystem.
 	lockPath := filepath.Join(dir, "bun.lock")
-	lock := record.GetString("bunLock")
+	lock := functionBunLock(app, record)
 	if lock != "" {
 		if err := writeIfChanged(lockPath, []byte(lock), 0o644); err != nil {
 			return fmt.Errorf("failed to write bun.lock for %s: %w", name, err)
@@ -347,7 +415,7 @@ func syncRecordToDisk(record *core.Record, functionsDir string) error {
 // would then write to ./functions while /invoke read the directory the flag
 // actually names.
 func syncFunctionRecord(ctx context.Context, e *core.RecordEvent, functionsDir string) error {
-	if err := syncRecordToDisk(e.Record, functionsDir); err != nil {
+	if err := syncRecordToDisk(e.App, e.Record, functionsDir); err != nil {
 		e.App.Logger().Error("faasbox: failed to sync function to disk",
 			"function", e.Record.GetString("name"), "error", err)
 		return e.Next()
@@ -388,7 +456,7 @@ func syncDiskFromDB(app core.App, functionsDir string) {
 	}
 
 	for _, r := range records {
-		if err := syncRecordToDisk(r, functionsDir); err != nil {
+		if err := syncRecordToDisk(app, r, functionsDir); err != nil {
 			app.Logger().Error("faasbox: failed to sync function to disk",
 				"function", r.GetString("name"), "error", err)
 		}

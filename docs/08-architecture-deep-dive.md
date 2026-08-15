@@ -39,9 +39,20 @@ The Go binary is the orchestrator. It extends PocketBase with custom routes and 
 - **API Key Middleware**: Validates the `X-API-Key` header by hashing the input and comparing it with stored hashes.
 - **Execution Engine**: Manages the spawning of Bun subprocesses, pipes stdin/stdout, and handles timeouts.
 - **Cron Sync**: A background task that syncs DB records with the internal Go cron scheduler.
-- **Secret Manager**: Handles AES-256-GCM encryption/decryption of environment variables.
+- **Encryption at rest**: Handles AES-256-GCM encryption of everything the database holds of your work, and decryption on the way back out. See below.
 
-### 2. The Execution Flow
+### 2. What the Database Actually Holds
+The SQLite file is what Litestream replicates to your S3 bucket and what you restore elsewhere, so what it holds in the clear is what a copy of it gives away.
+
+Encrypted with `FAASBOX_ENCRYPTION_KEY`, per column: your function code, its `package.json` and lockfile, the output of its dependency install, the name, schedule and payload of each trigger, the three output fields of every execution, the label and visible prefix of each API key, and the name and redirect URLs of each authorized agent. The key never encrypts anything directly — a subkey is derived from it by HKDF-SHA256, under a label of its own.
+
+Two things are deliberately **not** encrypted. **Hashes** stay hashes — the SHA-256 of an API key, and the token fingerprints of an agent: encrypting one would turn the database plus the key back into a usable credential. And a handful of columns are **queried in SQL** — the name of a function, the identifier of an OAuth client — which no ciphertext survives.
+
+Neither is the shape of it: how many functions there are, when each was created and modified, how many times each ran, with what status, for how long, with what exit code, and roughly how large each encrypted value is. Column-level encryption does not go below that floor. If that matters for where your backups live, encrypt the replica itself.
+
+The server decrypts for the responses it serves and for its own reads; nothing is ever written back in the clear.
+
+### 3. The Execution Flow
 When `/invoke/{name}` is called:
 1.  **Auth**: Middleware checks the API key, and its scope if it has one.
 2.  **Read**: Reads the request body, refusing anything past the body limit.
@@ -56,7 +67,7 @@ When `/invoke/{name}` is called:
 11. **Record**: Saves the result, duration, and logs to `faasbox_logs`.
 12. **Respond**: Returns the JSON result to the client.
 
-### 3. Dependency Installation
+### 4. Dependency Installation
 Installing happens when a function is **saved**, in the background: the save returns straight away, and the `depsStatus` field on the record reports where the install stands.
 
 **At startup**, a second background pass covers what a save cannot see: `node_modules` is not part of what the database restores, so a rebuilt filesystem has none. The pass walks the functions, skips those whose fingerprint already matches, and installs the rest one at a time — serialised, because installing them all at once would multiply the memory peak by their number. It is detached from startup, so the server listens without waiting for it.
@@ -65,7 +76,7 @@ The invocation path keeps its own check as a last resort, for what both miss —
 
 To prevent race conditions where a background install and an invocation try to run `bun install` at the same time, we use a global Go `sync.Map` of mutexes. One mutex per function directory: the second caller waits for the first, then finds the work already done.
 
-### 4. Output Truncation
+### 5. Output Truncation
 Truncation happens twice, for two different reasons.
 
 - **To protect the server's memory**, a `LimitedWriter` captures only the first 1 MB of `stdout` and `stderr` — per stream, and adjustable via `FAASBOX_MAX_OUTPUT_SIZE`. Writes past that point are discarded and the response carries a `truncated` flag.
@@ -75,7 +86,7 @@ The HTTP response is built from the captured output, not from the log record, so
 
 The first cap has a consequence the flag alone does not convey: when the cut lands mid-JSON, the surviving fragment is not a result. The invocation path tracks `stdout` truncation separately from the combined flag and refuses that case with a `502` rather than returning the fragment as a plain string. The cron path does not parse output at all, so it keeps recording whatever it captured.
 
-### 5. The Built-in Editor
+### 6. The Built-in Editor
 The editor is a standalone Angular Single Page Application (SPA).
 - **Location**: Built into `data/pb_public/`.
 - **Communication**: It uses the PocketBase SDK and custom FaaS endpoints.
@@ -83,7 +94,7 @@ The editor is a standalone Angular Single Page Application (SPA).
 
 ## Database-to-Disk Synchronization
 
-The **database is the source of truth** for function code. The `faasbox_functions` collection stores each function's `script` (the `index.ts` content) and `packageJson`. The file system is a derived copy, rebuilt automatically.
+The **database is the source of truth** for function code. The `faasbox_functions` collection stores each function's `script` (the `index.ts` content) and `packageJson`, encrypted. The file system is a derived copy, rebuilt automatically — and written in the clear, since that is what Bun compiles. An empty field removes its file rather than writing an empty one.
 
 ### Startup Sync
 

@@ -127,6 +127,8 @@ When a key is generated:
 
 > 🔒 **Security Note**: This means that even if someone gets access to your database, they cannot use the stored hashes to invoke your functions. They would need the original raw key.
 
+The hash stays a hash and is never encrypted, for exactly that reason: encrypting it would turn the database plus the encryption key back into a working credential. What *is* encrypted on a key record is its **label** and its **visible prefix** — the two things that identify it on screen.
+
 ### Revocation
 
 From the editor's **API keys** page, each key carries an **Active** checkbox and a delete button — unchecking one disables the key, deleting one removes it. A key that can manage functions is labelled as such next to its name, so the page shows you what you are about to keep. The same two operations are available by hand in the `faasbox_api_keys` collection (`active = false`, or delete the record). Either way, the change takes effect on the next request: nothing is cached.
@@ -136,6 +138,24 @@ The page also lets you narrow or widen the scope of a key that already exists, w
 Deleting a **function** does not touch the keys scoped to it: their list keeps an id that now designates nothing, which grants nothing. Tidying it is a matter of hygiene, not of security.
 
 **Agents are revoked elsewhere.** An authorized agent holds no key and does not appear on this page: it is listed, with its dates and its **Revoke** button, on the **AI MCP** page. Revoking one takes effect on its next call, same as here.
+
+---
+
+## What Is Encrypted at Rest
+
+Your database file is what gets backed up, replicated to S3 and restored on another machine. FaaSBox encrypts what you put in it, column by column, with `FAASBOX_ENCRYPTION_KEY`.
+
+**Encrypted**: your function code, its `package.json` and lockfile, the output of its dependency install, the name, schedule and payload of each trigger, the `stdout`, `stderr` and request payload of every execution, the label and visible prefix of each API key, and the name and redirect URLs of each authorized agent — on top of the [environment variables](04-environment-variables.md) that were already encrypted.
+
+**Not encrypted**, and on purpose:
+
+- **Credential hashes** — the SHA-256 of an API key, the token fingerprints of an agent. Encrypting one would make the database plus the key hand back a usable credential.
+- **A few columns the server looks up by value** — the name of a function, the identifier of an OAuth client. No ciphertext survives a `WHERE` clause.
+- **The shape of your instance** — how many functions, when they were created and changed, how many times each ran, with what status, duration and exit code, and roughly how big each encrypted value is. Column-level encryption does not go below that. If that floor matters to you, encrypt the backup itself.
+
+> ⛔ **Losing the key now costs you the instance, not just its secrets.** Before, a lost key meant unreadable environment variables and nothing else; your code, history and triggers stayed. Now a database written under a key you no longer have cannot be opened at all — and the server will not even start. Keep a copy of the key somewhere other than the machine that runs FaaSBox, and treat it as part of the backup.
+
+Two practical consequences: there is **no full-text search** over function code or logs, and none can be added without reopening this decision. And the editor reads these values in the clear because the server decrypts them for its responses — a database opened directly with an SQLite client shows base64.
 
 ---
 
@@ -191,4 +211,5 @@ If you run behind a reverse proxy, read [Behind a reverse proxy](10-deployment.m
 1.  **Least Privilege**: Create specific API keys for specific applications and restrict them to only the functions they need to call. Leave **Can manage functions** off unless the caller genuinely writes functions, and give it an expiration when you do.
 2.  **Regular Rotation**: Periodically rotate your API keys.
 3.  **Secret Management**: Never hardcode API keys or sensitive data in your `index.ts`. Use the [Encrypted Environment Variables](04-environment-variables.md) system.
-4.  **Audit Logs**: Regularly check the `faasbox_logs` collection for any suspicious activity or unexpected errors.
+4.  **Back Up the Encryption Key**, separately from the database it opens. A replica without its key is not a backup — it is an unopenable file.
+5.  **Audit Logs**: Regularly check the `faasbox_logs` collection for any suspicious activity or unexpected errors.

@@ -10,15 +10,16 @@ import (
 )
 
 // withEncryptionKey installs a throwaway AES-256 key for the duration of a test.
-// encryptionKey is package state, so it has to be restored.
+// cipherKey is package state, so it has to be restored.
 func withEncryptionKey(t testing.TB) {
 	t.Helper()
-	previous := encryptionKey
-	encryptionKey = make([]byte, 32)
-	for i := range encryptionKey {
-		encryptionKey[i] = byte(i)
+	previous := cipherKey
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
 	}
-	t.Cleanup(func() { encryptionKey = previous })
+	cipherKey = key
+	t.Cleanup(func() { cipherKey = previous })
 }
 
 // bindEnvHook wires encryptPlainEnvHook the way main.go does, since a test app

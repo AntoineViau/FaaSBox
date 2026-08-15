@@ -47,12 +47,12 @@ func TestInstallMissingDeps_ReinstallsWhatTheDiskLost(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusReady {
 		t.Errorf("depsStatus = %q, want %q", got, depsStatusReady)
 	}
-	if got := stored.GetString("depsError"); got != "" {
+	if got := functionDepsError(app, stored); got != "" {
 		t.Errorf("depsError = %q, want empty on success", got)
 	}
 	// The lockfile the install resolved must reach the record, or the pinning would
 	// not outlive the next restart any better than the node_modules just lost.
-	if got := stored.GetString("bunLock"); got != "lock-v1" {
+	if got := functionBunLock(app, stored); got != "lock-v1" {
 		t.Errorf("bunLock = %q, want the lockfile the install resolved", got)
 	}
 	if got := runs(); got != 1 {
@@ -217,7 +217,7 @@ func TestInstallMissingDeps_FailureDoesNotStopThePass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := record.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+	if got := functionDepsError(app, record); !strings.Contains(got, "nope@1.0.0 not found") {
 		t.Errorf("depsError = %q, want the bun install output", got)
 	}
 }
@@ -256,7 +256,7 @@ func TestInstallMissingDeps_ShutdownStopsThePass(t *testing.T) {
 	}
 
 	stored := waitDepsStatus(t, app, running, depsStatusPending)
-	if got := stored.GetString("depsError"); got != "" {
+	if got := functionDepsError(app, stored); got != "" {
 		t.Errorf("depsError = %q, want empty after an interrupted install", got)
 	}
 

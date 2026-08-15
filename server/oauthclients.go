@@ -151,11 +151,36 @@ func findOAuthClient(app core.App, clientId string) (*core.Record, error) {
 // clientDisplayName is what the consent screen shows. A registration may carry no
 // name — client_name is only RECOMMENDED — and the identifier is then the only
 // honest thing to put in front of the user.
-func clientDisplayName(record *core.Record) string {
-	if name := strings.TrimSpace(record.GetString("name")); name != "" {
+//
+// The name is encrypted at rest and read through its accessor. The clientId is
+// not: it is looked up in SQL, which no ciphertext survives without a blind
+// index.
+func clientDisplayName(app core.App, record *core.Record) string {
+	if name := strings.TrimSpace(decryptedText(app, record, "name")); name != "" {
 		return name
 	}
 	return record.GetString("clientId")
+}
+
+// clientRedirectURIs is the only way to read the registered redirect URIs.
+//
+// It exists because the column is a JSON list that is now stored as a sealed
+// string: record.GetStringSlice on it hands back nothing resembling the list,
+// redirectURIAllowed then matches nothing, and **every /authorize is refused
+// from the first one**. The failure is loud rather than silent, but it is total.
+func clientRedirectURIs(app core.App, record *core.Record) []string {
+	payload := decryptedJSON(app, record, "redirectUris")
+	if payload == "" {
+		return nil
+	}
+
+	var uris []string
+	if err := json.Unmarshal([]byte(payload), &uris); err != nil {
+		app.Logger().Error("faasbox: an OAuth client carries unreadable redirect URIs",
+			"client", record.Id, "error", err)
+		return nil
+	}
+	return uris
 }
 
 // redirectURIAllowed reports whether a client may be sent back to a URI.

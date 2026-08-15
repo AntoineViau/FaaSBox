@@ -109,10 +109,10 @@ func TestReportMissedCronRuns(t *testing.T) {
 		if got := entries[0].GetString("trigger"); got != "cron" {
 			t.Errorf("trigger = %q, want %q", got, "cron")
 		}
-		if got := entries[0].GetString("functionName"); got != "echo" {
+		if got := decryptedText(app, entries[0], "functionName"); got != "echo" {
 			t.Errorf("functionName = %q, want %q", got, "echo")
 		}
-		if entries[0].GetString("stderr") == "" {
+		if decryptedText(app, entries[0], "stderr") == "" {
 			t.Error("missed entry carries no description of the occurrences and period")
 		}
 	})
@@ -239,7 +239,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 			t.Fatalf("expected exactly 1 missed entry, got %d", len(entries))
 		}
 
-		message := entries[0].GetString("stderr")
+		message := decryptedText(app, entries[0], "stderr")
 		floor := reference.Add(-maxMissedLookback).Format(types.DefaultDateLayout)
 		if !strings.Contains(message, floor) {
 			t.Errorf("message does not state the walk floor %q: %s", floor, message)

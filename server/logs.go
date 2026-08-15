@@ -59,7 +59,11 @@ func ensureLogsCollection(app core.App) error {
 	// Creation and realignment read the wanted size from the same place. Two
 	// spellings of the same sum would make the comparison below miss and save
 	// the collection at every boot.
-	wantedOutputMax := maxLoggedOutput + logMarkerSlack
+	//
+	// The declared size measures the *sealed* value: these two columns are
+	// encrypted at rest, and a field capped on the plaintext would refuse an
+	// output the setting says to keep.
+	wantedOutputMax := cipherMax(maxLoggedOutput + logMarkerSlack)
 
 	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
 	if err != nil {
@@ -147,6 +151,15 @@ func truncateForLog(s string, max int) (string, bool) {
 }
 
 // recordExecution persists a function execution log to the faasbox_logs collection.
+//
+// The four columns that carry what ran are sealed here rather than by a hook,
+// because this is the only writer of the collection. They are also the ones the
+// threat model cares about most: an output, a stderr trace or an input payload
+// is where a secret ends up when a function prints one.
+//
+// A value that cannot be sealed drops the whole entry. Writing the row with its
+// output in the clear is the one outcome the encryption is here to prevent, and
+// a missing log line is loud in a way a legible one is not.
 func recordExecution(app core.App, entry logEntry) {
 	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
 	if err != nil {
@@ -158,18 +171,30 @@ func recordExecution(app core.App, entry logEntry) {
 	stderr, stderrCut := truncateForLog(entry.Stderr, maxLoggedOutput)
 	truncated := stdoutCut || stderrCut
 
+	payload := ""
+	if entry.RequestPayload != "" {
+		var payloadCut bool
+		payload, payloadCut = truncateForLog(entry.RequestPayload, maxLoggedPayload)
+		truncated = truncated || payloadCut
+	}
+
+	sealed, err := sealLogValues(entry.FunctionName, stdout, stderr, payload)
+	if err != nil {
+		app.Logger().Error("faasbox: failed to encrypt an execution log",
+			"function", entry.FunctionName, "error", err)
+		return
+	}
+
 	record := core.NewRecord(col)
 	record.Set("function", entry.FunctionId)
-	record.Set("functionName", entry.FunctionName)
+	record.Set("functionName", sealed[0])
 	record.Set("trigger", entry.Trigger)
 	record.Set("status", entry.Status)
 	record.Set("duration", entry.DurationMs)
-	record.Set("stdout", stdout)
-	record.Set("stderr", stderr)
-	if entry.RequestPayload != "" {
-		payload, payloadCut := truncateForLog(entry.RequestPayload, maxLoggedPayload)
-		record.Set("requestPayload", payload)
-		truncated = truncated || payloadCut
+	record.Set("stdout", sealed[1])
+	record.Set("stderr", sealed[2])
+	if payload != "" {
+		record.Set("requestPayload", sealed[3])
 	}
 	record.Set("exitCode", entry.ExitCode)
 	// Reports a cut made when writing this record, not one made while capturing
@@ -180,6 +205,25 @@ func recordExecution(app core.App, entry logEntry) {
 	if err := app.Save(record); err != nil {
 		app.Logger().Error("faasbox: failed to save execution log", "error", err)
 	}
+}
+
+// sealLogValues encrypts the four columns of an entry, in the order they are
+// given. One failure fails the lot: a half-sealed entry is not a shape any
+// reader knows.
+//
+// The payload goes in as text and comes back as text. PocketBase quotes a plain
+// string handed to a JSON field, so the column ends up holding a JSON string —
+// which is what logRequestPayload reads back apart from a document.
+func sealLogValues(values ...string) ([]string, error) {
+	sealed := make([]string, len(values))
+	for i, value := range values {
+		out, err := encryptField(value)
+		if err != nil {
+			return nil, err
+		}
+		sealed[i] = out
+	}
+	return sealed, nil
 }
 
 // pruneOldLogs deletes the oldest logs beyond maxLogRetention using a direct

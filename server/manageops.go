@@ -231,7 +231,7 @@ func functionLogs(app core.App, allowed []string, idOrName string, limit int) ([
 
 	logs := make([]logContract, 0, len(records))
 	for _, entry := range records {
-		logs = append(logs, logContractOf(entry))
+		logs = append(logs, logContractOf(app, entry))
 	}
 	return logs, nil
 }
@@ -312,10 +312,10 @@ func functionContractOf(app core.App, record *core.Record) (functionContract, er
 	return functionContract{
 		Id:          record.Id,
 		Name:        record.GetString("name"),
-		Script:      record.GetString("script"),
-		PackageJson: record.GetString("packageJson"),
+		Script:      functionScript(app, record),
+		PackageJson: functionPackageJson(app, record),
 		DepsStatus:  record.GetString("depsStatus"),
-		DepsError:   record.GetString("depsError"),
+		DepsError:   functionDepsError(app, record),
 		Crons:       crons,
 	}, nil
 }

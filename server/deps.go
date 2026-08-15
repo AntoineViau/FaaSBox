@@ -249,7 +249,7 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 	}
 	name := record.GetString("name")
 
-	if record.GetString("packageJson") == "" {
+	if functionPackageJson(app, record) == "" {
 		// No dependency spec: the state goes back to empty. Clearing unconditionally
 		// covers the package.json that was just removed, where a leftover "ready"
 		// would outlive its subject.

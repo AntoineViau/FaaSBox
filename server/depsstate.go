@@ -34,7 +34,7 @@ func newDepsStatusField() *core.SelectField {
 }
 
 func newDepsErrorField() *core.TextField {
-	return &core.TextField{Name: "depsError", Max: maxDepsError + logMarkerSlack}
+	return &core.TextField{Name: "depsError", Max: cipherMax(maxDepsError + logMarkerSlack)}
 }
 
 // newBunLockField declares the column carrying the lockfile a successful install
@@ -44,7 +44,7 @@ func newDepsErrorField() *core.TextField {
 // not exist, on a value that is no secret anyway. What the API hands back is kept
 // down by the field selection the editor sends, not by this flag.
 func newBunLockField() *core.TextField {
-	return &core.TextField{Name: "bunLock", Max: maxLockfileSize}
+	return &core.TextField{Name: "bunLock", Max: cipherMax(maxLockfileSize)}
 }
 
 // publishDepsOutcome records on the function record what the safety net on the
@@ -133,11 +133,22 @@ func persistLockfile(app core.App, functionsDir, functionId string) {
 // updateDepsState: it would fire OnRecordAfterUpdateSuccess, hence a new install,
 // and it would rewrite the whole record from a copy loaded up to a minute earlier,
 // overwriting a user save made in the meantime.
+//
+// **Going around app.Save means going around the encryption hook**, so the value
+// is sealed here, by hand, before the bind. Nothing else would ever seal it: this
+// is the only writer of the column.
 func setBunLock(app core.App, functionId, lock string) {
-	_, err := app.DB().NewQuery(
+	sealed, err := encryptField(lock)
+	if err != nil {
+		app.Logger().Error("faasbox: failed to encrypt the lockfile",
+			"functionId", functionId, "error", err)
+		return
+	}
+
+	_, err = app.DB().NewQuery(
 		"UPDATE " + faasboxFunctionsCollection + " SET bunLock = {:lock} WHERE id = {:id}",
 	).Bind(dbx.Params{
-		"lock": lock,
+		"lock": sealed,
 		"id":   functionId,
 	}).Execute()
 	if err != nil {
@@ -172,13 +183,25 @@ func setDepsState(app core.App, recordId, name, status, errMsg string) {
 // narrows the window without closing it, and PocketBase offers no optimistic
 // locking. Writing only the two columns this code owns is the correct move, and
 // broadcasting is not a reason to give it up.
+//
+// **No hook sees this write**, so depsError is sealed here by hand — it is the
+// column that carries the output of bun install, which can print the URL of a
+// private registry, token included. depsStatus stays in the clear: it is a
+// filtered value, and it says nothing.
 func updateDepsState(app core.App, recordId, status, errMsg string) bool {
-	_, err := app.DB().NewQuery(
+	sealed, err := encryptField(errMsg)
+	if err != nil {
+		app.Logger().Error("faasbox: failed to encrypt a dependency error",
+			"functionId", recordId, "status", status, "error", err)
+		return false
+	}
+
+	_, err = app.DB().NewQuery(
 		"UPDATE " + faasboxFunctionsCollection +
 			" SET depsStatus = {:status}, depsError = {:err} WHERE id = {:id}",
 	).Bind(dbx.Params{
 		"status": status,
-		"err":    errMsg,
+		"err":    sealed,
 		"id":     recordId,
 	}).Execute()
 	if err != nil {

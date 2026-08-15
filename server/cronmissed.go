@@ -61,7 +61,7 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 			continue
 		}
 
-		expr := record.GetString("schedule")
+		expr := cronSchedule(app, record)
 		functionId := record.GetString("function")
 		if expr == "" || functionId == "" {
 			continue

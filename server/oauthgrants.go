@@ -103,6 +103,32 @@ func ensureOAuthGrantsCollection(app core.App) error {
 	return app.Save(col)
 }
 
+// The four columns of a grant that describe the request are encrypted at rest,
+// and these are the only way to read them. **The four hash columns are not**,
+// and that is a rule rather than an omission: they are looked up in SQL and
+// indexed, and a hash sealed would be a credential the master key hands back.
+//
+// Every one of these four is compared in memory, never in SQL — the exact
+// redirect_uri, the PKCE challenge, the audience, and the state echoed back — so
+// sealing them costs a lookup nothing. What it does cost is attention: a
+// comparison left on the raw column refuses silently, and an authorization
+// refused says nothing about why.
+func grantRedirectURI(app core.App, grant *core.Record) string {
+	return decryptedText(app, grant, "redirectUri")
+}
+
+func grantCodeChallenge(app core.App, grant *core.Record) string {
+	return decryptedText(app, grant, "codeChallenge")
+}
+
+func grantResource(app core.App, grant *core.Record) string {
+	return decryptedText(app, grant, "resource")
+}
+
+func grantState(app core.App, grant *core.Record) string {
+	return decryptedText(app, grant, "state")
+}
+
 // findGrantByHash returns the grant whose column holds this hash.
 //
 // An empty hash is refused rather than looked up: most rows carry an empty string

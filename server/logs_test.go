@@ -107,25 +107,25 @@ func TestRecordExecution_TruncatesPersistedFields(t *testing.T) {
 	// the assertion about the cap, not about the exact marker wording.
 	const markerSlack = 64
 
-	if got := len(record.GetString("stdout")); got > maxLoggedOutput+markerSlack {
+	if got := len(decryptedText(app, record, "stdout")); got > maxLoggedOutput+markerSlack {
 		t.Errorf("stored stdout is %d bytes, want at most %d plus marker", got, maxLoggedOutput)
 	}
-	if got := len(record.GetString("stderr")); got > maxLoggedOutput+markerSlack {
+	if got := len(decryptedText(app, record, "stderr")); got > maxLoggedOutput+markerSlack {
 		t.Errorf("stored stderr is %d bytes, want at most %d plus marker", got, maxLoggedOutput)
 	}
-	if got := len(record.GetString("requestPayload")); got > 2*(maxLoggedPayload+markerSlack) {
+	if got := len(decryptedJSON(app, record, "requestPayload")); got > 2*(maxLoggedPayload+markerSlack) {
 		// The payload is stored in a JSON field: a truncated payload is no
 		// longer valid JSON, so PocketBase quotes and escapes it, which can
 		// roughly double its size.
 		t.Errorf("stored requestPayload is %d bytes, want at most %d plus marker", got, maxLoggedPayload)
 	}
 
-	if !strings.Contains(record.GetString("stdout"), "truncated") {
+	if !strings.Contains(decryptedText(app, record, "stdout"), "truncated") {
 		t.Error("stored stdout has no truncation marker")
 	}
 
 	// Fields unrelated to truncation must survive untouched.
-	if got := record.GetString("functionName"); got != "big-output" {
+	if got := decryptedText(app, record, "functionName"); got != "big-output" {
 		t.Errorf("functionName = %q, want %q", got, "big-output")
 	}
 	if got := record.GetInt("duration"); got != 42 {
@@ -158,10 +158,10 @@ func TestRecordExecution_ShortOutputUntouched(t *testing.T) {
 		t.Fatalf("got %d log records, want 1", len(records))
 	}
 
-	if got := records[0].GetString("stdout"); got != `{"ok":true}` {
+	if got := decryptedText(app, records[0], "stdout"); got != `{"ok":true}` {
 		t.Errorf("stdout = %q, want it stored verbatim", got)
 	}
-	if got := records[0].GetString("stderr"); got != "debug line" {
+	if got := decryptedText(app, records[0], "stderr"); got != "debug line" {
 		t.Errorf("stderr = %q, want it stored verbatim", got)
 	}
 }
@@ -271,7 +271,7 @@ func TestRecordExecution_TruncatedIsFilterable(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("got %d records matching truncated = true, want 1", len(records))
 	}
-	if got := records[0].GetString("functionName"); got != "chatty" {
+	if got := decryptedText(app, records[0], "functionName"); got != "chatty" {
 		t.Errorf("filtered record is %q, want %q", got, "chatty")
 	}
 }
@@ -327,7 +327,7 @@ func TestRecordExecution_TiesTheEntryToTheRecord(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("the rename left %d entries attached to the function, want 1", len(entries))
 	}
-	if got := entries[0].GetString("functionName"); got != "before" {
+	if got := decryptedText(app, entries[0], "functionName"); got != "before" {
 		t.Errorf("functionName = %q, want the name of the moment, %q", got, "before")
 	}
 }
@@ -412,7 +412,7 @@ func TestEnsureLogsCollection_FollowsARaisedSetting(t *testing.T) {
 		t.Fatalf("replaying ensureLogsCollection failed: %v", err)
 	}
 
-	want := 64<<10 + logMarkerSlack
+	want := cipherMax(64<<10 + logMarkerSlack)
 	for _, name := range []string{"stdout", "stderr"} {
 		if got := logsTextFieldMax(t, app, name); got != want {
 			t.Errorf("%s Max = %d, want %d", name, got, want)
@@ -438,7 +438,7 @@ func TestEnsureLogsCollection_FollowsALoweredSetting(t *testing.T) {
 		t.Fatalf("replaying ensureLogsCollection failed: %v", err)
 	}
 
-	want := 2<<10 + logMarkerSlack
+	want := cipherMax(2<<10 + logMarkerSlack)
 	for _, name := range []string{"stdout", "stderr"} {
 		if got := logsTextFieldMax(t, app, name); got != want {
 			t.Errorf("%s Max = %d, want %d", name, got, want)
@@ -480,7 +480,7 @@ func TestEnsureLogsCollection_LoweringSparesStoredRows(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("got %d log records, want the stored one kept", len(records))
 	}
-	if got := len(records[0].GetString("stdout")); got != written {
+	if got := len(decryptedText(app, records[0], "stdout")); got != written {
 		t.Errorf("stored stdout is %d bytes, want the %d written before the change", got, written)
 	}
 }
@@ -553,7 +553,7 @@ func TestRecordExecution_SurvivesARaisedSetting(t *testing.T) {
 	if len(records) != 1 {
 		t.Fatalf("got %d log records, want 1 — the raised cap dropped the row", len(records))
 	}
-	if got := len(records[0].GetString("stdout")); got != written {
+	if got := len(decryptedText(app, records[0], "stdout")); got != written {
 		t.Errorf("stored stdout is %d bytes, want the %d written", got, written)
 	}
 	if records[0].GetBool("truncated") {

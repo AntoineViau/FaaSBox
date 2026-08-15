@@ -87,14 +87,14 @@ func exchangeAuthorizationCode(e *core.RequestEvent, form url.Values) error {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_grant",
 			"this authorization code was not issued to that client_id")
 	}
-	if form.Get("redirect_uri") != grant.GetString("redirectUri") {
+	if form.Get("redirect_uri") != grantRedirectURI(e.App, grant) {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_grant",
 			`"redirect_uri" does not match the one the authorization request carried`)
 	}
-	if err := checkRequestedResource(grant, form.Get("resource")); err != nil {
+	if err := checkRequestedResource(e.App, grant, form.Get("resource")); err != nil {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_target", err.Error())
 	}
-	if !verifyPKCE(grant.GetString("codeChallenge"), form.Get("code_verifier")) {
+	if !verifyPKCE(grantCodeChallenge(e.App, grant), form.Get("code_verifier")) {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_grant",
 			`"code_verifier" does not match the code_challenge of the authorization request`)
 	}
@@ -150,7 +150,7 @@ func rotateRefreshToken(e *core.RequestEvent, form url.Values) error {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_grant",
 			"this refresh token was not issued to that client_id")
 	}
-	if err := checkRequestedResource(grant, form.Get("resource")); err != nil {
+	if err := checkRequestedResource(e.App, grant, form.Get("resource")); err != nil {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_target", err.Error())
 	}
 
@@ -234,11 +234,11 @@ func grantBelongsToClient(e *core.RequestEvent, grant *core.Record, clientId str
 
 // checkRequestedResource enforces RFC 8707 on the token request: the parameter is
 // required, and it has to be the resource the grant was opened for.
-func checkRequestedResource(grant *core.Record, requested string) error {
+func checkRequestedResource(app core.App, grant *core.Record, requested string) error {
 	if requested == "" {
 		return errRequestedResourceMissing
 	}
-	if !sameResource(requested, grant.GetString("resource")) {
+	if !sameResource(requested, grantResource(app, grant)) {
 		return errRequestedResourceForeign
 	}
 	return nil

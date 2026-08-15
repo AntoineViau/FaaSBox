@@ -54,8 +54,8 @@ func consentRequestHandler(e *core.RequestEvent) error {
 	}
 
 	return e.JSON(http.StatusOK, consentRequest{
-		Client:      clientDisplayName(client),
-		RedirectUri: grant.GetString("redirectUri"),
+		Client:      clientDisplayName(e.App, client),
+		RedirectUri: grantRedirectURI(e.App, grant),
 		Scope:       oauthScope,
 		Grants:      oauthGrantedPowers,
 	})
@@ -79,8 +79,10 @@ func consentDecisionHandler(e *core.RequestEvent, cfg oauthConfig) error {
 		return e.JSON(http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 	}
 
-	redirectURI := grant.GetString("redirectUri")
-	state := grant.GetString("state")
+	// Both opened before they are used: the URI is where the browser goes next,
+	// and the state is what the client matches its own request on.
+	redirectURI := grantRedirectURI(e.App, grant)
+	state := grantState(e.App, grant)
 
 	if !body.Approve {
 		revokeGrant(e.App, grant.Id, "refused on the consent screen")

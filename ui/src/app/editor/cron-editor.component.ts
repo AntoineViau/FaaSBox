@@ -133,7 +133,7 @@ export class CronEditorComponent {
       const res = await firstValueFrom(this.cronService.list(functionId));
       // A slow answer must not land on the function the user switched to.
       if (this.functionId() !== functionId) return;
-      this.rows.set(res.items.map((item) => this.toRow(item)));
+      this.rows.set(byNameDescending(res.items.map((item) => this.toRow(item))));
       this.snapshot();
     } catch (e) {
       this.errorMessage.set(`Failed to load the triggers: ${errorText(e)}`);
@@ -275,6 +275,18 @@ export class CronEditorComponent {
   private snapshot(): void {
     this.saved.set(new Map(this.rows().filter((row) => row.id).map((row) => [row.id, { ...row }])));
   }
+}
+
+/**
+ * Puts the triggers back in the order the server used to settle.
+ *
+ * It cannot settle it any more: the name is encrypted at rest, and sorting on a
+ * ciphertext orders noise. The comparison is on code units rather than through
+ * `localeCompare`, which is what SQLite's default collation did — the point is
+ * the same order as before, not a better one.
+ */
+function byNameDescending(rows: CronRow[]): CronRow[] {
+  return rows.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
 }
 
 /** Compares what is stored; the on-screen key and the record id are not part of it. */

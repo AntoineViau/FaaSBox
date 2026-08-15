@@ -93,15 +93,20 @@ Only one is genuinely required, and only for a feature you may not use:
 
 | Variable | Status | Without it |
 |---|---|---|
-| `FAASBOX_ENCRYPTION_KEY` | **Required to use secrets.** 64 hex characters — `openssl rand -hex 32`. | Secrets are disabled with a warning; everything else runs. A malformed value is fatal at startup, on purpose. |
+| `FAASBOX_ENCRYPTION_KEY` | **Required, always.** 64 hex characters — `openssl rand -hex 32`. | **The server does not start.** Absent, malformed or the wrong length are all fatal, on purpose: the database is encrypted at rest, so an instance without the key can neither write nor read its own content. |
 | `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. | The step is skipped; create the account at `/_/` on first boot instead. |
 | `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
 | `LITESTREAM_*` | Optional, see below. | No replication; the database stays local. |
 | `FAASBOX_MAX_*` | Optional sizing, see below. | Defaults apply. |
 
-> ⚠️ Lose `FAASBOX_ENCRYPTION_KEY` and the secrets encrypted with it are gone.
-> Change it, and existing secrets stop being readable — the Environment tab
-> answers `500` rather than showing you an empty set you would then overwrite.
+> ⛔ `FAASBOX_ENCRYPTION_KEY` is the instance. It encrypts function code,
+> triggers, execution history and secrets alike, so losing it does not cost you
+> the secrets — it costs you the database, permanently, backups included. Change
+> it and everything written under the old key becomes unreadable in the same way.
+>
+> Store it where you store the credentials of the machine, not on the machine.
+> Restoring a Litestream replica onto a new host without it gives you a server
+> that will not start.
 
 #### Telling the instance its own address
 

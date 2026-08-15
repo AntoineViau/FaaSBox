@@ -152,10 +152,13 @@ func TestInvokeHandler_TruncatedOutputRejected(t *testing.T) {
 		},
 		NotExpectedContent: []string{`"result"`},
 		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-			record, err := app.FindFirstRecordByFilter(faasboxLogsCollection, "functionName = 'big'")
-			if err != nil {
-				t.Fatalf("no log recorded: %v", err)
+			// Matched after decryption: functionName is sealed at rest, and a
+			// nonce makes no two writings of the same name equal.
+			entries := executionLogsOf(t, app, "big")
+			if len(entries) != 1 {
+				t.Fatalf("got %d log entries, want 1", len(entries))
 			}
+			record := entries[0]
 			if got := record.GetString("status"); got != "error" {
 				t.Errorf("log status = %q, want %q", got, "error")
 			}
@@ -330,7 +333,7 @@ func TestInvokeHandler_DependencyFailureLeavesEveryTrace(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusError {
 		t.Errorf("depsStatus = %q, want %q", got, depsStatusError)
 	}
-	if got := stored.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+	if got := functionDepsError(app, stored); !strings.Contains(got, "nope@1.0.0 not found") {
 		t.Errorf("depsError = %q, want the install output", got)
 	}
 }
@@ -362,7 +365,7 @@ func TestInvokeHandler_SafetyNetPublishesReady(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusReady {
 		t.Errorf("depsStatus = %q, want %q after the safety net installed", got, depsStatusReady)
 	}
-	if got := stored.GetString("depsError"); got != "" {
+	if got := functionDepsError(app, stored); got != "" {
 		t.Errorf("depsError = %q, want it cleared by a successful install", got)
 	}
 }
@@ -389,7 +392,7 @@ func TestInvokeHandler_SafetyNetPersistsLockfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(stored.GetString("bunLock")); got != "resolved-by-http" {
+	if got := strings.TrimSpace(functionBunLock(app, stored)); got != "resolved-by-http" {
 		t.Errorf("bunLock = %q, want what the safety net resolved", got)
 	}
 }
@@ -425,7 +428,7 @@ func TestInvokeHandler_HashCheckExitWritesNothing(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusPending {
 		t.Errorf("depsStatus = %q, want the sentinel %q untouched", got, depsStatusPending)
 	}
-	if got := stored.GetString("depsError"); got != "sentinel" {
+	if got := functionDepsError(app, stored); got != "sentinel" {
 		t.Errorf("depsError = %q, want the sentinel untouched", got)
 	}
 }

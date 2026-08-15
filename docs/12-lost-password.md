@@ -17,7 +17,9 @@ docker run -d -p 8080:8080 \
 
 The entrypoint runs `faasbox superuser upsert` on every startup, so the password is updated automatically. Your data, functions, and API keys are preserved — only the password changes.
 
-> ⚠️ **Pass the same `FAASBOX_ENCRYPTION_KEY` you were already running with**, along with every other variable the instance had. A restart is a restart: dropping the key does not lose your secrets from the database, but it leaves them unreadable, the **Environment** tab answers `500`, and functions run without them. This page changes a password, not a configuration.
+> ⛔ **You must pass the same `FAASBOX_ENCRYPTION_KEY` you were already running with**, along with every other variable the instance had. This is not a precaution, it is the condition: the database is encrypted at rest, so **without that key the server will not start at all**, and nothing in it can be read again. A lost password is recoverable; a lost key is not. This page changes a password, not a configuration.
+>
+> If you no longer have the key, there is no way back into that database. Starting a fresh instance with a new key gives you a working server and an empty one.
 
 ## Local development
 

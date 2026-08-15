@@ -46,7 +46,7 @@ func installMissingDeps(ctx context.Context, app core.App, functionsDir string) 
 			continue
 		}
 		name := record.GetString("name")
-		if record.GetString("packageJson") == "" {
+		if functionPackageJson(app, record) == "" {
 			continue
 		}
 		if depsUpToDate(filepath.Join(functionsDir, record.Id)) {

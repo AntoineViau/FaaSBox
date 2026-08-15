@@ -90,8 +90,29 @@ func ensureCronJobsCollection(app core.App) error {
 // with nothing to show. The message is written for the user — the cron library
 // error talks about internal field bounds and belongs in the server log, not in
 // the response.
+// cronName, cronSchedule and cronPayloadText are the only way to read the three
+// encrypted columns of a trigger. Nothing else touches them, whichever accessor.
+func cronName(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "name")
+}
+
+func cronSchedule(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "schedule")
+}
+
+// cronPayloadText returns the payload as JSON text.
+func cronPayloadText(app core.App, record *core.Record) string {
+	return decryptedJSON(app, record, "payload")
+}
+
 func validateCronScheduleHook(e *core.RecordEvent) error {
-	schedule := e.Record.GetString("schedule")
+	// Read through the accessor, not off the column. A partial update — a
+	// trigger merely toggled off — arrives carrying the schedule loaded from the
+	// database, which is sealed: parsing that as a cron expression would refuse
+	// every such save. The hook is bound before the encryption hook so the
+	// submitted value it weighs is still the plaintext, and the accessor is what
+	// makes the case the caller did not submit work too.
+	schedule := cronSchedule(e.App, e.Record)
 	if schedule != "" {
 		if _, err := cron.NewSchedule(schedule); err != nil {
 			e.App.Logger().Debug("faasbox cron: rejected schedule",
@@ -130,8 +151,8 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 		}
 
 		functionId := record.GetString("function")
-		schedule := record.GetString("schedule")
-		payload := record.GetString("payload")
+		schedule := cronSchedule(app, record)
+		payload := cronPayloadText(app, record)
 		maxQueue := int(record.GetFloat("maxQueue"))
 
 		if functionId == "" || schedule == "" {

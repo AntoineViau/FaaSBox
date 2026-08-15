@@ -30,6 +30,7 @@ func manageApp(t testing.TB) (*tests.TestApp, string, *core.Record) {
 	setupFaaSCollections(t, app)
 	bindEnvHook(app)
 	bindFunctionNameHook(app)
+	bindFunctionSizeHook(app)
 
 	functionsDir, functions := setupTestFunctions(t, app, map[string]string{"echo": ""})
 	record := functions["echo"]
@@ -639,7 +640,9 @@ func TestReplaceFunctionHandler(t *testing.T) {
 		app, dir, _ := manageApp(t)
 		// Past maxSourceSize the record is refused, and that refusal belongs to
 		// the caller's body rather than to the server: it answers 400 and says
-		// which field it is about.
+		// which field it is about. The column no longer holds the limit — it
+		// measures the sealed value — so what refuses is validateFunctionSizeHook,
+		// and it says so in words rather than in a field map.
 		oversized, err := json.Marshal(map[string]string{"script": strings.Repeat("x", maxSourceSize+1)})
 		if err != nil {
 			t.Fatal(err)
@@ -651,7 +654,7 @@ func TestReplaceFunctionHandler(t *testing.T) {
 			Body:            strings.NewReader(string(oversized)),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  400,
-			ExpectedContent: []string{`"fields"`, `script`},
+			ExpectedContent: []string{`script`, `limited to`},
 		})
 		s.Test(t)
 	})

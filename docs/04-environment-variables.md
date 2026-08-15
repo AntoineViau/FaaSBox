@@ -6,10 +6,14 @@ Functions often need sensitive information like API keys, database credentials, 
 Storing secrets in your `index.ts` or as plain text in a database is a security risk. If someone gains access to your repository or database, your secrets are exposed.
 
 ## The Solution: AES-256-GCM Encryption
-FaaSBox allows you to store secrets that are **encrypted at rest**. They are only decrypted in memory just before the function is executed.
+FaaSBox stores secrets **encrypted at rest**. They are only decrypted in memory just before the function is executed.
 
-### 1. Enable Encryption
-To use secrets, you must provide an encryption key to the FaaSBox server via the `FAASBOX_ENCRYPTION_KEY` environment variable.
+So is the rest of what you put in the instance: your function code, its `package.json`, its triggers and its execution logs are all encrypted in the database (see [06 - API Keys & Security](06-api-keys-and-security.md#what-is-encrypted-at-rest)).
+
+### 1. The encryption key
+`FAASBOX_ENCRYPTION_KEY` is **required**. The server refuses to start without it — there is nothing it could read or write.
+
+Give it to the FaaSBox server as an environment variable.
 
 ```bash
 # Generate a random 32-byte key (64 hex characters)
@@ -21,7 +25,7 @@ Pass this to your Docker container:
 -e FAASBOX_ENCRYPTION_KEY=your_64_char_hex_string
 ```
 
-> ⚠️ **Warning**: If you lose this key, you will not be able to decrypt your secrets. If you change it, existing secrets will become unreadable.
+> ⚠️ **Warning**: this key is the instance. Lose it and the database is unreadable for good — not just the secrets, but the function code, the triggers and the history with them. Change it and the same thing happens to everything written under the old one. Back it up somewhere other than the machine that runs FaaSBox.
 
 ### 2. Configure Secrets for a Function
 
@@ -86,7 +90,7 @@ These environment variables configure the FaaSBox server itself (not injected in
 |----------|-------------|---------|
 | `SUPERUSER_EMAIL` | Admin superuser email | *(required)* |
 | `SUPERUSER_PASSWORD` | Admin superuser password | *(required)* |
-| `FAASBOX_ENCRYPTION_KEY` | 64-char hex key for secrets encryption | *(disabled)* |
+| `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
 | `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin | *(OAuth disabled)* |
 | `FAASBOX_MAX_CONCURRENCY` | Max concurrent function executions | `4` |
 | `FAASBOX_MAX_LOG_RETENTION` | Max number of execution logs to keep | `1000` |
@@ -96,7 +100,9 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `FAASBOX_MAX_LOG_PAYLOAD` | Bytes of `requestPayload` kept in each log record | `4096` |
 | `FAASBOX_MAX_FILE_VIEW` | Bytes a file may hold and still be shown in the **Files** tab | `262144` |
 
-Every numeric setting behaves the same way: an absent variable uses the default silently, and a value that is unparsable, negative or zero falls back to the default with a message in the server log. A bad setting never prevents startup.
+Every numeric setting behaves the same way: an absent variable uses the default silently, and a value that is unparsable, negative or zero falls back to the default with a message in the server log. A bad numeric setting never prevents startup.
+
+`FAASBOX_ENCRYPTION_KEY` is the exception, and the only variable of the table that is not optional: absent, malformed, or the wrong length, the server stops and says so.
 
 `FAASBOX_PUBLIC_URL` is the exception to the "has a default" rule, because no guessed address would be right: it is what the OAuth authorization server publishes as its own identity. Absent or malformed, the OAuth endpoints are not mounted and a startup line says why; an agent then connects with an API key, as it does today. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints and [10 - Deployment](10-deployment.md#telling-the-instance-its-own-address) for what to put in it.
 

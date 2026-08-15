@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // This file answers "how is a log read by the API"; logs.go answers "how is a
@@ -118,36 +117,41 @@ func logsLimit(raw string) (int, error) {
 // durationMs is camelCase, aligned on depsStatus of the management contract
 // rather than on the duration_ms of the invocation response: the routes under
 // /api/faasbox/ speak camelCase, and /invoke keeps its own published contract.
-func logContractOf(record *core.Record) logContract {
+func logContractOf(app core.App, record *core.Record) logContract {
 	return logContract{
 		Id:             record.Id,
-		FunctionName:   record.GetString("functionName"),
+		FunctionName:   decryptedText(app, record, "functionName"),
 		Trigger:        record.GetString("trigger"),
 		Status:         record.GetString("status"),
 		DurationMs:     int64(record.GetInt("duration")),
-		Stdout:         record.GetString("stdout"),
-		Stderr:         record.GetString("stderr"),
-		RequestPayload: rawPayload(record),
+		Stdout:         decryptedText(app, record, "stdout"),
+		Stderr:         decryptedText(app, record, "stderr"),
+		RequestPayload: rawPayload(app, record),
 		ExitCode:       record.GetInt("exitCode"),
 		Truncated:      record.GetBool("truncated"),
 		Created:        record.GetDateTime("created").Time().UTC().Format(time.RFC3339),
 	}
 }
 
-// rawPayload relays requestPayload as it is stored, and hands back nil — which
-// marshals to `null` — for an entry that carries none.
+// rawPayload hands back the payload of an entry as a JSON document, and nil —
+// which marshals to `null` — for an entry that carries none.
 //
 // An empty non-nil json.RawMessage is not "no payload": it is a zero-byte
 // document, and marshalling it fails outright. The distinction has to be made
 // here, once, rather than surface as a 500 on the first entry without a body.
 //
-// Callers must expect two shapes: a payload cut at the storage cap is no longer
-// valid JSON, so PocketBase keeps it as an escaped **string** instead of an
-// object. That is documented, not accidental.
-func rawPayload(record *core.Record) json.RawMessage {
-	raw, ok := record.Get("requestPayload").(types.JSONRaw)
-	if !ok || len(raw) == 0 {
+// **It has to open the column before deciding what shape it is looking at**, and
+// getting that wrong degrades in silence where every other reader of a sealed
+// column fails loudly. A payload cut at the storage cap is no longer valid JSON,
+// so it is kept as an escaped **string** rather than an object — which is
+// exactly the shape a ciphertext takes. Relayed as stored, the sealed value
+// would go out looking like a legitimately truncated payload, a case the API
+// documents as normal, and nothing would report anything. decryptedJSON opens it
+// first and restores the two shapes the caller is told to expect.
+func rawPayload(app core.App, record *core.Record) json.RawMessage {
+	payload := decryptedJSON(app, record, "requestPayload")
+	if payload == "" {
 		return nil
 	}
-	return json.RawMessage(raw)
+	return json.RawMessage(payload)
 }

@@ -3,37 +3,200 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"strings"
+	"unicode/utf8"
 )
 
-// encryptionKey holds the decoded AES-256 key. Nil if not configured.
-var encryptionKey []byte
+// What the instance encrypts at rest, and the two rules that keep it from
+// eating itself: a stored value announces that it is encrypted, and an empty
+// value is never encrypted at all.
+//
+// FAASBOX_ENCRYPTION_KEY is the single input secret. Nothing uses it directly:
+// every purpose derives its own subkey through HKDF under a label of its own,
+// so a subkey published in the clear — a blind index, say — says nothing about
+// the one that encrypts.
 
-// initEncryptionKey reads and validates the FAASBOX_ENCRYPTION_KEY environment variable.
-// The key must be a 64-character hex string (32 bytes for AES-256).
-// If the variable is absent, encryption is disabled and a warning is logged.
+const (
+	// encryptionKeyEnv names the only source of the master key.
+	encryptionKeyEnv = "FAASBOX_ENCRYPTION_KEY"
+
+	// hkdfInfoCipher labels the subkey that encrypts stored values. It is never
+	// reused for anything else: HKDF under a different label yields an
+	// independent key, which is what lets another purpose take one without
+	// touching this one.
+	hkdfInfoCipher = "faasbox/v1/cipher"
+
+	// cipherPrefix marks a stored value as already encrypted.
+	//
+	// The fields concerned are written *in place* — the caller sends `script`,
+	// the hook encrypts `script` — so a hook that encrypted unconditionally
+	// would stack a layer at every save. The prefix is read off the value
+	// itself and depends on no context: record.Original() would not do, since a
+	// partial save, a direct SQL write or a reloaded record all give cases
+	// where the original is not the one we think.
+	//
+	// It carries a version so a change of algorithm stays possible without
+	// having to guess.
+	cipherPrefix = "fbx1:"
+
+	// cipherEnvelope is what AES-256-GCM adds around a plaintext: the nonce it
+	// prepends and the authentication tag it appends.
+	cipherEnvelope = 12 + 16
+)
+
+// masterKey holds the decoded FAASBOX_ENCRYPTION_KEY. It is the input of every
+// derivation and is never used to encrypt anything itself.
+var masterKey []byte
+
+// cipherKey is the subkey every stored value is encrypted with.
+var cipherKey []byte
+
+// initEncryptionKey reads and validates FAASBOX_ENCRYPTION_KEY, then derives the
+// subkey the stored values are encrypted with. The variable must be a
+// 64-character hex string (32 bytes for AES-256).
+//
+// Its absence is fatal, exactly like an invalid value. There is no degraded mode
+// left to fall back on: the code of a function, its triggers and its execution
+// history are all encrypted at rest, so an instance without the key can neither
+// write them nor read them back. Starting anyway would mean serving base64 to
+// the editor and calling it a running server.
 func initEncryptionKey() {
-	hexKey := os.Getenv("FAASBOX_ENCRYPTION_KEY")
+	hexKey := os.Getenv(encryptionKeyEnv)
 	if hexKey == "" {
-		log.Println("WARNING: FAASBOX_ENCRYPTION_KEY not set — encrypted environment variables are disabled")
-		return
+		log.Fatalf("%s is not set. It is required: the database is encrypted at rest, "+
+			"and an instance without the key can neither write nor read its own content.",
+			encryptionKeyEnv)
 	}
 
 	key, err := hex.DecodeString(hexKey)
 	if err != nil {
-		log.Fatalf("FAASBOX_ENCRYPTION_KEY is not valid hex: %v", err)
+		log.Fatalf("%s is not valid hex: %v", encryptionKeyEnv, err)
 	}
 	if len(key) != 32 {
-		log.Fatalf("FAASBOX_ENCRYPTION_KEY must be 64 hex characters (32 bytes for AES-256), got %d bytes", len(key))
+		log.Fatalf("%s must be 64 hex characters (32 bytes for AES-256), got %d bytes",
+			encryptionKeyEnv, len(key))
 	}
 
-	encryptionKey = key
+	masterKey = key
+	derived, err := deriveKey(key, hkdfInfoCipher)
+	if err != nil {
+		log.Fatalf("failed to derive the encryption subkey from %s: %v", encryptionKeyEnv, err)
+	}
+	cipherKey = derived
+}
+
+// deriveKey expands the master key into a 32-byte subkey for one purpose.
+//
+// The salt is empty on purpose: HKDF tolerates it, the master key is already
+// uniformly random, and a salt stored beside the ciphertext would buy nothing
+// here. What separates two subkeys is the label, and nothing else.
+func deriveKey(master []byte, info string) ([]byte, error) {
+	return hkdf.Key(sha256.New, master, nil, info, 32)
+}
+
+// alreadySealed reports whether a value is one this code produced.
+//
+// **The prefix is verified, not believed**, and that is the whole point of this
+// function. A plaintext that happens to start with `fbx1:` — the output of a
+// function, the payload of a trigger, a script someone pasted — would otherwise
+// be taken for a ciphertext and stored **in the clear**, which is the one
+// property this scheme exists to establish. Worse on a source column: nothing
+// would open it on the way back, the accessor would yield the empty string, and
+// syncRecordToDisk would remove the file.
+//
+// So a value counts as sealed only if it actually opens. The cost is one AES
+// open per already-sealed field and per save, which is nothing at this scale,
+// and the stored format does not move: the prefix stays the signal.
+//
+// The read side keeps the looser test on purpose (see decryptField). There, a
+// value carrying the prefix that will not open is not a plaintext to hand back —
+// it is a value written under another key, and relaying it would publish a
+// ciphertext as content.
+func alreadySealed(value string) bool {
+	if cipherKey == nil || !strings.HasPrefix(value, cipherPrefix) {
+		return false
+	}
+	_, err := decrypt(strings.TrimPrefix(value, cipherPrefix), cipherKey)
+	return err == nil
+}
+
+// encryptField returns the stored form of a value.
+//
+// Two values come back untouched, and both are rules rather than shortcuts.
+// A value that is already sealed must not be sealed again, or a second save
+// would stack a layer. And **an empty value stays empty**: encrypting "" would
+// produce something non-empty, and three rules of the product read an empty
+// field as a fact — a cleared script removes its file, an absent value is not an
+// empty one, and an empty depsError means no error. Nothing is lost by it, the
+// presence of a value being part of the metadata this scheme leaves in the clear
+// anyway.
+func encryptField(plaintext string) (string, error) {
+	if plaintext == "" {
+		return plaintext, nil
+	}
+	// Checked before the sealed test, which cannot answer without the key:
+	// without one, "already sealed?" has no answer rather than a false one.
+	if cipherKey == nil {
+		return "", fmt.Errorf("%s is not configured", encryptionKeyEnv)
+	}
+	if alreadySealed(plaintext) {
+		return plaintext, nil
+	}
+
+	sealed, err := encrypt([]byte(plaintext), cipherKey)
+	if err != nil {
+		return "", err
+	}
+	return cipherPrefix + sealed, nil
+}
+
+// decryptField returns the plaintext of a stored value.
+//
+// A value without the prefix was never encrypted and comes back as it stands:
+// that is what makes the scheme readable on a record written before the hooks
+// were in place, and what keeps the in-memory records built by the OAuth bearer
+// path — which nothing ever encrypted — legible through the same accessors.
+//
+// The test here is the prefix alone, deliberately looser than alreadySealed. A
+// stored value carrying it that will not open was written under another key or
+// is corrupt; that is an error to report, not a plaintext to relay. Handing it
+// back would publish a ciphertext as content — silently, on the two JSON columns
+// where it has exactly the shape a truncated payload legitimately takes.
+func decryptField(stored string) (string, error) {
+	if !strings.HasPrefix(stored, cipherPrefix) {
+		return stored, nil
+	}
+	if cipherKey == nil {
+		return "", fmt.Errorf("%s is not configured", encryptionKeyEnv)
+	}
+
+	plaintext, err := decrypt(strings.TrimPrefix(stored, cipherPrefix), cipherKey)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
+// cipherMax is the declared column size a plaintext cap of n *runes* needs once
+// encrypted.
+//
+// A PocketBase TextField measures the value it stores, and the stored value is
+// base64 of the nonce, the ciphertext and the tag — about a third larger than
+// the plaintext bytes. The cap is counted in runes while the cipher works on
+// bytes, so the worst case is taken: four bytes per rune. The column is
+// therefore never the binding constraint, which is deliberate — the limit the
+// product announces is counted on the plaintext and checked before encrypting.
+func cipherMax(runes int) int {
+	return len(cipherPrefix) + base64.StdEncoding.EncodedLen(utf8.UTFMax*runes+cipherEnvelope)
 }
 
 // encrypt encrypts plaintext using AES-256-GCM and returns a base64-encoded string

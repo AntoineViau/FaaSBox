@@ -92,7 +92,7 @@ func bearerAPIKey(app core.App, raw string, oauth oauthConfig) (*core.Record, er
 		return nil, fmt.Errorf("%w: the access token has expired", errBearerRefused)
 	}
 
-	if !sameResource(grant.GetString("resource"), oauth.Resource) {
+	if !sameResource(grantResource(app, grant), oauth.Resource) {
 		return nil, fmt.Errorf("%w: issued for another resource", errBearerRefused)
 	}
 
@@ -131,5 +131,5 @@ func oauthGrantLabel(app core.App, grant *core.Record) string {
 	if err != nil {
 		return "OAuth grant " + grant.Id
 	}
-	return fmt.Sprintf("%s (OAuth grant %s)", clientDisplayName(client), grant.Id)
+	return fmt.Sprintf("%s (OAuth grant %s)", clientDisplayName(app, client), grant.Id)
 }

@@ -222,11 +222,21 @@ func main() {
 		return e.Next()
 	})
 
-	// Refuse a function name outside the product's rule. Bound before the
-	// encryption hook: a record that will not be written has no reason to cost
-	// an AES pass first.
+	// Every validation below runs on what the caller submitted, which is to say
+	// on plaintext, and every one of them is therefore bound *before*
+	// registerFieldEncryption. A validator handed a sealed value weighs base64:
+	// the cron expression is the case that bites today, and the function name
+	// joins it the day that column is encrypted in its turn.
+	//
+	// Refusing early also spares an AES pass on a record that will not be
+	// written.
 	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
 	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
+
+	// The source limit the product announces, now that the column measures the
+	// ciphertext and no longer holds it.
+	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(validateFunctionSizeHook)
+	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(validateFunctionSizeHook)
 
 	// Encrypt plainEnv before saving faasbox_functions records
 	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(encryptPlainEnvHook)
@@ -235,6 +245,10 @@ func main() {
 	// Validate cron expression before saving
 	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
 	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+
+	// Encrypt the business columns of every collection at rest, and decrypt them
+	// for the responses the editor reads. Bound last, for the ordering above.
+	registerFieldEncryption(app)
 
 	// Live-sync cron jobs when records change
 	app.OnRecordAfterCreateSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {

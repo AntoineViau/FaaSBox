@@ -39,7 +39,7 @@ func authorizeHandler(e *core.RequestEvent, cfg oauthConfig) error {
 	}
 
 	redirectURI := query.Get("redirect_uri")
-	if !redirectURIAllowed(client.GetStringSlice("redirectUris"), redirectURI) {
+	if !redirectURIAllowed(clientRedirectURIs(e.App, client), redirectURI) {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_request",
 			`"redirect_uri" is missing or does not match a registered redirect URI`)
 	}

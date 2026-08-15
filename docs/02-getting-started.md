@@ -30,7 +30,7 @@ tags, and for how to check where the image came from before you run it.
 
 - `SUPERUSER_EMAIL`: The email for your admin account.
 - `SUPERUSER_PASSWORD`: The password for your admin account (min 8 chars).
-- `FAASBOX_ENCRYPTION_KEY`: A 64-character hex string used to encrypt secrets. **Keep this safe!**
+- `FAASBOX_ENCRYPTION_KEY`: A 64-character hex string. It encrypts the whole database at rest — your function code, its triggers, its execution history and its secrets. The server refuses to start without it, and an existing database cannot be read without the key it was written with. **Keep this safe, and keep a copy somewhere other than the machine that runs FaaSBox.**
 - `-v faasbox-data:/app/data/pb_data`: Mounts a volume to persist your data.
 
 ## 2. Local Development (without Docker)

@@ -39,7 +39,7 @@ func TestPublishDepsOutcome_InterruptionLeavesTheInstallOwed(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusPending {
 		t.Errorf("depsStatus = %q, want %q — the work is still owed", got, depsStatusPending)
 	}
-	if got := stored.GetString("depsError"); got != "" {
+	if got := functionDepsError(app, stored); got != "" {
 		t.Errorf("depsError = %q, want no diagnosis for an install nobody let finish", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestPersistLockfile_StoresWhatTheInstallResolved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := stored.GetString("bunLock"); got != lock {
+	if got := functionBunLock(app, stored); got != lock {
 		t.Errorf("bunLock = %q, want the resolved lockfile %q", got, lock)
 	}
 }
@@ -101,7 +101,7 @@ func TestPersistLockfile_NoLockfileLeavesTheRecordAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := stored.GetString("bunLock"); got != "sentinel" {
+	if got := functionBunLock(app, stored); got != "sentinel" {
 		t.Errorf("bunLock = %q, want the sentinel untouched", got)
 	}
 }
@@ -132,7 +132,7 @@ func TestPersistLockfile_TooLargeKeepsThePreviousValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := stored.GetString("bunLock"); got != previous {
+	if got := functionBunLock(app, stored); got != previous {
 		t.Errorf("bunLock = %q (%d bytes), want the previous value %q intact",
 			got, len(got), previous)
 	}
@@ -172,7 +172,7 @@ func TestSetBunLock_WritesOnlyItsOwnColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := stored.GetString("bunLock"); got != "resolved" {
+	if got := functionBunLock(app, stored); got != "resolved" {
 		t.Errorf("bunLock = %q, want %q", got, "resolved")
 	}
 	if got := stored.GetString("script"); got != "console.log('original')" {
@@ -181,7 +181,7 @@ func TestSetBunLock_WritesOnlyItsOwnColumn(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusInstalling {
 		t.Errorf("depsStatus = %q, want it untouched by the lockfile write", got)
 	}
-	if got := stored.GetString("depsError"); got != "sentinel" {
+	if got := functionDepsError(app, stored); got != "sentinel" {
 		t.Errorf("depsError = %q, want it untouched by the lockfile write", got)
 	}
 }
@@ -201,7 +201,7 @@ func TestScheduleDepsInstall_PersistsTheResolvedLockfile(t *testing.T) {
 	scheduleDepsInstall(context.Background(), app, record, functionsDir)
 	stored := waitDepsStatus(t, app, record.Id, depsStatusReady)
 
-	if got := strings.TrimSpace(stored.GetString("bunLock")); got != "resolved-by-bun" {
+	if got := strings.TrimSpace(functionBunLock(app, stored)); got != "resolved-by-bun" {
 		t.Errorf("bunLock = %q, want what the install resolved", got)
 	}
 }
@@ -226,7 +226,7 @@ func TestScheduleDepsInstall_FailedInstallLeavesTheLockfileAlone(t *testing.T) {
 	scheduleDepsInstall(context.Background(), app, record, functionsDir)
 	stored := waitDepsStatus(t, app, record.Id, depsStatusError)
 
-	if got := stored.GetString("bunLock"); got != previous {
+	if got := functionBunLock(app, stored); got != previous {
 		t.Errorf("bunLock = %q, want the previous value %q after a failed install", got, previous)
 	}
 }

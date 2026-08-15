@@ -125,9 +125,9 @@ func functionCronContracts(app core.App, functionId string) ([]cronContract, err
 	crons := make([]cronContract, 0, len(records))
 	for _, record := range records {
 		crons = append(crons, cronContract{
-			Name:     record.GetString("name"),
-			Schedule: record.GetString("schedule"),
-			Payload:  cronPayload(record),
+			Name:     cronName(app, record),
+			Schedule: cronSchedule(app, record),
+			Payload:  cronPayload(app, record),
 			Active:   record.GetBool("active"),
 			MaxQueue: int(record.GetFloat("maxQueue")),
 		})
@@ -141,8 +141,8 @@ func functionCronContracts(app core.App, functionId string) ([]cronContract, err
 // cronPayload reads the stored payload back as raw JSON. An unset field reads as
 // the empty object rather than as null, which is what runFunction feeds a
 // trigger that carries none.
-func cronPayload(record *core.Record) json.RawMessage {
-	payload := record.GetString("payload")
+func cronPayload(app core.App, record *core.Record) json.RawMessage {
+	payload := cronPayloadText(app, record)
 	if payload == "" || payload == "null" {
 		return json.RawMessage("{}")
 	}

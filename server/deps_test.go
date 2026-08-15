@@ -819,7 +819,7 @@ func TestScheduleDepsInstall_ReadyWithoutBlockingTheSave(t *testing.T) {
 	waitDepsStatus(t, app, record.Id, depsStatusInstalling)
 	done := waitDepsStatus(t, app, record.Id, depsStatusReady)
 
-	if got := done.GetString("depsError"); got != "" {
+	if got := functionDepsError(app, done); got != "" {
 		t.Errorf("depsError = %q, want empty on success", got)
 	}
 	if got := runs(); got != 1 {
@@ -842,7 +842,7 @@ func TestScheduleDepsInstall_ErrorCarriesInstallOutput(t *testing.T) {
 	scheduleDepsInstall(context.Background(), app, record, functionsDir)
 	failed := waitDepsStatus(t, app, record.Id, depsStatusError)
 
-	if got := failed.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+	if got := functionDepsError(app, failed); !strings.Contains(got, "nope@1.0.0 not found") {
 		t.Errorf("depsError = %q, want the bun install output", got)
 	}
 }
@@ -864,10 +864,15 @@ func TestScheduleDepsInstall_BoundsPersistedError(t *testing.T) {
 	scheduleDepsInstall(context.Background(), app, record, functionsDir)
 	failed := waitDepsStatus(t, app, record.Id, depsStatusError)
 
-	stored := failed.GetString("depsError")
+	stored := functionDepsError(app, failed)
 	if len(stored) > maxDepsError+logMarkerSlack {
-		t.Errorf("depsError is %d bytes, beyond the %d declared for the field",
+		t.Errorf("depsError is %d bytes of plaintext, beyond the %d the truncation allows",
 			len(stored), maxDepsError+logMarkerSlack)
+	}
+	// And the sealed value, which is what the column actually measures.
+	if got := len(failed.GetString("depsError")); got > cipherMax(maxDepsError+logMarkerSlack) {
+		t.Errorf("the sealed depsError is %d bytes, beyond the %d declared for the field",
+			got, cipherMax(maxDepsError+logMarkerSlack))
 	}
 	if !strings.Contains(stored, "truncated") {
 		t.Errorf("depsError = %q, want a truncation marker", stored)
@@ -901,7 +906,7 @@ func TestScheduleDepsInstall_ShutdownLeavesInstallOwed(t *testing.T) {
 	// The install was interrupted, not refused: the state must say it is still owed
 	// rather than accuse the dependencies of an error that never happened.
 	stored := waitDepsStatus(t, app, record.Id, depsStatusPending)
-	if got := stored.GetString("depsError"); got != "" {
+	if got := functionDepsError(app, stored); got != "" {
 		t.Errorf("depsError = %q, want empty after an interrupted install", got)
 	}
 }
@@ -1049,7 +1054,7 @@ func TestScheduleDepsInstall_SaveForeignToTheDepsPublishesNothing(t *testing.T) 
 	// A sentinel in depsError, because an empty field cannot tell an overwrite from
 	// an untouched value.
 	setDepsState(app, record.Id, "settled-deps", depsStatusReady, "sentinel")
-	lockBefore := installed.GetString("bunLock")
+	lockBefore := functionBunLock(app, installed)
 	markerBefore := markerModTime(t, filepath.Join(functionsDir, record.Id))
 
 	// Registered now: the broadcasts of the install above targeted the client set as
@@ -1071,10 +1076,10 @@ func TestScheduleDepsInstall_SaveForeignToTheDepsPublishesNothing(t *testing.T) 
 	if got := stored.GetString("depsStatus"); got != depsStatusReady {
 		t.Errorf("depsStatus = %q, want it left at %q", got, depsStatusReady)
 	}
-	if got := stored.GetString("depsError"); got != "sentinel" {
+	if got := functionDepsError(app, stored); got != "sentinel" {
 		t.Errorf("depsError = %q, want the sentinel left untouched", got)
 	}
-	if got := stored.GetString("bunLock"); got != lockBefore {
+	if got := functionBunLock(app, stored); got != lockBefore {
 		t.Errorf("bunLock was rewritten (%q), want the stored lockfile left alone", got)
 	}
 	if got := markerModTime(t, filepath.Join(functionsDir, record.Id)); !got.Equal(markerBefore) {
@@ -1230,7 +1235,7 @@ func TestSetDepsState_WritesWithoutFiringTheSaveHooks(t *testing.T) {
 		if got := stored.GetString("depsStatus"); got != tc.status {
 			t.Errorf("%s: depsStatus = %q, want %q", tc.label, got, tc.status)
 		}
-		if got := stored.GetString("depsError"); got != tc.errMsg {
+		if got := functionDepsError(app, stored); got != tc.errMsg {
 			t.Errorf("%s: depsError = %q, want %q", tc.label, got, tc.errMsg)
 		}
 		// The update targets the two dependency columns and nothing else.

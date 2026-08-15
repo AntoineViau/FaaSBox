@@ -79,6 +79,24 @@ func ensureAPIKeysCollection(app core.App) error {
 	return app.Save(col)
 }
 
+// apiKeyName is the only way to read the label of a key record, which is
+// encrypted at rest along with keyPrefix. Nothing in Go reads keyPrefix — it
+// exists to identify a key on screen, and the enrichment opens it for the
+// response — so it has no accessor of its own.
+//
+// **keyHash is encrypted by neither, and never will be.** A hash does not come
+// back where a ciphertext would: sealing it would reopen a path by which the
+// database and the master key together hand out a usable credential. The
+// validation of a presented key keeps going through hashAPIKey and a lookup on
+// that column, which is also what lets it stay indexed.
+//
+// The in-memory record an OAuth token stands for carries a plaintext name and
+// was never sealed; it reads through here like any other, a value without the
+// version marker coming back untouched.
+func apiKeyName(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "name")
+}
+
 // hashAPIKey returns the hex-encoded SHA-256 of the raw key.
 func hashAPIKey(rawKey string) string {
 	h := sha256.Sum256([]byte(rawKey))
@@ -160,6 +178,10 @@ func createKeyHandler(e *core.RequestEvent) error {
 		})
 	}
 
+	// Answered from what the caller sent and from what was just minted, never
+	// re-read off the record: the label and the prefix are sealed the moment they
+	// are stored, and reading them back would hand the caller base64 instead of
+	// its own key. The raw value carries its prefix in its first characters.
 	return e.JSON(http.StatusOK, map[string]string{
 		"key":  rawKey,
 		"name": body.Name,
@@ -407,7 +429,7 @@ func requireAPIKey(app core.App, oauth oauthConfig) *hook.Handler[*core.RequestE
 				allowed, err := readKeyScope(record)
 				if err != nil {
 					app.Logger().Error("faasbox: unreadable allowedFunctions, denying access",
-						"keyName", record.GetString("name"), "error", err)
+						"keyName", apiKeyName(app, record), "error", err)
 					return e.JSON(http.StatusForbidden, map[string]string{
 						"error": "API key scope cannot be read",
 					})

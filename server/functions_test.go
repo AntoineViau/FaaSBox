@@ -28,6 +28,12 @@ func newDetachedFunction(id, name string) *core.Record {
 // That is the id now, not the name: a name is free to be anything the editor
 // accepts, and it no longer reaches the filesystem.
 func TestSyncRecordToDisk_Validation(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
 	tmpDir, err := os.MkdirTemp("", "faasbox-test-*")
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +59,7 @@ func TestSyncRecordToDisk_Validation(t *testing.T) {
 			record := newDetachedFunction(tt.functionId, "my-function")
 			record.Set("script", "console.log('test')")
 
-			err := syncRecordToDisk(record, tmpDir)
+			err := syncRecordToDisk(app, record, tmpDir)
 			if err != nil {
 				t.Errorf("syncRecordToDisk() unexpected error: %v", err)
 			}
@@ -160,7 +166,7 @@ func TestSyncRecordToDisk_RenameLeavesTheDirectoryAlone(t *testing.T) {
 	if err := app.Save(record); err != nil {
 		t.Fatal(err)
 	}
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
 
@@ -248,8 +254,10 @@ func TestEnsureFunctionsCollection_BunLockField(t *testing.T) {
 		if !ok {
 			t.Fatalf("bunLock is a %T, want a *core.TextField", field)
 		}
-		if tf.Max != maxLockfileSize {
-			t.Errorf("bunLock Max = %d, want the declared cap %d", tf.Max, maxLockfileSize)
+		// The column stores the sealed lockfile, so what it declares is the
+		// cap plus what the encryption adds around it.
+		if want := cipherMax(maxLockfileSize); tf.Max != want {
+			t.Errorf("bunLock Max = %d, want the declared cap %d", tf.Max, want)
 		}
 	}
 
@@ -297,9 +305,11 @@ func TestEnsureFunctionsCollection_BunLockField(t *testing.T) {
 // environment. Undeclared, they take PocketBase's 5000-rune default, which turns
 // away an ordinary function and a single long private key.
 func TestEnsureFunctionsCollection_SourceSize(t *testing.T) {
+	// The two source columns are encrypted at rest, so what they declare is the
+	// size of the sealed value; env has measured its own ciphertext all along.
 	wanted := map[string]int{
-		"script":      maxSourceSize,
-		"packageJson": maxSourceSize,
+		"script":      cipherMax(maxSourceSize),
+		"packageJson": cipherMax(maxSourceSize),
 		"env":         maxEnvSize,
 	}
 	assertFields := func(t *testing.T, app core.App) {
@@ -397,6 +407,13 @@ func TestEnsureFunctionsCollection_SourceSize(t *testing.T) {
 func bindFunctionNameHook(app core.App) {
 	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
 	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(validateFunctionNameHook)
+}
+
+// bindFunctionSizeHook does the same for the source cap, which is a hook now
+// that the column measures the sealed value rather than the plaintext.
+func bindFunctionSizeHook(app core.App) {
+	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(validateFunctionSizeHook)
+	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(validateFunctionSizeHook)
 }
 
 // newFunctionApp is a test app carrying the functions collection, with the name
@@ -611,13 +628,19 @@ func TestValidateFunctionNameHook_OverHTTP(t *testing.T) {
 // written back like index.ts and package.json, and cleared when the record no
 // longer carries one.
 func TestSyncRecordToDisk_Lockfile(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
 	functionsDir := t.TempDir()
 	record := newDetachedFunction("k9m2xq7p4wz1n3v", "pinned")
 	record.Set("script", "console.log('hi')")
 	record.Set("packageJson", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 	record.Set("bunLock", "resolved")
 
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
 	lockPath := filepath.Join(functionsDir, record.Id, "bun.lock")
@@ -632,7 +655,7 @@ func TestSyncRecordToDisk_Lockfile(t *testing.T) {
 	// The dependencies were dropped: a leftover lockfile would pin what no longer
 	// exists, and would still count towards the install hash.
 	record.Set("bunLock", "")
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
@@ -645,13 +668,19 @@ func TestSyncRecordToDisk_Lockfile(t *testing.T) {
 // directory, which still carries a package.json, a lockfile and a node_modules that
 // clearing a script has nothing to do with.
 func TestSyncRecordToDisk_ClearedScript(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
 	functionsDir := t.TempDir()
 	record := newDetachedFunction("k9m2xq7p4wz1n3v", "cleared")
 	record.Set("script", "console.log('hi')")
 	record.Set("packageJson", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 	record.Set("bunLock", "resolved")
 
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(functionsDir, record.Id)
@@ -667,7 +696,7 @@ func TestSyncRecordToDisk_ClearedScript(t *testing.T) {
 	}
 
 	record.Set("script", "")
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
@@ -682,7 +711,7 @@ func TestSyncRecordToDisk_ClearedScript(t *testing.T) {
 
 	// Writing a script again puts the function back where it was.
 	record.Set("script", "console.log('back')")
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(scriptPath)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"os"
@@ -18,6 +19,34 @@ import (
 
 // Pre-signed superuser JWT from PocketBase's default test data.
 const superuserToken = "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY"
+
+// TestMain gives the whole binary the encryption subkey a running server always
+// has: initEncryptionKey refuses to start without one, so a test suite without
+// one would exercise a configuration that cannot exist.
+//
+// What it does *not* do is bind the hooks. A test app starts with none, so a
+// record saved through app.Save stays in the clear unless the test asked for the
+// hooks (setupFieldEncryption) — which is what keeps the fixtures readable while
+// the writers that seal by hand, recordExecution and the two dependency columns,
+// are exercised for real.
+func TestMain(m *testing.M) {
+	key, err := deriveKey(bytes.Repeat([]byte{0x2a}, 32), hkdfInfoCipher)
+	if err != nil {
+		panic(err)
+	}
+	cipherKey = key
+	os.Exit(m.Run())
+}
+
+// setupFieldEncryption binds on a test app the encryption hooks main.go binds,
+// in the same order — the validation of a cron expression first, so it never
+// weighs a sealed value.
+func setupFieldEncryption(t testing.TB, app core.App) {
+	t.Helper()
+	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+	registerFieldEncryption(app)
+}
 
 // setupFaaSCollections creates the four FaaSBox collections on the test app, in
 // the order OnServe uses: functions first, since the cron jobs and the logs
@@ -173,7 +202,7 @@ func saveTestFunctionAs(t testing.TB, app core.App, functionsDir, id, name, scri
 		t.Fatalf("failed to save function %q: %v", name, err)
 	}
 
-	if err := syncRecordToDisk(record, functionsDir); err != nil {
+	if err := syncRecordToDisk(app, record, functionsDir); err != nil {
 		t.Fatalf("failed to sync function %q to disk: %v", name, err)
 	}
 	return record
@@ -239,14 +268,30 @@ func serverLogMessages(t testing.TB, app core.App) []string {
 }
 
 // countExecutionLogs returns how many faasbox_logs entries a function carries.
+//
+// The name is compared after decryption rather than in the query: the column is
+// encrypted at rest, and a nonce makes every writing of the same name a
+// different value — no SQL predicate can match it.
 func countExecutionLogs(t testing.TB, app core.App, functionName string) int {
 	t.Helper()
-	records, err := app.FindAllRecords(faasboxLogsCollection,
-		dbx.HashExp{"functionName": functionName})
+	return len(executionLogsOf(t, app, functionName))
+}
+
+// executionLogsOf returns the faasbox_logs entries whose stored name is this one.
+func executionLogsOf(t testing.TB, app core.App, functionName string) []*core.Record {
+	t.Helper()
+	records, err := app.FindAllRecords(faasboxLogsCollection)
 	if err != nil {
 		t.Fatalf("failed to read the execution logs of %q: %v", functionName, err)
 	}
-	return len(records)
+
+	matching := make([]*core.Record, 0, len(records))
+	for _, record := range records {
+		if decryptedText(app, record, "functionName") == functionName {
+			matching = append(matching, record)
+		}
+	}
+	return matching
 }
 
 // registerFaaSRoutes registers the FaaS HTTP routes on the test server's router,

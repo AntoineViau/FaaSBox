@@ -431,7 +431,7 @@ func TestSyncAllCronJobs_SurvivesARename(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("faasbox_logs holds %d entries, want the one the run wrote", len(entries))
 	}
-	if got := entries[0].GetString("functionName"); got != "after" {
+	if got := decryptedText(app, entries[0], "functionName"); got != "after" {
 		t.Errorf("functionName = %q, want the name the function carried when it ran", got)
 	}
 }
@@ -486,7 +486,7 @@ func TestRunFunction_PublishesDependencyState(t *testing.T) {
 	if got := stored.GetString("depsStatus"); got != depsStatusError {
 		t.Errorf("depsStatus = %q, want %q", got, depsStatusError)
 	}
-	if got := stored.GetString("depsError"); !strings.Contains(got, "nope@1.0.0 not found") {
+	if got := functionDepsError(app, stored); !strings.Contains(got, "nope@1.0.0 not found") {
 		t.Errorf("depsError = %q, want the install output", got)
 	}
 }
@@ -538,7 +538,7 @@ func TestRunFunction_SafetyNetPersistsLockfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(stored.GetString("bunLock")); got != "resolved-by-cron" {
+	if got := strings.TrimSpace(functionBunLock(app, stored)); got != "resolved-by-cron" {
 		t.Errorf("bunLock = %q, want what the safety net resolved", got)
 	}
 }
