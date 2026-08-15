@@ -81,6 +81,12 @@ You can also view logs in the **PocketBase Admin UI** under the `faasbox_logs` c
 
 Reaching the collection this way needs a superuser token, which is full power over the instance. Prefer the endpoint above for anything scripted.
 
+### Not the `Logs` Section
+
+The admin UI has a `Logs` entry of its own, and it is **not** this. That one is PocketBase's internal record of HTTP requests — one line per call, with its URL, status, duration, IP and user agent — and it knows nothing about what your functions printed. You will see your `/invoke/{name}` calls listed there, but their output is only in `faasbox_logs`.
+
+Two things follow. It lives in a separate file, `pb_data/auxiliary.db`, so [Litestream replication](10-deployment.md#3-litestream-replication-optional) does not carry it and a restored instance starts with it empty. And unlike your execution history it is not encrypted, so it holds those `/invoke/{name}` URLs — function names included — as plain text on the instance disk. Its retention is set in that same `Logs` view, under the `Logs settings` button — five days by default, `0` to stop recording requests entirely. FaaSBox never changes it, and no environment variable does either.
+
 ## Debugging with Stderr
 
 When writing your functions, use `console.error()` for any information that is helpful for debugging but shouldn't be part of the final result. 

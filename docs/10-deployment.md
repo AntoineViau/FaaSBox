@@ -296,6 +296,13 @@ Together those two facts are what make the container disposable: the database
 comes back from S3, and everything else comes back from the database. The
 configuration lives in `infra/production/litestream.yml`.
 
+**One file is deliberately left out.** Only `data.db` is replicated — your
+functions, triggers, secrets, keys and execution history. PocketBase's own
+request log lives beside it in `pb_data/auxiliary.db` and is not mirrored, so a
+restored instance comes up with an empty `Logs` view in the admin UI. Nothing
+depends on it, but if you are chasing an incident after a redeploy, the HTTP
+history of the container you replaced is gone.
+
 ## 4. Manual deployment (Linux server)
 
 If you would rather not use Docker, you are providing by hand what section 1

@@ -161,6 +161,8 @@ The fingerprint is a keyed one, not a plain hash, and that distinction is the wh
 
 Two practical consequences: there is **no full-text search** over function code or logs, and none can be added without reopening this decision. And the editor reads these values in the clear because the server decrypts them for its responses — a database opened directly with an SQLite client shows base64.
 
+**One file is not covered: the request log.** PocketBase keeps its own log of HTTP requests in a second SQLite file beside the database, `auxiliary.db` — the one behind the `Logs` section of the admin UI, which is not your execution history. It is neither encrypted nor replicated, so it never travels with your backup. On the machine that runs FaaSBox, though, it holds each request line as it was received, `/invoke/{name}` URLs included, which names the function that the database itself keeps encrypted. Encryption at rest protects the copy that **leaves** the machine; it does not protect the disk of a running instance, where `FAASBOX_ENCRYPTION_KEY` sits in the process environment anyway. If that matters to you, shorten its retention in the admin UI: open `Logs`, then the `Logs settings` button, and lower `Max days retention` — it defaults to five days, and `0` turns the request log off altogether.
+
 ---
 
 ## Security Layers
