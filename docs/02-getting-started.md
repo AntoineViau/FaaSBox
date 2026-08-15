@@ -74,7 +74,6 @@ If you started the server without superuser credentials, open `http://localhost:
 - **Look at the disk.** The **Files** tab browses the function's own folder as it exists on the server — `index.ts`, `package.json`, `bun.lock`, `node_modules` and whatever else is in there. Read-only. See [03 - Writing Functions](03-writing-functions.md).
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
 - **Plug in an AI agent.** The **AI MCP** page, just under **API keys**, carries the ready-made snippet for each client and lists the agents you have authorized, with a **Revoke** button for each. See [13 - AI Agents](13-ai-agents.md).
-- **Share what you are looking at.** The address bar names the open function and the open tab — `/editor/<id>/tab/script` — so a link can be bookmarked or sent to someone, a reload comes back exactly where you left off, and the browser Back button walks back through the functions and tabs you visited. The link carries the function's id rather than its name, so it survives a rename.
 - **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
 
 #### Keyboard shortcuts

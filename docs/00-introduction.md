@@ -22,7 +22,7 @@ FaaSBox is perfect for:
 
 1.  **Hashed API Keys**: Secure authentication using industry-standard hashing.
 2.  **Cron Scheduling**: Built-in scheduler for periodic tasks.
-3.  **Encrypted Secrets**: Store sensitive API keys and tokens encrypted at rest (AES-256-GCM).
+3.  **Encrypted at Rest**: Secrets, function code, triggers and execution output are all encrypted in the database (AES-256-GCM), so the file you back up carries ciphertext rather than your work.
 4.  **Integrated Editor**: A modern Angular-based web editor to write and test functions directly.
 5.  **Execution Logs**: Detailed history of every function call, including duration, status, and output.
 6.  **Automatic Dependencies**: Just add a `package.json`, and FaaSBox handles the `bun install` for you.

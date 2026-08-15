@@ -24,10 +24,10 @@ graph TD
         Bun -->|Log| Error[Stderr]
     end
 
-    subgraph "Persistence (SQLite)"
+    subgraph "Persistence (SQLite, encrypted at rest)"
         PB --- Logs[(Execution Logs)]
         PB --- Keys[(Hashed API Keys)]
-        PB --- Config[(Encrypted Secrets)]
+        PB --- Config[(Secrets)]
         PB --- Functions[(Function Code Sync)]
     end
 ```

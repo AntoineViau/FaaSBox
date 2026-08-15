@@ -91,7 +91,7 @@
   "storage": {
     "eyebrow": "Storage",
     "title": "The database is a single file.",
-    "lead": "SQLite. Functions, schedules, secrets, keys and logs all live in it. No database server to provision, and backing up the instance means copying one file.",
+    "lead": "SQLite. Functions, schedules, secrets, keys and logs all live in it, encrypted column by column. No database server to provision, and backing up the instance means copying one file.",
     "boxLocal": "Container",
     "boxLocalNote": "replaced on every deploy",
     "boxFile": "data.db",
@@ -104,7 +104,7 @@
     "midLabel": "Litestream · optional",
     "noteTitle": "Two reasons to turn it on",
     "noteDocker": "<strong>The disk underneath is not permanent.</strong> A container is replaced on every deploy and takes its filesystem with it. Litestream puts the file back before the server starts, so the container stays disposable and your data doesn't.",
-    "noteBackup": "<strong>Or simply as a backup.</strong> Even on a server whose disk does survive, the same mirror is an off-site copy that is always current — no dump to schedule, no window during which the last hour is missing.",
+    "noteBackup": "<strong>Or simply as a backup.</strong> Even on a server whose disk does survive, the same mirror is an off-site copy that is always current — no dump to schedule, no window during which the last hour is missing. What leaves the machine is ciphertext: keep the key elsewhere and a copy of that bucket opens nothing.",
     "noteOff": "Leave it off and nothing else changes: FaaSBox runs from the local file alone, which is what you want on your own machine.",
     "noteDeps": "<strong>Your dependencies come back on their own, either way.</strong> <code>node_modules</code> is not in the file — it is a build artifact, and a heavy one. What is stored is the lockfile, so a fresh container reinstalls exactly the versions the old one ran, before the first call arrives rather than during it."
   },
@@ -114,15 +114,15 @@
     "cards": [
       {
         "title": "An editor, not a pipeline",
-        "body": "Five tabs per function: script, package.json, triggers, secrets, and the files its folder holds on disk. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it. Every function and every tab has its own URL — bookmark one, send it to someone, and the back button behaves."
+        "body": "Five tabs per function: script, package.json, triggers, secrets, and the files its folder holds on disk. <strong>Run</strong> executes what the server holds; <strong>Save and run</strong> appears only when your screen differs from it."
       },
       {
         "title": "Two triggers, one engine",
         "body": "An HTTP call and a cron tick take the same path: one Bun subprocess, the same environment, the same ceilings, the same log line. What differs is what happens when the box is busy — HTTP refuses with <strong>429</strong>, a cron run waits its turn."
       },
       {
-        "title": "Secrets encrypted at rest",
-        "body": "AES-256-GCM. Edit them as key/value pairs in the Environment tab, masked until you reveal them, and they land in the subprocess environment. Saving replaces the whole set — which is why you can see it."
+        "title": "Encrypted at rest, not just the secrets",
+        "body": "AES-256-GCM, column by column: your code, its package.json and lockfile, its triggers, the output of every run, and the secrets you edit as key/value pairs in the Environment tab. One key does all of it, <code>FAASBOX_ENCRYPTION_KEY</code>, and the server will not start without it. The two columns SQL has to look up are encrypted too, and searched through a keyed fingerprint beside them."
       },
       {
         "title": "Keys you can scope",

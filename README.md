@@ -64,12 +64,12 @@ Or step by step:
 # Build the Angular editor
 cd ui && npm install && npm run build && cd ..
 
-# Start the server (without a key, secrets are disabled — the server only warns)
+# Start the server (the key is required — without one it refuses to start)
 export FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32)
 cd server && go run . serve --http=127.0.0.1:8080 --dir=../data/pb_data
 ```
 
-A key that changes between two runs leaves the secrets written by the previous one unreadable: the editor's **Environment** tab then answers `500`, on purpose, rather than showing an empty set you would overwrite.
+A key that changes between two runs leaves everything written under the previous one unreadable — the code of your functions as much as their secrets. That key is the instance: back it up somewhere other than the machine, and apart from the database it opens.
 
 Then open `http://localhost:8080/_/` to create your superuser account on first launch.
 
@@ -124,7 +124,8 @@ The other way in is an API key carrying **Can manage functions**, sent in an `X-
 ## 🔒 Security Highlights
 
 - **Hashed API Keys**: Only SHA-256 hashes of API keys are stored.
-- **Encrypted Secrets**: Custom env vars are encrypted at rest using AES-256-GCM.
+- **Encrypted at Rest**: AES-256-GCM on what you entrust to the database, column by column — function code, `package.json` and lockfile, triggers, execution output, secrets, key labels. The file Litestream replicates carries ciphertext.
+- **Required Key**: `FAASBOX_ENCRYPTION_KEY` is mandatory; the server refuses to start without it, and keeping it out of your backups is what keeps a stolen copy closed.
 - **Isolated Runtimes**: Functions run in ephemeral subprocesses with minimal environments.
 - **Non-Root Execution**: The Docker container runs as a dedicated `faasbox` user.
 

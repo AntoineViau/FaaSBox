@@ -91,7 +91,7 @@
   "storage": {
     "eyebrow": "Stockage",
     "title": "La base de données est un simple fichier.",
-    "lead": "Du SQLite. Fonctions, planifications, secrets, clés et logs y vivent tous. Aucun serveur de base à provisionner, et sauvegarder l'instance revient à copier un fichier.",
+    "lead": "Du SQLite. Fonctions, planifications, secrets, clés et logs y vivent tous, chiffrés colonne par colonne. Aucun serveur de base à provisionner, et sauvegarder l'instance revient à copier un fichier.",
     "boxLocal": "Conteneur",
     "boxLocalNote": "remplacé à chaque déploiement",
     "boxFile": "data.db",
@@ -104,7 +104,7 @@
     "midLabel": "Litestream · optionnel",
     "noteTitle": "Deux raisons de l'activer",
     "noteDocker": "<strong>Le disque en dessous n'est pas permanent.</strong> Un conteneur est remplacé à chaque déploiement et emporte son système de fichiers. Litestream remet le fichier en place avant que le serveur ne démarre : le conteneur reste jetable, vos données non.",
-    "noteBackup": "<strong>Ou simplement comme sauvegarde.</strong> Même sur un serveur dont le disque survit, cette même réplication est une copie hors site toujours à jour — aucun dump à planifier, aucune fenêtre pendant laquelle la dernière heure manque.",
+    "noteBackup": "<strong>Ou simplement comme sauvegarde.</strong> Même sur un serveur dont le disque survit, cette même réplication est une copie hors site toujours à jour — aucun dump à planifier, aucune fenêtre pendant laquelle la dernière heure manque. Ce qui quitte la machine est chiffré : gardez la clé ailleurs et une copie de ce bucket n'ouvre rien.",
     "noteOff": "Laissez-le désactivé et rien d'autre ne change : FaaSBox tourne sur le seul fichier local, ce qu'on veut sur sa propre machine.",
     "noteDeps": "<strong>Vos dépendances reviennent toutes seules, dans les deux cas.</strong> <code>node_modules</code> n'est pas dans le fichier — c'est un artefact de build, et un gros. Ce qui est stocké, c'est le lockfile : un conteneur neuf réinstalle exactement les versions que l'ancien faisait tourner, avant le premier appel plutôt que pendant."
   },
@@ -114,15 +114,15 @@
     "cards": [
       {
         "title": "Un éditeur, pas un pipeline",
-        "body": "Cinq onglets par fonction : script, package.json, triggers, secrets, et les fichiers que son dossier porte sur le disque. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère. Chaque fonction et chaque onglet a son URL — mettez-la en favori, envoyez-la à quelqu'un, et le bouton Retour se comporte comme il faut."
+        "body": "Cinq onglets par fonction : script, package.json, triggers, secrets, et les fichiers que son dossier porte sur le disque. <strong>Run</strong> exécute ce que le serveur détient ; <strong>Save and run</strong> n'apparaît que lorsque votre écran en diffère."
       },
       {
         "title": "Deux déclencheurs, un seul moteur",
         "body": "Un appel HTTP et un tic cron empruntent le même chemin : un subprocess Bun, le même environnement, les mêmes plafonds, la même ligne de log. Ce qui diffère, c'est ce qui se passe quand la boîte est occupée — HTTP refuse avec un <strong>429</strong>, une exécution cron attend son tour."
       },
       {
-        "title": "Des secrets chiffrés au repos",
-        "body": "AES-256-GCM. Éditez-les en paires clé/valeur dans l'onglet Environment, masquées jusqu'à ce que vous les révéliez, et injectées dans l'environnement du subprocess. La sauvegarde remplace l'ensemble — raison pour laquelle vous le voyez."
+        "title": "Chiffré au repos, et pas que les secrets",
+        "body": "AES-256-GCM, colonne par colonne : votre code, son package.json et son lockfile, ses déclencheurs, la sortie de chaque exécution, et les secrets que vous éditez en paires clé/valeur dans l'onglet Environment. Une seule clé pour tout, <code>FAASBOX_ENCRYPTION_KEY</code>, et le serveur ne démarre pas sans elle. Les deux colonnes que le SQL doit chercher sont chiffrées elles aussi, et retrouvées par une empreinte à clé posée à côté."
       },
       {
         "title": "Des clés dont vous fixez la portée",

@@ -29,7 +29,7 @@ FaaSBox is a **personal, single-user** platform. It is meant to be run by the sa
 
 - Bypassing API key authentication, or a key's scope, expiry, or revocation.
 - Escaping the intended file layout — path traversal, reading or writing outside a function's directory.
-- Disclosure of stored secrets: encrypted environment variables, API key material, or the encryption key itself, through a response, a log record, or the editor.
+- Disclosure of what the database keeps encrypted — environment variables, function code, triggers, execution output — or of API key material or the encryption key itself, through a response, a log record, or the editor.
 - Code execution reachable without a valid API key or a superuser session.
 - Any bypass of the execution bounds (timeouts, body and output caps) that lets a request escape them entirely.
 

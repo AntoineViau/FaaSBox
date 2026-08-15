@@ -50,6 +50,8 @@ Sensitive data (like database URLs or third-party API keys) are stored in the `f
 3.  The plain text is discarded.
 4.  At execution time, the server decrypts the secret and injects it into the function's environment.
 
+Everything else the database holds of your work is encrypted the same way, under the same key: the code, the `package.json` and lockfile, the triggers and the execution logs. See [What Is Encrypted at Rest](06-api-keys-and-security.md#what-is-encrypted-at-rest) for the full inventory, and for what stays in the clear.
+
 ## Data Persistence
 
 The **database is the single source of truth** for functions. All function code and metadata live in the `faasbox_functions` collection.
