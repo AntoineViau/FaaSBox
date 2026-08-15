@@ -45,7 +45,7 @@ func installMissingDeps(ctx context.Context, app core.App, functionsDir string) 
 		if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 			continue
 		}
-		name := record.GetString("name")
+		name := functionName(app, record)
 		if functionPackageJson(app, record) == "" {
 			continue
 		}

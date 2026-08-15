@@ -74,7 +74,7 @@ func TestCreateFunctionOperation(t *testing.T) {
 		if !errors.Is(err, errScopeRestricted) {
 			t.Fatalf("createFunction() error = %v, want errScopeRestricted", err)
 		}
-		if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "greet"); err == nil {
+		if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("greet")); err == nil {
 			t.Error("the refused function was written anyway")
 		}
 	})
@@ -149,7 +149,7 @@ func TestReplaceFunctionOperation(t *testing.T) {
 		if !errors.Is(err, errNameNotTheTarget) {
 			t.Fatalf("replaceFunction() error = %v, want errNameNotTheTarget", err)
 		}
-		if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "echo"); err != nil {
+		if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("echo")); err != nil {
 			t.Error("the function was renamed despite the refusal")
 		}
 	})
@@ -321,7 +321,7 @@ func TestOperationsRefuseAFunctionOutOfScope(t *testing.T) {
 	}
 
 	// Nothing was written, run or read along the way.
-	if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "echo"); err != nil {
+	if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("echo")); err != nil {
 		t.Error("the function was deleted despite the refusals")
 	}
 	if got := countExecutionLogs(t, app, "echo"); got != 0 {

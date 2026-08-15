@@ -28,6 +28,7 @@ func oauthApp(t testing.TB) *tests.TestApp {
 	}
 	t.Cleanup(app.Cleanup)
 
+	setupBlindIndexes(app)
 	if err := ensureOAuthClientsCollection(app); err != nil {
 		t.Fatalf("failed to create the OAuth clients collection: %v", err)
 	}

@@ -597,7 +597,7 @@ func TestValidateFunctionNameHook_OverHTTP(t *testing.T) {
 				`letters, digits and hyphens only`,
 			},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "a_b"); err == nil {
+				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("a_b")); err == nil {
 					t.Error("record was created despite the refused name")
 				}
 			},

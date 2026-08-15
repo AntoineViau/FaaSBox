@@ -110,7 +110,7 @@ func TestCreateFunctionHandler(t *testing.T) {
 			},
 			NotExpectedContent: []string{`"env"`, `"bunLock"`, `"plainEnv"`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "greet"); err != nil {
+				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("greet")); err != nil {
 					t.Fatalf("the function was not persisted: %v", err)
 				}
 			},
@@ -130,7 +130,7 @@ func TestCreateFunctionHandler(t *testing.T) {
 			ExpectedStatus:  201,
 			ExpectedContent: []string{`"name":"nightly"`, `"schedule":"0 3 * * *"`, `"maxQueue":2`, `"active":true`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				fn, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "nightly-job")
+				fn, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("nightly-job"))
 				if err != nil {
 					t.Fatalf("the function was not persisted: %v", err)
 				}
@@ -397,7 +397,7 @@ func TestReplaceFunctionHandler(t *testing.T) {
 			ExpectedStatus:  404,
 			ExpectedContent: []string{`Function not found`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "nope"); err == nil {
+				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("nope")); err == nil {
 					t.Error("PUT created a function instead of refusing")
 				}
 			},
@@ -416,7 +416,7 @@ func TestReplaceFunctionHandler(t *testing.T) {
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`never renames`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "echo"); err != nil {
+				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("echo")); err != nil {
 					t.Error("the function was renamed despite the refusal")
 				}
 			},
@@ -805,7 +805,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
 				// Left behind, the function would turn the corrected retry into a
 				// 409 — the caller reads 400 and cannot recover.
-				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", "greet"); err == nil {
+				if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex("greet")); err == nil {
 					t.Error("the refused create left a function behind")
 				}
 			},

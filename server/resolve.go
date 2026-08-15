@@ -40,12 +40,17 @@ func resolveFunction(app core.App, idOrName string) (*core.Record, error) {
 		return nil, &errNotFound{Name: idOrName}
 	}
 
-	// Two rows at most: id is the primary key and name carries a unique index.
+	// Two rows at most: id is the primary key and nameHash carries a unique index.
+	//
+	// The name itself is sealed and no predicate can match it — a nonce drawn at
+	// every write makes two spellings of the same name two different values. What
+	// is queried is its fingerprint, taken on the segment exactly as it arrived:
+	// the comparison is as faithful as it was, capitals included.
 	records, err := app.FindRecordsByFilter(
 		faasboxFunctionsCollection,
-		"id = {:v} || name = {:v}",
+		"id = {:id} || nameHash = {:hash}",
 		"", 2, 0,
-		dbx.Params{"v": idOrName},
+		dbx.Params{"id": idOrName, "hash": blindIndex(idOrName)},
 	)
 	if err != nil {
 		return nil, err

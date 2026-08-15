@@ -29,12 +29,19 @@ export class FunctionsService {
    *
    * The cost of enumerating is that a field added later stays absent here until
    * someone adds it. PocketBase offers no exclusion, and the alternative is
-   * paying for the lockfiles.
+   * paying for the lockfiles. `nameHash` is deliberately not asked for: it is a
+   * fingerprint the server looks rows up by, and nothing on screen has any use
+   * for it.
+   *
+   * **No sort is asked for.** The name is encrypted at rest, so a SQL sort would
+   * order ciphertext — which is to say noise, and no choice of cipher fixes
+   * that. The order is settled by each caller once the list is in hand, on the
+   * plaintext the server decrypted for the response. The list is capped and
+   * fully loaded, so it costs nothing.
    */
   list() {
     return this.http.get<FaasboxFunctionListResponse>(BASE_URL, {
       params: {
-        sort: 'name',
         perPage: '200',
         fields: 'id,name,script,packageJson,depsStatus,depsError,created,updated',
       },

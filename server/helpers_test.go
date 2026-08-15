@@ -20,31 +20,57 @@ import (
 // Pre-signed superuser JWT from PocketBase's default test data.
 const superuserToken = "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InN5d2JoZWNuaDQ2cmhtMCIsInR5cGUiOiJhdXRoIiwiY29sbGVjdGlvbklkIjoicGJjXzMxNDI2MzU4MjMiLCJleHAiOjI1MjQ2MDQ0NjEsInJlZnJlc2hhYmxlIjp0cnVlfQ.UXgO3j-0BumcugrFjbd7j0M4MQvbrLggLlcu_YNGjoY"
 
-// TestMain gives the whole binary the encryption subkey a running server always
-// has: initEncryptionKey refuses to start without one, so a test suite without
-// one would exercise a configuration that cannot exist.
+// TestMain gives the whole binary the two subkeys a running server always has:
+// initEncryptionKey refuses to start without them, so a test suite without them
+// would exercise a configuration that cannot exist.
 //
-// What it does *not* do is bind the hooks. A test app starts with none, so a
-// record saved through app.Save stays in the clear unless the test asked for the
-// hooks (setupFieldEncryption) — which is what keeps the fixtures readable while
-// the writers that seal by hand, recordExecution and the two dependency columns,
-// are exercised for real.
+// What it does *not* do is bind the sealing hooks. A test app starts with none,
+// so a record saved through app.Save stays in the clear unless the test asked
+// for them (setupFieldEncryption) — which is what keeps the fixtures readable
+// while the writers that seal by hand, recordExecution and the two dependency
+// columns, are exercised for real.
+//
+// The blind indexes are the exception, and setupBlindIndexes says why.
 func TestMain(m *testing.M) {
-	key, err := deriveKey(bytes.Repeat([]byte{0x2a}, 32), hkdfInfoCipher)
+	master := bytes.Repeat([]byte{0x2a}, 32)
+	key, err := deriveKey(master, hkdfInfoCipher)
 	if err != nil {
 		panic(err)
 	}
 	cipherKey = key
+
+	index, err := deriveKey(master, hkdfInfoIndex)
+	if err != nil {
+		panic(err)
+	}
+	indexKey = index
+
 	os.Exit(m.Run())
+}
+
+// setupBlindIndexes stamps the fingerprints on a test app, whether or not the
+// test asked for the sealing hooks.
+//
+// It is not optional the way sealing is, and that is the point: the unique index
+// of a function name sits on nameHash, and resolution queries it. An app that
+// skipped this would refuse its second fixture on a constraint and would resolve
+// none of them by name — with the fixtures still perfectly readable, which is
+// exactly what makes the symptom unreadable.
+//
+// The hooks carry an id, so calling it again on the same app replaces them
+// rather than stacking a second pass.
+func setupBlindIndexes(app core.App) {
+	registerBlindIndexes(app)
 }
 
 // setupFieldEncryption binds on a test app the encryption hooks main.go binds,
 // in the same order — the validation of a cron expression first, so it never
-// weighs a sealed value.
+// weighs a sealed value, then the fingerprints, then the sealing.
 func setupFieldEncryption(t testing.TB, app core.App) {
 	t.Helper()
 	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
 	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+	setupBlindIndexes(app)
 	registerFieldEncryption(app)
 }
 
@@ -53,6 +79,7 @@ func setupFieldEncryption(t testing.TB, app core.App) {
 // carry a relation to it.
 func setupFaaSCollections(t testing.TB, app core.App) {
 	t.Helper()
+	setupBlindIndexes(app)
 	if err := ensureFunctionsCollection(app); err != nil {
 		t.Fatalf("failed to create functions collection: %v", err)
 	}
@@ -71,6 +98,7 @@ func setupFaaSCollections(t testing.TB, app core.App) {
 // collection its relation points at, in the order OnServe uses.
 func setupLogsCollection(t testing.TB, app core.App) {
 	t.Helper()
+	setupBlindIndexes(app)
 	if err := ensureFunctionsCollection(app); err != nil {
 		t.Fatalf("failed to create functions collection: %v", err)
 	}
@@ -180,6 +208,7 @@ func saveTestFunction(t testing.TB, app core.App, functionsDir, name, script, pk
 // those whose fixture has to name the id in advance.
 func saveTestFunctionAs(t testing.TB, app core.App, functionsDir, id, name, script, pkg string) *core.Record {
 	t.Helper()
+	setupBlindIndexes(app)
 	if err := ensureFunctionsCollection(app); err != nil {
 		t.Fatalf("failed to create functions collection: %v", err)
 	}
@@ -188,7 +217,9 @@ func saveTestFunctionAs(t testing.TB, app core.App, functionsDir, id, name, scri
 		t.Fatal(err)
 	}
 
-	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", name)
+	// Looked up by fingerprint, which is what the server does: the column holds a
+	// ciphertext on an app whose hooks seal, and this helper serves both kinds.
+	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex(name))
 	if err != nil {
 		record = core.NewRecord(col)
 		if id != "" {

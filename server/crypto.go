@@ -4,6 +4,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hkdf"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -35,6 +36,14 @@ const (
 	// touching this one.
 	hkdfInfoCipher = "faasbox/v1/cipher"
 
+	// hkdfInfoIndex labels the subkey the blind indexes are computed with.
+	//
+	// The separation is not cosmetic. A blind index is stored **in the clear**,
+	// next to the value it fingerprints, and it is the one output of this scheme
+	// an attacker reads for free. It must say nothing about the key that encrypts
+	// the rest, and under HKDF a different label is what guarantees that.
+	hkdfInfoIndex = "faasbox/v1/blind-index"
+
 	// cipherPrefix marks a stored value as already encrypted.
 	//
 	// The fields concerned are written *in place* — the caller sends `script`,
@@ -59,6 +68,10 @@ var masterKey []byte
 
 // cipherKey is the subkey every stored value is encrypted with.
 var cipherKey []byte
+
+// indexKey is the subkey every blind index is computed with. It encrypts
+// nothing, and nothing encrypted is ever computed with it.
+var indexKey []byte
 
 // initEncryptionKey reads and validates FAASBOX_ENCRYPTION_KEY, then derives the
 // subkey the stored values are encrypted with. The variable must be a
@@ -92,6 +105,12 @@ func initEncryptionKey() {
 		log.Fatalf("failed to derive the encryption subkey from %s: %v", encryptionKeyEnv, err)
 	}
 	cipherKey = derived
+
+	index, err := deriveKey(key, hkdfInfoIndex)
+	if err != nil {
+		log.Fatalf("failed to derive the blind index subkey from %s: %v", encryptionKeyEnv, err)
+	}
+	indexKey = index
 }
 
 // deriveKey expands the master key into a 32-byte subkey for one purpose.
@@ -101,6 +120,33 @@ func initEncryptionKey() {
 // here. What separates two subkeys is the label, and nothing else.
 func deriveKey(master []byte, info string) ([]byte, error) {
 	return hkdf.Key(sha256.New, master, nil, info, 32)
+}
+
+// blindIndex returns an indexable fingerprint of a value, computed with a
+// subkey of its own.
+//
+// **It is an HMAC and not a bare SHA-256**, and the reason is the one thing to
+// retain here: the space of function names is small and guessable — "webhook",
+// "send-email", "daily-report". A bare hash of one would fall to a dictionary in
+// seconds from a dump, which would hand back in the index exactly what
+// encrypting the column took away. The HMAC cannot, because the subkey is not in
+// the database: without it no candidate is computable at all.
+//
+// That property rests on a single fact — **the key does not travel with the
+// backup**. The day it does, the index is guessable again, in seconds. It is
+// what makes an index in the clear acceptable, not an implementation detail.
+//
+// The fingerprint is taken on the exact value, with no normalisation of any
+// kind: validName accepts capitals, so `Alpha` and `alpha` are two names, and
+// two fingerprints. An empty value has none — the same rule the cipher follows,
+// and the columns carrying one are required anyway.
+func blindIndex(value string) string {
+	if value == "" || indexKey == nil {
+		return ""
+	}
+	mac := hmac.New(sha256.New, indexKey)
+	mac.Write([]byte(value))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // alreadySealed reports whether a value is one this code produced.

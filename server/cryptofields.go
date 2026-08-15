@@ -5,13 +5,15 @@ import (
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
+	"github.com/pocketbase/pocketbase/tools/hook"
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 // How a record column is encrypted and read back. crypto.go answers "what is a
 // sealed value"; this file answers "where does one live on a record" — the two
-// column shapes, the hooks that seal them on the way in, and the hook that
-// opens them on the way out.
+// column shapes, the hooks that seal them on the way in, the hook that opens
+// them on the way out, and the fingerprints that let SQL still find the two
+// columns it has to.
 //
 // **Two mechanisms, never interchangeable.** A response serialised by PocketBase
 // goes through OnRecordEnrich, which is what keeps the editor — it reads the
@@ -26,24 +28,54 @@ import (
 // paths that read a JSON column, where a ciphertext has exactly the shape a
 // truncated payload legitimately takes. The four methods appear here, in the
 // accessors, and nowhere else.
+//
+// Past the 300-line guideline, deliberately. The blind indexes could live in a
+// file of their own, and they would then sit away from the very declaration a
+// reader has to hold beside them: encryptedTextFields says the name of a
+// function is sealed, blindIndexedColumns says nameHash is how it is still
+// found. Neither is legible without the other.
 
 // encryptedTextFields lists, per collection, the text columns sealed at rest.
 //
 // What is absent is as deliberate as what is here. A **hash** is never
-// encrypted — keyHash, and the four *Hash of a grant: a hash does not come back
-// where a ciphertext would, and sealing one would reopen a path by which the
-// database and the master key together hand out usable credentials. A column
-// **queried in SQL** cannot be encrypted without a blind index, which is why
-// the name of a function and the clientId of an OAuth client are not here. And
-// env keeps its own hook and its own dedicated route: it is already encrypted,
-// and it must not be opened by the enrichment below.
+// encrypted — keyHash, the four *Hash of a grant, and the two blind indexes
+// below: a hash does not come back where a ciphertext would, and sealing one
+// would reopen a path by which the database and the master key together hand
+// out usable credentials. And env keeps its own hook and its own dedicated
+// route: it is already encrypted, and it must not be opened by the enrichment
+// below.
+//
+// The name of a function and the clientId of an OAuth client are here, and they
+// are the two columns SQL still has to find. What buys that back is the blind
+// index declared underneath — never a weaker cipher.
 var encryptedTextFields = map[string][]string{
-	faasboxFunctionsCollection:    {"script", "packageJson", "bunLock", "depsError"},
+	faasboxFunctionsCollection:    {"name", "script", "packageJson", "bunLock", "depsError"},
 	faasboxCronJobsCollection:     {"name", "schedule"},
 	faasboxLogsCollection:         {"functionName", "stdout", "stderr"},
 	faasboxAPIKeysCollection:      {"name", "keyPrefix"},
-	faasboxOAuthClientsCollection: {"name"},
+	faasboxOAuthClientsCollection: {"name", "clientId"},
 	faasboxOAuthGrantsCollection:  {"redirectUri", "codeChallenge", "resource", "state"},
+}
+
+// blindIndexedColumn pairs an encrypted column with the one carrying its
+// fingerprint.
+type blindIndexedColumn struct{ source, index string }
+
+// blindIndexedColumns lists, per collection, the sealed columns SQL still has to
+// find, and the column that lets it.
+//
+// A column queried in SQL cannot simply be encrypted: AES-GCM draws a nonce at
+// every write, so two writings of the same plaintext differ, and both properties
+// those queries rest on — equality and uniqueness — are gone. The pair is what
+// buys them back. The value is sealed, its fingerprint is not, and it is the
+// fingerprint that carries the unique index and answers the lookup.
+//
+// What the index costs is stated where it is computed (blindIndex): equal values
+// are visible as equal. That is the whole leak, and it is the price of being
+// able to find a row at all.
+var blindIndexedColumns = map[string][]blindIndexedColumn{
+	faasboxFunctionsCollection:    {{source: "name", index: "nameHash"}},
+	faasboxOAuthClientsCollection: {{source: "clientId", index: "clientIdHash"}},
 }
 
 // encryptedJSONFields lists, per collection, the JSON columns sealed at rest.
@@ -94,6 +126,51 @@ func registerFieldEncryption(app core.App) {
 
 	for _, collection := range enrichedCollections {
 		app.OnRecordEnrich(collection).BindFunc(openRecordHook(collection))
+	}
+}
+
+// registerBlindIndexes binds the hook that stamps the fingerprint of a sealed
+// column on every write.
+//
+// **It is bound before registerFieldEncryption, and separately from it**, and
+// both halves of that sentence matter. Before, because the fingerprint is taken
+// on the plaintext and there is no reason to pay an AES open to get it back.
+// Separately, because a caller may want the fingerprints without the sealing:
+// the unique index rests on them, so a write that skips them is a write that
+// stops enforcing that two functions cannot share a name.
+//
+// The handlers carry an id, so binding twice on the same app replaces rather
+// than stacks.
+func registerBlindIndexes(app core.App) {
+	for collection := range blindIndexedColumns {
+		stamp := stampBlindIndexHook(collection)
+		app.OnRecordCreate(collection).Bind(&hook.Handler[*core.RecordEvent]{
+			Id:   "faasboxBlindIndexCreate_" + collection,
+			Func: stamp,
+		})
+		app.OnRecordUpdate(collection).Bind(&hook.Handler[*core.RecordEvent]{
+			Id:   "faasboxBlindIndexUpdate_" + collection,
+			Func: stamp,
+		})
+	}
+}
+
+// stampBlindIndexHook returns the create/update hook that writes the
+// fingerprints of one collection.
+//
+// The source is read **through the accessor**, never off the column, and that is
+// what makes a partial update work: it arrives carrying the value loaded from
+// the database, which is sealed, and hashing that would stamp the fingerprint of
+// a ciphertext — a value nothing will ever look up, on a record whose name looks
+// perfectly normal in the editor.
+func stampBlindIndexHook(collection string) func(*core.RecordEvent) error {
+	columns := blindIndexedColumns[collection]
+
+	return func(e *core.RecordEvent) error {
+		for _, column := range columns {
+			e.Record.Set(column.index, blindIndex(decryptedText(e.App, e.Record, column.source)))
+		}
+		return e.Next()
 	}
 }
 

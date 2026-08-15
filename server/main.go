@@ -224,9 +224,8 @@ func main() {
 
 	// Every validation below runs on what the caller submitted, which is to say
 	// on plaintext, and every one of them is therefore bound *before*
-	// registerFieldEncryption. A validator handed a sealed value weighs base64:
-	// the cron expression is the case that bites today, and the function name
-	// joins it the day that column is encrypted in its turn.
+	// registerFieldEncryption. A validator handed a sealed value weighs base64 —
+	// the cron expression and the function name both.
 	//
 	// Refusing early also spares an AES pass on a record that will not be
 	// written.
@@ -245,6 +244,10 @@ func main() {
 	// Validate cron expression before saving
 	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
 	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+
+	// Stamp the fingerprint of the two columns SQL still has to find. Before the
+	// encryption, so the value hashed is the one the caller sent.
+	registerBlindIndexes(app)
 
 	// Encrypt the business columns of every collection at rest, and decrypt them
 	// for the responses the editor reads. Bound last, for the ordering above.
@@ -276,7 +279,7 @@ func main() {
 	app.OnRecordAfterDeleteSuccess(faasboxFunctionsCollection).BindFunc(func(e *core.RecordEvent) error {
 		if err := deleteRecordFromDisk(e.Record, functionsDir); err != nil {
 			e.App.Logger().Error("faasbox: failed to delete function from disk",
-				"function", e.Record.GetString("name"), "error", err)
+				"function", functionName(e.App, e.Record), "error", err)
 		}
 		return e.Next()
 	})

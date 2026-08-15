@@ -145,13 +145,17 @@ Deleting a **function** does not touch the keys scoped to it: their list keeps a
 
 Your database file is what gets backed up, replicated to S3 and restored on another machine. FaaSBox encrypts what you put in it, column by column, with `FAASBOX_ENCRYPTION_KEY`.
 
-**Encrypted**: your function code, its `package.json` and lockfile, the output of its dependency install, the name, schedule and payload of each trigger, the `stdout`, `stderr` and request payload of every execution, the label and visible prefix of each API key, and the name and redirect URLs of each authorized agent — on top of the [environment variables](04-environment-variables.md) that were already encrypted.
+**Encrypted**: the name of each function, its code, its `package.json` and lockfile, the output of its dependency install, the name, schedule and payload of each trigger, the `stdout`, `stderr` and request payload of every execution, the label and visible prefix of each API key, and the name, identifier and redirect URLs of each authorized agent — on top of the [environment variables](04-environment-variables.md) that were already encrypted.
 
 **Not encrypted**, and on purpose:
 
 - **Credential hashes** — the SHA-256 of an API key, the token fingerprints of an agent. Encrypting one would make the database plus the key hand back a usable credential.
-- **A few columns the server looks up by value** — the name of a function, the identifier of an OAuth client. No ciphertext survives a `WHERE` clause.
+- **Two lookup fingerprints** — see below.
 - **The shape of your instance** — how many functions, when they were created and changed, how many times each ran, with what status, duration and exit code, and roughly how big each encrypted value is. Column-level encryption does not go below that. If that floor matters to you, encrypt the backup itself.
+
+**Two columns the server looks up by value are encrypted anyway**: the name of a function, which every `/invoke/{name}` call resolves, and the identifier of an authorized agent. No ciphertext survives a `WHERE` clause on its own — so each carries a **keyed fingerprint** in a column beside it, and that is what the server searches and what keeps two functions from sharing a name.
+
+The fingerprint is a keyed one, not a plain hash, and that distinction is the whole point. Function names are short and guessable — `webhook`, `send-email`, `daily-report` — so a plain hash of one would fall to a dictionary in seconds from a stolen database, handing back exactly what encrypting the column removed. The key that computes the fingerprint is `FAASBOX_ENCRYPTION_KEY`, which is not in the database: **keep it out of your backups and the fingerprints stay meaningless; ship it alongside them and they become guessable again.** What a fingerprint does reveal, always, is that two identical values are identical — that is the price of being able to find a row at all.
 
 > ⛔ **Losing the key now costs you the instance, not just its secrets.** Before, a lost key meant unreadable environment variables and nothing else; your code, history and triggers stayed. Now a database written under a key you no longer have cannot be opened at all — and the server will not even start. Keep a copy of the key somewhere other than the machine that runs FaaSBox, and treat it as part of the backup.
 

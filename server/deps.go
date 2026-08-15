@@ -247,7 +247,9 @@ func scheduleDepsInstall(ctx context.Context, app core.App, record *core.Record,
 	if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 		return
 	}
-	name := record.GetString("name")
+	// Decrypted: it travels to setDepsState and from there onto the realtime
+	// channel, where the editor reads it.
+	name := functionName(app, record)
 
 	if functionPackageJson(app, record) == "" {
 		// No dependency spec: the state goes back to empty. Clearing unconditionally

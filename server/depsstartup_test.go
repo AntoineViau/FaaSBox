@@ -213,7 +213,7 @@ func TestInstallMissingDeps_FailureDoesNotStopThePass(t *testing.T) {
 		t.Errorf("expected the pass to attempt both installs, got %d", got)
 	}
 
-	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", failed)
+	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex(failed))
 	if err != nil {
 		t.Fatal(err)
 	}

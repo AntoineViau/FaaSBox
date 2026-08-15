@@ -99,7 +99,9 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 			"segment", idOrName, "error", err)
 		return invokeOutcome{}, errResolveFailed
 	}
-	name := fn.GetString("name")
+	// Decrypted, and this is the reading that reaches furthest: it is handed to
+	// executeFunction, which injects it as FUNCTION_NAME in the subprocess.
+	name := functionName(app, fn)
 
 	env := functionEnv(app, fn)
 	res := executeFunction(ctx, functionsDir, fn.Id, name, string(payload), env)

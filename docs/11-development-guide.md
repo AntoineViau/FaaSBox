@@ -83,7 +83,7 @@ is why the pair exists at all — a tool has no request to read.
 **Credentials**
 
 - `apikeys.go`: Middleware, hashing and scope enforcement.
-- `crypto.go` / `cryptofields.go`: The cipher and the subkey derived from `FAASBOX_ENCRYPTION_KEY`, and where each encrypted column lives — the hooks that seal them on the way in, the enrichment that opens them for a response, and the accessors the server reads them through.
+- `crypto.go` / `cryptofields.go`: The cipher and the two subkeys derived from `FAASBOX_ENCRYPTION_KEY` — one that encrypts, one that computes the keyed fingerprints the server looks a row up by — and where each encrypted column lives: the hooks that seal them on the way in, the hook that stamps those fingerprints, the enrichment that opens them for a response, and the accessors the server reads them through.
 - `ratelimit.go`: Turning PocketBase's rate limiter on at startup, without writing its rules.
 
 **Agents**

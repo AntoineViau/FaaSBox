@@ -75,7 +75,7 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 				"recordId", record.Id, "functionId", functionId, "error", err)
 			continue
 		}
-		name := fn.GetString("name")
+		name := functionName(app, fn)
 
 		schedule, err := cron.NewSchedule(expr)
 		if err != nil {

@@ -176,7 +176,7 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 		})
 		if err != nil {
 			app.Logger().Error("faasbox: failed to register cron",
-				"jobId", jobId, "schedule", schedule, "function", fn.GetString("name"), "error", err)
+				"jobId", jobId, "schedule", schedule, "function", functionName(app, fn), "error", err)
 		}
 	}
 }
@@ -220,7 +220,10 @@ func runFunction(ctx context.Context, app core.App, functionsDir, functionId, pa
 			"functionId", functionId, "error", err)
 		return
 	}
-	name := fn.GetString("name")
+	// Decrypted, like the invocation path: the same name goes on to
+	// executeFunction, which injects it as FUNCTION_NAME. The contract holds on
+	// both triggers or it holds on neither.
+	name := functionName(app, fn)
 
 	env := functionEnv(app, fn)
 	res := executeFunction(ctx, functionsDir, fn.Id, name, payload, env)

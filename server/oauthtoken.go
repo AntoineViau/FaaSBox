@@ -229,7 +229,10 @@ func grantBelongsToClient(e *core.RequestEvent, grant *core.Record, clientId str
 			"grant", grant.Id, "error", err)
 		return false
 	}
-	return client.GetString("clientId") == clientId
+	// Compared on the decrypted identifier, like the four grant columns weighed
+	// on this path: against the stored value the comparison would never hold, and
+	// every token request would be refused as issued to another client.
+	return oauthClientId(e.App, client) == clientId
 }
 
 // checkRequestedResource enforces RFC 8707 on the token request: the parameter is

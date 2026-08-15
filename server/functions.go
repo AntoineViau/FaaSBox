@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -50,6 +51,7 @@ func ensureFunctionsCollection(app core.App) error {
 		col = core.NewBaseCollection(faasboxFunctionsCollection)
 		col.Fields.Add(
 			&core.TextField{Name: "name", Required: true},
+			newNameHashField(),
 			&core.TextField{Name: "env", Hidden: true, Max: maxEnvSize},
 			&core.JSONField{Name: "plainEnv"},
 			&core.TextField{Name: "script", Max: cipherMax(maxSourceSize)},
@@ -60,12 +62,28 @@ func ensureFunctionsCollection(app core.App) error {
 			&core.AutodateField{Name: "created", OnCreate: true},
 			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 		)
-		col.AddIndex("idx_faasbox_functions_name", true, "name", "")
+		col.AddIndex("idx_faasbox_functions_nameHash", true, "nameHash", "")
 		return app.Save(col)
 	}
 
 	// Collection exists — add missing fields if needed
 	needsSave := false
+	if col.Fields.GetByName("nameHash") == nil {
+		col.Fields.Add(newNameHashField())
+		needsSave = true
+	}
+	// The uniqueness of a name is carried by the fingerprint, and by nothing
+	// else. Left on the sealed column the index would still be there and would
+	// constrain nothing — two nonces never collide — so two functions could
+	// quietly come to share a name, which is the one thing resolution cannot
+	// survive.
+	if !slices.ContainsFunc(col.Indexes, func(idx string) bool {
+		return strings.Contains(idx, "idx_faasbox_functions_nameHash")
+	}) {
+		col.RemoveIndex("idx_faasbox_functions_name")
+		col.AddIndex("idx_faasbox_functions_nameHash", true, "nameHash", "")
+		needsSave = true
+	}
 	if col.Fields.GetByName("script") == nil {
 		col.Fields.Add(&core.TextField{Name: "script", Max: cipherMax(maxSourceSize)})
 		needsSave = true
@@ -131,6 +149,16 @@ func ensureFunctionsCollection(app core.App) error {
 	return nil
 }
 
+// newNameHashField declares the column carrying the fingerprint of the name.
+//
+// It is what the unique index sits on and what resolveFunction queries, the name
+// itself being sealed and therefore unfindable. Not Required: it is stamped by a
+// hook rather than sent by a caller, and marking it required would refuse the
+// record before the hook that fills it ever ran.
+func newNameHashField() *core.TextField {
+	return &core.TextField{Name: "nameHash"}
+}
+
 // decryptFunctionEnv decrypts the environment variables of a function record.
 // A function without secrets yields an empty map, which is not an error: only a
 // key that is missing, a payload that will not decrypt, or plaintext that is not
@@ -171,7 +199,7 @@ func functionEnv(app core.App, record *core.Record) []string {
 	envMap, err := decryptFunctionEnv(record)
 	if err != nil {
 		app.Logger().Error("faasbox: failed to read env for function",
-			"function", record.GetString("name"), "error", err)
+			"function", functionName(app, record), "error", err)
 		return nil
 	}
 
@@ -196,7 +224,7 @@ func functionEnvHandler(e *core.RequestEvent) error {
 	envMap, err := decryptFunctionEnv(record)
 	if err != nil {
 		e.App.Logger().Error("faasbox: failed to read env for function",
-			"function", record.GetString("name"), "error", err)
+			"function", functionName(e.App, record), "error", err)
 		return e.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to read the environment of this function",
 		})
@@ -225,8 +253,17 @@ func functionEnvHandler(e *core.RequestEvent) error {
 // firstApiError, which keeps only an argument that already is an ApiError. An
 // ordinary error is replaced by a generic "Failed to update record", and the
 // client is left with a 400 whose body says nothing.
+//
+// The name is read **through the accessor**, exactly as validateCronScheduleHook
+// reads its expression, and for the same reason: a partial update — a script
+// saved on its own, a replacement that never renames — arrives carrying the name
+// loaded from the database, which is sealed. Weighed as it stands, `fbx1:…`
+// fails validName on its colon, and every such save is refused with a message
+// naming a value the caller never sent. Binding this hook before the encryption
+// one is what keeps the *submitted* value plaintext; the accessor is what covers
+// the value nobody submitted.
 func validateFunctionNameHook(e *core.RecordEvent) error {
-	name := e.Record.GetString("name")
+	name := functionName(e.App, e.Record)
 	if !validName.MatchString(name) || len(name) > 64 {
 		// %q escapes what the regex refused — a NUL prints as \x00 rather than
 		// travelling raw into the response.
@@ -239,10 +276,20 @@ func validateFunctionNameHook(e *core.RecordEvent) error {
 	return e.Next()
 }
 
-// functionScript, functionPackageJson, functionBunLock and functionDepsError are
-// the only way to read the four encrypted columns of a function record. Nothing
-// else touches them, whichever accessor: a value read by hand ships to the user
-// as base64, and to disk as a script that will not run.
+// functionName, functionScript, functionPackageJson, functionBunLock and
+// functionDepsError are the only way to read the five encrypted columns of a
+// function record. Nothing else touches them, whichever accessor: a value read
+// by hand ships to the user as base64, and to disk as a script that will not
+// run.
+//
+// The name is the one that reaches furthest. It is injected in the subprocess as
+// FUNCTION_NAME, which is a documented contract: read by hand it would hand
+// every function on this instance `fbx1:…` as its own name, on both triggers, and
+// no test of ours would notice — only the user's code would.
+func functionName(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "name")
+}
+
 func functionScript(app core.App, record *core.Record) string {
 	return decryptedText(app, record, "script")
 }
@@ -357,7 +404,7 @@ func syncRecordToDisk(app core.App, record *core.Record, functionsDir string) er
 	if !validName.MatchString(record.Id) || len(record.Id) > 64 {
 		return nil
 	}
-	name := record.GetString("name")
+	name := functionName(app, record)
 
 	dir := filepath.Join(functionsDir, record.Id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -417,7 +464,7 @@ func syncRecordToDisk(app core.App, record *core.Record, functionsDir string) er
 func syncFunctionRecord(ctx context.Context, e *core.RecordEvent, functionsDir string) error {
 	if err := syncRecordToDisk(e.App, e.Record, functionsDir); err != nil {
 		e.App.Logger().Error("faasbox: failed to sync function to disk",
-			"function", e.Record.GetString("name"), "error", err)
+			"function", functionName(e.App, e.Record), "error", err)
 		return e.Next()
 	}
 	scheduleDepsInstall(ctx, e.App, e.Record, functionsDir)
@@ -458,7 +505,7 @@ func syncDiskFromDB(app core.App, functionsDir string) {
 	for _, r := range records {
 		if err := syncRecordToDisk(app, r, functionsDir); err != nil {
 			app.Logger().Error("faasbox: failed to sync function to disk",
-				"function", r.GetString("name"), "error", err)
+				"function", functionName(app, r), "error", err)
 		}
 	}
 

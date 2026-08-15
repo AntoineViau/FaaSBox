@@ -86,7 +86,11 @@ func createFunction(app core.App, allowed []string, req manageRequest) (function
 		}
 	}
 
-	if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "name", req.Name); err == nil {
+	// The homonym is looked up by fingerprint: the column holds a ciphertext, so
+	// a search on the name matches nothing, ever. The refusal would then be left
+	// to the unique index — a constraint error at the bottom of the stack, in
+	// place of the 409 this contract publishes.
+	if _, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex(req.Name)); err == nil {
 		return functionContract{}, errNameTaken
 	}
 
@@ -132,7 +136,11 @@ func replaceFunction(app core.App, allowed []string, idOrName string, req manage
 	// The target identifies. A name in the body may repeat that identity —
 	// either spelling of it, so a contract read back can be edited and sent
 	// straight in — but it never changes it.
-	if req.Name != "" && req.Name != record.GetString("name") && req.Name != record.Id {
+	//
+	// The comparison is against the *decrypted* name. Against the stored one, a
+	// caller repeating the name it was just handed would be compared to `fbx1:…`,
+	// and every replacement built on a contract read back would be refused.
+	if req.Name != "" && req.Name != functionName(app, record) && req.Name != record.Id {
 		return functionContract{}, errNameNotTheTarget
 	}
 
@@ -185,7 +193,7 @@ func listFunctions(app core.App, functionsDir string, allowed []string) ([]funct
 		if _, err := os.Stat(indexPath); err != nil {
 			continue
 		}
-		name := record.GetString("name")
+		name := functionName(app, record)
 		functions = append(functions, functionSummary{
 			Id:     record.Id,
 			Name:   name,
@@ -311,7 +319,7 @@ func functionContractOf(app core.App, record *core.Record) (functionContract, er
 
 	return functionContract{
 		Id:          record.Id,
-		Name:        record.GetString("name"),
+		Name:        functionName(app, record),
 		Script:      functionScript(app, record),
 		PackageJson: functionPackageJson(app, record),
 		DepsStatus:  record.GetString("depsStatus"),

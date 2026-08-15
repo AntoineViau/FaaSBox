@@ -60,12 +60,16 @@ func ensureOAuthClientsCollection(app core.App) error {
 	col := core.NewBaseCollection(faasboxOAuthClientsCollection)
 	col.Fields.Add(
 		&core.TextField{Name: "clientId", Required: true},
+		// The fingerprint of the identifier, and what carries its uniqueness: the
+		// identifier itself is sealed, so an index on it would constrain nothing
+		// and a lookup on it would find nothing.
+		&core.TextField{Name: "clientIdHash"},
 		&core.TextField{Name: "name"},
 		&core.JSONField{Name: "redirectUris"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)
-	col.AddIndex("idx_faasbox_oauth_clients_clientId", true, "clientId", "")
+	col.AddIndex("idx_faasbox_oauth_clients_clientIdHash", true, "clientIdHash", "")
 
 	return app.Save(col)
 }
@@ -141,25 +145,35 @@ func validateRedirectURIs(uris []string) error {
 }
 
 // findOAuthClient returns the registration a client_id designates.
+//
+// The search is on the fingerprint, the identifier being sealed: two writings of
+// the same value differ, so no equality on the column itself can ever hold.
 func findOAuthClient(app core.App, clientId string) (*core.Record, error) {
 	if clientId == "" {
 		return nil, errors.New("no client_id")
 	}
-	return app.FindFirstRecordByData(faasboxOAuthClientsCollection, "clientId", clientId)
+	return app.FindFirstRecordByData(faasboxOAuthClientsCollection, "clientIdHash", blindIndex(clientId))
+}
+
+// oauthClientId is the only way to read the identifier of a registration. It is
+// encrypted at rest like the name beside it; what SQL finds it by is the
+// fingerprint, never this value.
+func oauthClientId(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "clientId")
 }
 
 // clientDisplayName is what the consent screen shows. A registration may carry no
 // name — client_name is only RECOMMENDED — and the identifier is then the only
 // honest thing to put in front of the user.
 //
-// The name is encrypted at rest and read through its accessor. The clientId is
-// not: it is looked up in SQL, which no ciphertext survives without a blind
-// index.
+// Both columns are encrypted at rest, so both are read through their accessor:
+// what the user must not be shown, on the one screen where they decide whether
+// to trust a stranger, is base64.
 func clientDisplayName(app core.App, record *core.Record) string {
 	if name := strings.TrimSpace(decryptedText(app, record, "name")); name != "" {
 		return name
 	}
-	return record.GetString("clientId")
+	return oauthClientId(app, record)
 }
 
 // clientRedirectURIs is the only way to read the registered redirect URIs.

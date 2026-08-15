@@ -27,6 +27,11 @@ export const FunctionsStore = signalStore(
       const id = selectedId();
       return id ? (functions().find((f) => f.id === id) ?? null) : null;
     }),
+    /**
+     * The order the sidebar shows, and the only one there is: the name is
+     * encrypted at rest, so the server settles nothing. This sort was already
+     * what the list was displayed in — it merely stopped being a second opinion.
+     */
     sortedFunctions: computed(() =>
       functions()
         .slice()

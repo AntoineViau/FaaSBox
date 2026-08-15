@@ -178,8 +178,17 @@ export class ApiKeysComponent implements OnInit {
   private async loadFunctions(): Promise<void> {
     // The editor runs as superuser, so the scope picker always sees every
     // function, whatever scope the keys themselves declare.
+    //
+    // The order is settled here: the name is encrypted at rest, so the server
+    // cannot sort on it any more. The comparison is on code units rather than
+    // through `localeCompare`, which is what SQLite's default collation did —
+    // the point is the same order as before, not a better one.
     const res = await firstValueFrom(this.functionsService.list());
-    this.functions.set(res.items.map((fn) => ({ id: fn.id, name: fn.name })));
+    this.functions.set(
+      res.items
+        .map((fn) => ({ id: fn.id, name: fn.name }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+    );
   }
 
   protected async onCreate(request: ApiKeyCreateRequest): Promise<void> {

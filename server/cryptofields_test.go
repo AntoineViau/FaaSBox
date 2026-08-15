@@ -391,7 +391,7 @@ func TestSealedFunction_CollectionAPIRendersThePlaintext(t *testing.T) {
 		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 		DisableTestAppCleanup: true,
 		ExpectedStatus:        200,
-		ExpectedContent:       []string{`console.log('visible')`, `{\"name\":\"x\"}`},
+		ExpectedContent:       []string{`"name":"rendered"`, `console.log('visible')`, `{\"name\":\"x\"}`},
 		// env keeps its dedicated route and is never opened by the enrichment.
 		NotExpectedContent: []string{cipherPrefix},
 	}
@@ -510,15 +510,20 @@ func TestSealedOAuth_AuthorizationFlowCompletes(t *testing.T) {
 			}
 			clientId = body.ClientID
 
+			// Found by fingerprint: the identifier itself is sealed, so no
+			// equality on the column could ever hold.
 			client, err := findOAuthClient(app, clientId)
 			if err != nil {
 				t.Fatalf("the registration was not stored: %v", err)
 			}
-			for _, column := range []string{"name", "redirectUris"} {
+			for _, column := range []string{"clientId", "name", "redirectUris"} {
 				got := storedColumn(t, app, faasboxOAuthClientsCollection, column, client.Id)
 				if !strings.Contains(got, cipherPrefix) {
 					t.Errorf("%s = %q, want a sealed value", column, got)
 				}
+			}
+			if got := storedColumn(t, app, faasboxOAuthClientsCollection, "clientIdHash", client.Id); got != blindIndex(clientId) {
+				t.Errorf("clientIdHash = %q, want the fingerprint of the identifier", got)
 			}
 			if got := clientDisplayName(app, client); got != "sealed agent" {
 				t.Errorf("the client reads back as %q, want %q", got, "sealed agent")
