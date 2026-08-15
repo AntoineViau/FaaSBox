@@ -48,14 +48,26 @@ const MANAGE_KEY_EXPIRY_DAYS = 30;
     ZardInputDirective,
   ],
   template: `
+    <!-- The reveal panel wears the warning accent rather than the default card
+         background: creating a key also refreshes the list below it, and a
+         panel that reads like the rest of the page loses the one value the
+         user has a single chance to copy. Same accent as the editor banners. -->
     @if (createdKey(); as key) {
-      <z-alert class="mb-4" zIcon="shield" zTitle="API key created" [zDescription]="revealTpl" />
+      <z-alert
+        class="mb-4 border-yellow-500/30 bg-yellow-500/10 text-yellow-600 dark:text-yellow-500"
+        zIcon="shield"
+        zTitle="API key created"
+        [zDescription]="revealTpl"
+      />
       <ng-template #revealTpl>
-        <p class="mb-2">
+        <p class="mb-2 text-yellow-600 dark:text-yellow-500">
           Copy it now: this value is shown once and will never be displayed again.
         </p>
         <div class="flex items-center gap-2">
-          <code class="flex-1 break-all rounded-md bg-muted px-2 py-1 font-mono text-xs">{{ key }}</code>
+          <code
+            class="flex-1 break-all rounded-md border border-yellow-500/30 bg-background px-2 py-1 font-mono text-xs text-foreground"
+            >{{ key }}</code
+          >
           <button z-button zType="outline" zSize="sm" (click)="copy(key)">
             <z-icon zType="copy" class="mr-1.5 h-4 w-4" />
             {{ copied() ? 'Copied' : 'Copy' }}
