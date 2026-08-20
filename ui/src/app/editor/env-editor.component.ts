@@ -11,6 +11,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { FunctionsService } from '@/editor/functions.service';
 import { FunctionsStore } from '@/editor/functions.store';
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
 import { ZardInputDirective } from '@shared/components/input';
@@ -49,6 +50,7 @@ const INVALID_KEY = /[\s=]/;
             placeholder="KEY"
             class="h-8 flex-1 font-mono text-sm"
             [value]="pair.key"
+            [disabled]="demoMode()"
             (input)="setKey($index, $any($event.target).value)"
           />
           <input
@@ -57,25 +59,47 @@ const INVALID_KEY = /[\s=]/;
             placeholder="value"
             class="h-8 flex-[2] font-mono text-sm"
             [value]="pair.value"
+            [disabled]="demoMode()"
             (input)="setValue($index, $any($event.target).value)"
           />
-          <button z-button zType="ghost" zSize="icon" class="h-8 w-8" (click)="remove($index)">
-            <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
-          </button>
+          <!-- The hint goes on the wrapper: a disabled button gets no hover
+               event, so a title placed on it would never show. -->
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button
+              z-button
+              zType="ghost"
+              zSize="icon"
+              class="h-8 w-8"
+              [disabled]="demoMode()"
+              (click)="remove($index)"
+            >
+              <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
+            </button>
+          </span>
         </div>
       } @empty {
         <p class="mb-2 text-xs text-muted-foreground">No variable yet.</p>
       }
 
       <div class="mt-3 flex items-center gap-2">
-        <button z-button zType="outline" zSize="sm" [disabled]="!loaded()" (click)="add()">
-          <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
-          Add
-        </button>
-        <button z-button zType="default" zSize="sm" [disabled]="!canSave()" (click)="save()">
-          <z-icon zType="save" class="mr-1.5 h-4 w-4" />
-          Save
-        </button>
+        <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+          <button
+            z-button
+            zType="outline"
+            zSize="sm"
+            [disabled]="!loaded() || demoMode()"
+            (click)="add()"
+          >
+            <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
+            Add
+          </button>
+        </span>
+        <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+          <button z-button zType="default" zSize="sm" [disabled]="!canSave()" (click)="save()">
+            <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+            Save
+          </button>
+        </span>
         @if (saving()) {
           <span class="text-xs text-muted-foreground">Saving...</span>
         } @else if (isDirty()) {
@@ -91,6 +115,13 @@ export class EnvEditorComponent {
   private readonly store = inject(FunctionsStore);
 
   readonly functionId = input.required<string>();
+  /**
+   * A showcase reveals the secrets — the tab is superuser-only either way — and
+   * closes every field and button that would write them.
+   */
+  readonly demoMode = input(false);
+
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   protected readonly pairs = signal<Pair[]>([]);
   protected readonly revealed = signal(false);
@@ -105,7 +136,9 @@ export class EnvEditorComponent {
     () => this.loaded() && snapshot(this.pairs()) !== this.savedSnapshot(),
   );
 
-  protected readonly canSave = computed(() => this.loaded() && this.isDirty() && !this.saving());
+  protected readonly canSave = computed(
+    () => this.loaded() && this.isDirty() && !this.saving() && !this.demoMode(),
+  );
 
   constructor() {
     // Keyed on the id: renaming the open function must not discard the pairs
@@ -135,10 +168,12 @@ export class EnvEditorComponent {
   }
 
   protected add(): void {
+    if (this.demoMode()) return;
     this.pairs.update((list) => [...list, { key: '', value: '' }]);
   }
 
   protected remove(index: number): void {
+    if (this.demoMode()) return;
     this.pairs.update((list) => list.filter((_, i) => i !== index));
   }
 
@@ -151,6 +186,7 @@ export class EnvEditorComponent {
   }
 
   protected async save(): Promise<void> {
+    if (this.demoMode()) return;
     const env: Record<string, string> = {};
     for (const pair of this.pairs()) {
       const key = pair.key.trim();

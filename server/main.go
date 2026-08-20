@@ -18,6 +18,14 @@ import (
 func main() {
 	initEncryptionKey()
 
+	// Read before the application is built, like the encryption key: this one
+	// decides whether every write route of the instance is reachable at all,
+	// and a value nobody can parse must not fall back to a mode.
+	demo, demoErr := demoSettingsFromEnv()
+	if demoErr != nil {
+		log.Fatalf("faasbox: %v", demoErr)
+	}
+
 	app := pocketbase.New()
 
 	var functionsDir string
@@ -47,6 +55,15 @@ func main() {
 
 	app.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
+			// A showcase refuses every write, and the refusal is posed here —
+			// on the root router, ahead of any route registration. That is not
+			// negotiable: the editor writes *through* /api/collections/..., so
+			// a refusal that did not cover PocketBase's own routes and the
+			// admin at /_/ would refuse nothing at all.
+			if demo.Enabled {
+				e.Router.BindFunc(refuseWrites)
+			}
+
 			// Ensure collections exist. Functions first: the cron jobs and the
 			// logs carry a relation to it, and a relation field needs the id of
 			// the collection it points at.
@@ -72,27 +89,38 @@ func main() {
 				return fmt.Errorf("failed to enable the rate limiter: %w", err)
 			}
 
-			// Restore functions from DB to disk (recreate files after container restart)
+			// Restore functions from DB to disk (recreate files after container
+			// restart). It runs in a showcase too: it writes to disk and not to
+			// the database, and it is what fills the folder the Files tab shows.
 			syncDiskFromDB(e.App, functionsDir)
 
-			// Reinstall the dependencies the disk lost, from the files just restored.
-			// Detached: OnServe runs before the server listens, so anything synchronous
-			// here delays the first response — and bun takes its time.
-			go installMissingDeps(lifecycleCtx, e.App, functionsDir)
+			// The middleware above closes the caller; it says nothing about what
+			// the server starts for its own account, and a showcase starts none
+			// of it. Each of the four writes to the database on its own, for
+			// something nothing will ever call: an install stamps its state, a
+			// scheduler would execute code and log the run, the missed-run report
+			// files `missed` entries for a scheduler that is not running, and the
+			// hourly prune would delete the very history the showcase displays.
+			if !demo.Enabled {
+				// Reinstall the dependencies the disk lost, from the files just restored.
+				// Detached: OnServe runs before the server listens, so anything synchronous
+				// here delays the first response — and bun takes its time.
+				go installMissingDeps(lifecycleCtx, e.App, functionsDir)
 
-			// Load existing cron jobs
-			syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
+				// Load existing cron jobs
+				syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 
-			// Report the triggers that were due while the server was down
-			reportMissedCronRuns(e.App, time.Now())
+				// Report the triggers that were due while the server was down
+				reportMissedCronRuns(e.App, time.Now())
 
-			// Internal hourly cron: prunes the logs, and behind them the OAuth
-			// registrations and grants that /oauth/register lets anyone create.
-			// The OAuth pass returns silently when those collections are absent.
-			e.App.Cron().Add("__faasboxLogPrune", "0 * * * *", func() {
-				pruneOldLogs(e.App)
-				pruneOAuthRecords(e.App)
-			})
+				// Internal hourly cron: prunes the logs, and behind them the OAuth
+				// registrations and grants that /oauth/register lets anyone create.
+				// The OAuth pass returns silently when those collections are absent.
+				e.App.Cron().Add("__faasboxLogPrune", "0 * * * *", func() {
+					pruneOldLogs(e.App)
+					pruneOAuthRecords(e.App)
+				})
+			}
 
 			// Health check (public, no API key)
 			e.Router.GET("/health", func(re *core.RequestEvent) error {
@@ -104,6 +132,10 @@ func main() {
 				}
 				return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
 			})
+
+			// What mode this instance runs in (public, both modes). The sign-in
+			// form reads it to fill itself in on a showcase.
+			e.Router.GET("/api/faasbox/instance", instanceHandler(demo))
 
 			// What this instance is called from outside, read once: it says
 			// whether the OAuth authorization server goes up at all, and it is

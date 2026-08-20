@@ -42,6 +42,11 @@ import { ThemeService } from '@/theme/theme.service';
 export class CodeEditorComponent implements OnDestroy {
   readonly content = input('');
   readonly language = input<'typescript' | 'json'>('typescript');
+  /**
+   * Shows the document without offering to change it. It is what a read-only
+   * instance binds; the component itself knows nothing of the mode.
+   */
+  readonly readOnly = input(false);
   readonly contentChange = output<string>();
 
   private readonly themeService = inject(ThemeService);
@@ -50,6 +55,7 @@ export class CodeEditorComponent implements OnDestroy {
   private view: EditorView | null = null;
   private readonly languageCompartment = new Compartment();
   private readonly themeCompartment = new Compartment();
+  private readonly readOnlyCompartment = new Compartment();
   private suppressNextUpdate = false;
 
   constructor() {
@@ -71,6 +77,17 @@ export class CodeEditorComponent implements OnDestroy {
       if (this.view) {
         this.view.dispatch({
           effects: this.languageCompartment.reconfigure(this.languageExtension(lang)),
+        });
+      }
+    });
+
+    // A compartment like the language and the theme: the state is built once,
+    // and reconfiguring is the only way to change a facet afterwards.
+    effect(() => {
+      const readOnly = this.readOnly();
+      if (this.view) {
+        this.view.dispatch({
+          effects: this.readOnlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
         });
       }
     });
@@ -127,6 +144,7 @@ export class CodeEditorComponent implements OnDestroy {
         basicSetup,
         this.themeCompartment.of(this.themeService.isDark() ? oneDark : []),
         this.languageCompartment.of(this.languageExtension(this.language())),
+        this.readOnlyCompartment.of(EditorState.readOnly.of(this.readOnly())),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             if (this.suppressNextUpdate) {

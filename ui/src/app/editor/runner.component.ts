@@ -11,6 +11,7 @@ import { firstValueFrom } from 'rxjs';
 import type { InvocationResult } from '@/models/invocation-result.model';
 import { FunctionsService } from '@/editor/functions.service';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
 
@@ -30,27 +31,33 @@ import { ZardIconComponent } from '@shared/components/icon';
             Running...
           </span>
         }
-        <button
-          z-button
-          [zType]="dirty() ? 'outline' : 'default'"
-          zSize="sm"
-          [disabled]="busy() || !functionName()"
-          (click)="run.emit()"
-        >
-          <z-icon zType="zap" class="mr-1.5 h-4 w-4" />
-          Run
-        </button>
-        @if (dirty()) {
+        <!-- The hint goes on the wrapper: a disabled button gets no hover
+             event, so a title placed on it would never show. -->
+        <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
           <button
             z-button
-            zType="default"
+            [zType]="dirty() ? 'outline' : 'default'"
             zSize="sm"
-            [disabled]="busy() || !functionName()"
-            (click)="saveAndRun.emit()"
+            [disabled]="busy() || !functionName() || demoMode()"
+            (click)="run.emit()"
           >
-            <z-icon zType="save" class="mr-1.5 h-4 w-4" />
-            Save and run
+            <z-icon zType="zap" class="mr-1.5 h-4 w-4" />
+            Run
           </button>
+        </span>
+        @if (dirty()) {
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button
+              z-button
+              zType="default"
+              zSize="sm"
+              [disabled]="busy() || !functionName() || demoMode()"
+              (click)="saveAndRun.emit()"
+            >
+              <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+              Save and run
+            </button>
+          </span>
         }
       </div>
 
@@ -63,6 +70,7 @@ import { ZardIconComponent } from '@shared/components/icon';
             <app-code-editor
               [content]="payload()"
               language="json"
+              [readOnly]="demoMode()"
               (contentChange)="payload.set($event)"
             />
           </div>
@@ -139,6 +147,11 @@ export class RunnerComponent {
    * it, like busy: the runner has no view on the edit buffer.
    */
   readonly dirty = input(false);
+  /**
+   * A showcase keeps the panel on screen — it is part of what the instance is
+   * there to display — and closes the two buttons that would execute something.
+   */
+  readonly demoMode = input(false);
 
   /**
    * Asks the editor to call execute() straight away. /invoke runs the file on
@@ -153,11 +166,14 @@ export class RunnerComponent {
    */
   readonly saveAndRun = output<void>();
 
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
+
   protected readonly payload = signal('{}');
   protected readonly lastResult = signal<InvocationResult | null>(null);
 
   /** Called by the editor once the save went through. */
   async execute(): Promise<void> {
+    if (this.demoMode()) return;
     const name = this.functionName();
     if (!name) return;
 

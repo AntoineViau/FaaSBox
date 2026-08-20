@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 
 import { CronHelpComponent } from '@/editor/cron-help.component';
 import { describeSchedule } from '@/editor/cron-presets';
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
 import { ZardInputDirective } from '@shared/components/input';
@@ -43,6 +44,7 @@ export interface CronRow {
               type="text"
               class="h-8 text-sm"
               [value]="row().name"
+              [disabled]="demoMode()"
               (input)="rowChange.emit({ name: $any($event.target).value })"
             />
           </div>
@@ -56,13 +58,14 @@ export interface CronRow {
               class="h-8 font-mono text-sm"
               placeholder="*/5 * * * *"
               [value]="row().schedule"
+              [disabled]="demoMode()"
               (input)="rowChange.emit({ schedule: $any($event.target).value })"
             />
             <p class="mt-0.5 text-xs text-muted-foreground">
               {{ describe(row().schedule) }}
             </p>
             <div class="mt-1.5">
-              <app-cron-help (pick)="rowChange.emit({ schedule: $event })" />
+              <app-cron-help (pick)="onPick($event)" />
             </div>
           </div>
 
@@ -75,6 +78,7 @@ export interface CronRow {
               class="font-mono text-sm"
               placeholder="{}"
               [value]="row().payload"
+              [disabled]="demoMode()"
               (input)="rowChange.emit({ payload: $any($event.target).value })"
             ></textarea>
           </div>
@@ -95,6 +99,7 @@ export interface CronRow {
                 step="1"
                 class="h-8 w-28 text-sm"
                 value="{{ row().maxQueue }}"
+                [disabled]="demoMode()"
                 (change)="onMaxQueue($any($event.target))"
               />
               <p class="mt-0.5 text-xs text-muted-foreground">
@@ -111,14 +116,26 @@ export interface CronRow {
             <input
               type="checkbox"
               [checked]="row().active"
+              [disabled]="demoMode()"
               (change)="rowChange.emit({ active: $any($event.target).checked })"
               class="h-4 w-4 accent-primary"
             />
             <span class="text-xs text-muted-foreground">Active</span>
           </label>
-          <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="removeRow.emit()">
-            <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
-          </button>
+          <!-- The hint goes on the wrapper: a disabled button gets no hover
+               event, so a title placed on it would never show. -->
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button
+              z-button
+              zType="ghost"
+              zSize="icon"
+              class="h-7 w-7"
+              [disabled]="demoMode()"
+              (click)="removeRow.emit()"
+            >
+              <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
+            </button>
+          </span>
         </div>
       </div>
     </div>
@@ -127,12 +144,21 @@ export interface CronRow {
 })
 export class CronTriggerCardComponent {
   readonly row = input.required<CronRow>();
+  /** A showcase shows a trigger and closes every field and button that writes it. */
+  readonly demoMode = input(false);
 
   /** The fields the user just touched; the panel owns the list. */
   readonly rowChange = output<Partial<CronRow>>();
   readonly removeRow = output<void>();
 
   protected readonly describe = describeSchedule;
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
+
+  /** The preset list is a shortcut into the schedule field, so it closes with it. */
+  protected onPick(schedule: string): void {
+    if (this.demoMode()) return;
+    this.rowChange.emit({ schedule });
+  }
 
   protected onMaxQueue(input: HTMLInputElement): void {
     // The DOM yields a string; maxQueue is a PocketBase NumberField. Empty,

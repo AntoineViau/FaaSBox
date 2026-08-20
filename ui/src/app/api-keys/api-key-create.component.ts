@@ -12,6 +12,7 @@ import {
   FunctionScopeComponent,
   type ScopeFunction,
 } from '@/api-keys/function-scope.component';
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardAlertComponent } from '@shared/components/alert';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -92,6 +93,7 @@ const MANAGE_KEY_EXPIRY_DAYS = 30;
             class="h-8 max-w-sm text-sm"
             placeholder="my-application"
             [value]="name()"
+            [disabled]="demoMode()"
             (input)="name.set($any($event.target).value)"
           />
         </div>
@@ -102,6 +104,7 @@ const MANAGE_KEY_EXPIRY_DAYS = 30;
             groupName="create-scope"
             [functions]="functions()"
             [value]="scopeSeed()"
+            [demoMode]="demoMode()"
             (valueChange)="scope.set($event)"
           />
         </div>
@@ -112,6 +115,7 @@ const MANAGE_KEY_EXPIRY_DAYS = 30;
               type="checkbox"
               class="h-4 w-4 accent-primary"
               [checked]="canManage()"
+              [disabled]="demoMode()"
               (change)="onCanManageChange($any($event.target).checked)"
             />
             <span class="text-xs text-muted-foreground">Can manage functions</span>
@@ -129,6 +133,7 @@ const MANAGE_KEY_EXPIRY_DAYS = 30;
             type="date"
             class="h-8 w-44 text-sm"
             [value]="expiryDate()"
+            [disabled]="demoMode()"
             (input)="expiryDate.set($any($event.target).value)"
           />
           <p class="mt-0.5 text-xs text-muted-foreground">
@@ -136,10 +141,14 @@ const MANAGE_KEY_EXPIRY_DAYS = 30;
           </p>
         </div>
 
-        <button z-button zType="default" zSize="sm" [disabled]="!canSubmit()" (click)="submit()">
-          <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
-          Create key
-        </button>
+        <!-- The hint goes on the wrapper: a disabled button gets no hover
+             event, so a title placed on it would never show. -->
+        <span class="block w-fit" [title]="demoMode() ? DEMO_MODE_HINT : ''">
+          <button z-button zType="default" zSize="sm" [disabled]="!canSubmit()" (click)="submit()">
+            <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
+            Create key
+          </button>
+        </span>
       </div>
     </div>
   `,
@@ -150,6 +159,10 @@ export class ApiKeyCreateComponent {
   readonly functions = input.required<ScopeFunction[]>();
   /** Raw key returned by the last creation, or null when there is none to show. */
   readonly createdKey = input<string | null>(null);
+  /** A showcase shows the form and closes every field and the button. */
+  readonly demoMode = input(false);
+
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   readonly create = output<ApiKeyCreateRequest>();
   readonly dismiss = output<void>();
@@ -165,7 +178,9 @@ export class ApiKeyCreateComponent {
   /** Scope handed to the picker. Only a reset changes it, so typing never fights the form. */
   protected readonly scopeSeed = signal<string[]>(['*']);
 
-  protected readonly canSubmit = computed(() => this.name().trim() !== '' && this.scope() !== null);
+  protected readonly canSubmit = computed(
+    () => this.name().trim() !== '' && this.scope() !== null && !this.demoMode(),
+  );
 
   constructor() {
     effect(() => {

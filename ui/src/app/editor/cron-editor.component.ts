@@ -14,6 +14,7 @@ import type { FaasboxCronJob } from '@/models/faasbox-cron-job.model';
 import { CronService } from '@/editor/cron.service';
 import { CronTriggerCardComponent, type CronRow } from '@/editor/cron-trigger-card.component';
 import { errorText } from '@/editor/error-text';
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardAlertComponent } from '@shared/components/alert';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -49,20 +50,27 @@ import { ZardIconComponent } from '@shared/components/icon';
         @for (row of rows(); track row.key) {
           <app-cron-trigger-card
             [row]="row"
+            [demoMode]="demoMode()"
             (rowChange)="patch(row.key, $event)"
             (removeRow)="remove(row.key)"
           />
         }
 
         <div class="flex items-center gap-2">
-          <button z-button zType="outline" zSize="sm" (click)="add()">
-            <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
-            Add trigger
-          </button>
-          <button z-button zType="default" zSize="sm" [disabled]="!canSave()" (click)="save()">
-            <z-icon zType="save" class="mr-1.5 h-4 w-4" />
-            Save
-          </button>
+          <!-- The hint goes on the wrapper: a disabled button gets no hover
+               event, so a title placed on it would never show. -->
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button z-button zType="outline" zSize="sm" [zDisabled]="demoMode()" (click)="add()">
+              <z-icon zType="plus" class="mr-1.5 h-4 w-4" />
+              Add trigger
+            </button>
+          </span>
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button z-button zType="default" zSize="sm" [disabled]="!canSave()" (click)="save()">
+              <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+              Save
+            </button>
+          </span>
           @if (saving()) {
             <span class="text-xs text-muted-foreground">Saving...</span>
           } @else if (isDirty()) {
@@ -81,7 +89,11 @@ export class CronEditorComponent {
   readonly functionId = input.required<string>();
   /** Only seeds the default name of a new trigger; never written as a reference. */
   readonly functionName = input.required<string>();
+  /** A showcase shows the triggers and closes everything that would write one. */
+  readonly demoMode = input(false);
   readonly cronCountChange = output<void>();
+
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   protected readonly rows = signal<CronRow[]>([]);
   protected readonly isLoading = signal(false);
@@ -113,7 +125,9 @@ export class CronEditorComponent {
     });
   });
 
-  protected readonly canSave = computed(() => !this.saving() && this.isDirty());
+  protected readonly canSave = computed(
+    () => !this.saving() && this.isDirty() && !this.demoMode(),
+  );
 
   constructor() {
     // Keyed on the id: renaming the open function moves no trigger, so the panel
@@ -143,6 +157,7 @@ export class CronEditorComponent {
   }
 
   protected add(): void {
+    if (this.demoMode()) return;
     const fnName = this.functionName();
     const existing = this.rows().length;
     // On screen only: nothing reaches the database until Save.
@@ -165,10 +180,12 @@ export class CronEditorComponent {
   }
 
   protected remove(key: number): void {
+    if (this.demoMode()) return;
     this.rows.update((list) => list.filter((row) => row.key !== key));
   }
 
   protected async save(): Promise<void> {
+    if (this.demoMode()) return;
     // Captured once. The writes below are interleaved with awaits, and nothing
     // stops the user from picking another function in the sidebar meanwhile:
     // re-reading the input would file the rest of the rows under it.

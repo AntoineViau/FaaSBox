@@ -48,6 +48,7 @@ import { EnvEditorComponent } from '@/editor/env-editor.component';
 import { errorText } from '@/editor/error-text';
 import { FilesTabComponent } from '@/editor/files-tab.component';
 import { InvokeHintComponent } from '@/editor/invoke-hint.component';
+import { DEMO_MODE_HINT, InstanceService } from '@/instance/instance.service';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
 import { RunnerComponent } from '@/editor/runner.component';
 import { SidebarComponent } from '@/editor/sidebar.component';
@@ -75,7 +76,7 @@ import { ZardInputDirective } from '@shared/components/input';
     ThemeToggleComponent,
   ],
   template: `
-    <div class="mx-auto flex h-screen w-full max-w-app flex-col">
+    <div class="mx-auto flex h-full w-full max-w-app flex-col">
       <!-- Header. The title block matches the sidebar width, so the actions
            below start exactly where the editor area does. -->
       <header class="flex items-center border-b border-border py-2">
@@ -124,6 +125,7 @@ import { ZardInputDirective } from '@shared/components/input';
             [selectedId]="store.selectedId()"
             [cronFunctions]="cronFunctions()"
             [loading]="store.isLoading()"
+            [demoMode]="demoMode()"
             (select)="onSelectFunction($event)"
             (create)="onCreateFunction()"
             (deleteItem)="onDeleteFunction($event)"
@@ -137,19 +139,36 @@ import { ZardInputDirective } from '@shared/components/input';
             <!-- Name field, and the one Save of the function: it records the
                  name, the script and the package.json, from any of the tabs. -->
             <div class="flex items-center gap-2 border-b border-border px-4 py-2">
-              <input
-                z-input
-                type="text"
-                placeholder="Function name"
-                [value]="localName()"
-                (input)="localName.set($any($event.target).value)"
-                class="h-8 flex-1 text-sm"
-              />
-              @if (nameOrScriptDirty()) {
-                <button z-button zType="default" zSize="sm" (click)="save()">
-                  <z-icon zType="save" class="mr-1.5 h-4 w-4" />
-                  Save
-                </button>
+              <!-- The hint goes on the wrapper of every control the demo mode
+                   closes: a disabled element receives no hover event, so a
+                   title on it would never show. -->
+              <span class="flex-1" [title]="demoMode() ? DEMO_MODE_HINT : ''">
+                <input
+                  z-input
+                  type="text"
+                  placeholder="Function name"
+                  [value]="localName()"
+                  [disabled]="demoMode()"
+                  (input)="localName.set($any($event.target).value)"
+                  class="h-8 w-full text-sm"
+                />
+              </span>
+              <!-- Shown while there is something to save, and on a showcase,
+                   where nothing can become dirty: the button is part of what
+                   the instance is there to display. -->
+              @if (nameOrScriptDirty() || demoMode()) {
+                <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+                  <button
+                    z-button
+                    zType="default"
+                    zSize="sm"
+                    [zDisabled]="demoMode()"
+                    (click)="save()"
+                  >
+                    <z-icon zType="save" class="mr-1.5 h-4 w-4" />
+                    Save
+                  </button>
+                </span>
               }
             </div>
 
@@ -241,6 +260,7 @@ import { ZardInputDirective } from '@shared/components/input';
                           <app-code-editor
                             [content]="localScript()"
                             language="typescript"
+                            [readOnly]="demoMode()"
                             (contentChange)="localScript.set($event)"
                           />
                         </div>
@@ -253,6 +273,7 @@ import { ZardInputDirective } from '@shared/components/input';
                             <app-code-editor
                               [content]="localPackageJson()"
                               language="json"
+                              [readOnly]="demoMode()"
                               (contentChange)="localPackageJson.set($event)"
                             />
                           </div>
@@ -262,11 +283,12 @@ import { ZardInputDirective } from '@shared/components/input';
                         <app-cron-editor
                           [functionId]="fn.id"
                           [functionName]="fn.name"
+                          [demoMode]="demoMode()"
                           (cronCountChange)="loadCronFunctions()"
                         />
                       }
                       @case ('environment') {
-                        <app-env-editor [functionId]="fn.id" />
+                        <app-env-editor [functionId]="fn.id" [demoMode]="demoMode()" />
                       }
                       @case ('files') {
                         <app-files-tab [functionId]="fn.id" [functionName]="fn.name" />
@@ -284,6 +306,7 @@ import { ZardInputDirective } from '@shared/components/input';
                   [functionName]="fn.name"
                   [busy]="running()"
                   [dirty]="isDirty()"
+                  [demoMode]="demoMode()"
                   (run)="run()"
                   (saveAndRun)="saveAndRun()"
                 />
@@ -308,7 +331,7 @@ import { ZardInputDirective } from '@shared/components/input';
   styles: `
     :host {
       display: block;
-      height: 100vh;
+      height: 100%;
     }
     /* These three hold the tab group up, and they live here now that the markup
        is the editor's own — they had to be global while it was built by the
@@ -332,11 +355,20 @@ export class EditorComponent implements OnInit {
   private readonly authService = inject(AuthService);
   private readonly cronService = inject(CronService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly instance = inject(InstanceService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   protected readonly store = inject(FunctionsStore);
 
   protected readonly TABS = EDITOR_TABS;
+
+  /**
+   * A showcase: everything is on screen, nothing can be written. The page
+   * reads it from the service and hands it down — the panels below stay
+   * presentational.
+   */
+  protected readonly demoMode = this.instance.demoMode;
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   /**
    * The address bar is the source of truth: these two are the only inputs of
@@ -586,7 +618,7 @@ export class EditorComponent implements OnInit {
   onKeydown(event: KeyboardEvent): void {
     if ((event.ctrlKey || event.metaKey) && event.key === 's') {
       event.preventDefault();
-      if (this.isDirty()) {
+      if (this.isDirty() && !this.demoMode()) {
         this.save();
       }
     }
@@ -594,6 +626,7 @@ export class EditorComponent implements OnInit {
 
   /** Returns false when nothing was written, so callers can stop there. */
   protected async save(): Promise<boolean> {
+    if (this.demoMode()) return false;
     const fn = this.store.selectedFunction();
     if (!fn) return false;
 
@@ -661,6 +694,7 @@ export class EditorComponent implements OnInit {
   }
 
   protected async onCreateFunction(): Promise<void> {
+    if (this.demoMode()) return;
     const name = prompt('Function name:');
     if (!name?.trim()) return;
 
@@ -675,6 +709,7 @@ export class EditorComponent implements OnInit {
   }
 
   protected async onDeleteFunction(id: string): Promise<void> {
+    if (this.demoMode()) return;
     const fn = this.store.sortedFunctions().find((f) => f.id === id);
     if (!fn) return;
     if (!confirm(`Delete function "${fn.name}"?`)) return;

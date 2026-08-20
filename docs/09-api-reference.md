@@ -1,6 +1,6 @@
 # 09 - API Reference
 
-FaaSBox provides a set of HTTP endpoints for managing and invoking functions. All endpoints (except `/health`) require authentication.
+FaaSBox provides a set of HTTP endpoints for managing and invoking functions. All endpoints (except `/health` and `/api/faasbox/instance`) require authentication.
 
 ## Authentication
 Use the `X-API-Key` header with a valid API key.
@@ -533,6 +533,77 @@ Used for container health checks or load balancer heartbeat. Verifies that the S
       "error": "database not accessible"
     }
     ```
+
+---
+
+## 12. Instance Mode
+**Endpoint**: `GET /api/faasbox/instance`
+
+**No Authentication Required.**
+
+Says whether this instance is a read-only demo. The editor reads it before its
+first render, to close the controls a showcase does not offer.
+
+- **Response on a normal instance**: `200 OK`
+    ```json
+    {
+      "demoMode": false
+    }
+    ```
+- **Response on a demo instance**: `200 OK`
+    ```json
+    {
+      "demoMode": true,
+      "email": "demo@example.com",
+      "password": "demo"
+    }
+    ```
+
+The two credential fields exist only in demo mode, and they are exactly what
+`FAASBOX_DEMOMODE_EMAIL` and `FAASBOX_DEMOMODE_PASSWORD` hold — empty strings
+when those are not set. A normal instance never returns them, even if both
+variables are set on it.
+
+> ⚠️ This endpoint is public and unauthenticated, so **the credentials of a demo
+> instance are published to anyone who asks**. That is the point — the sign-in
+> form shows them — but it means the account they name is open to the world,
+> the PocketBase admin included. Only ever point them at an instance you are
+> content to publish whole.
+
+### What a demo instance refuses
+
+On an instance started with `FAASBOX_DEMOMODE=true`, `GET`, `HEAD` and `OPTIONS`
+behave exactly as documented above. **Every other method answers `403`**,
+whatever the endpoint:
+
+```json
+{
+  "error": "this instance is a read-only demo"
+}
+```
+
+That covers `POST /invoke/{idOrName}`, the whole of [Manage Functions](#3-manage-functions),
+[Create an API key](#2-create-an-api-key), `/mcp`, and PocketBase's own
+collections API — the admin at `/_/` reads normally and writes nothing.
+
+Three exceptions let a visitor in and keep the editor alive, and they are named
+one by one rather than by prefix: `POST /api/collections/_superusers/auth-with-password`,
+`POST /api/collections/_superusers/auth-refresh` and `POST /api/realtime`.
+
+**[OAuth](#6-oauth-authorization) is a mixed case**, since only three of its
+eight endpoints carry a `POST`. `/oauth/register`, `/oauth/token` and the
+consent decision fall with everything else. `GET /oauth/authorize` is refused
+too, by name: it records a pending authorization request before redirecting, so
+it writes despite its method — and a demo instance no longer runs the hourly
+pass that would collect those records. The three discovery documents and the
+consent-request lookup stay open; they only read, and the `/agents` page reads
+one of them to know what this instance supports.
+
+The practical effect is that no agent can authorize itself against a demo
+instance, and none can call it: every MCP message is a `POST`.
+
+Nothing else changes: no collection gains an access rule, and the session a
+visitor opens is an ordinary superuser session.
 
 ---
 

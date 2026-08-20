@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -27,4 +28,25 @@ func envInt(name string, def int) int {
 		return def
 	}
 	return n
+}
+
+// envBool reads a boolean from the environment.
+//
+// The policy is the opposite of envInt's, deliberately: a bound that falls back
+// to its default costs a misconfigured limit, while a flag that falls back gets
+// the mode of the whole instance wrong. FAASBOX_DEMOMODE=treu would leave every
+// write route reachable on something published as a showcase. So the caller is
+// handed the error and stops.
+//
+// An absent variable is the nominal case and yields the default, silently.
+func envBool(name string, def bool) (bool, error) {
+	s := os.Getenv(name)
+	if s == "" {
+		return def, nil
+	}
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		return def, fmt.Errorf("invalid %s=%q: expected a boolean", name, s)
+	}
+	return v, nil
 }

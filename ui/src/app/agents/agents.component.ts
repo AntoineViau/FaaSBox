@@ -14,6 +14,7 @@ import { AgentsService } from '@/agents/agents.service';
 import { AuthorizedAgentsComponent } from '@/agents/authorized-agents.component';
 import { SnippetListComponent } from '@/agents/snippet-list.component';
 import { AuthService } from '@/auth/auth.service';
+import { InstanceService } from '@/instance/instance.service';
 import { type FaasboxOAuthGrant, grantClientName } from '@/models/faasbox-oauth-grant.model';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
 import { ZardAlertComponent } from '@shared/components/alert';
@@ -51,7 +52,7 @@ import { ZardIconComponent } from '@shared/components/icon';
     ZardIconComponent,
   ],
   template: `
-    <div class="mx-auto flex h-screen w-full max-w-app flex-col">
+    <div class="mx-auto flex h-full w-full max-w-app flex-col">
       <header class="flex items-center justify-between border-b border-border px-4 py-2">
         <div class="flex items-center gap-3">
           <a z-button zType="ghost" zSize="sm" routerLink="/editor">
@@ -179,6 +180,7 @@ import { ZardIconComponent } from '@shared/components/icon';
               <app-authorized-agents
                 [grants]="grants()"
                 [isLoading]="isLoadingGrants()"
+                [demoMode]="demoMode()"
                 (revoke)="onRevoke($event)"
               />
             </div>
@@ -190,7 +192,7 @@ import { ZardIconComponent } from '@shared/components/icon';
   styles: `
     :host {
       display: block;
-      height: 100vh;
+      height: 100%;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -198,6 +200,13 @@ import { ZardIconComponent } from '@shared/components/icon';
 export class AgentsComponent implements OnInit {
   private readonly agentsService = inject(AgentsService);
   private readonly authService = inject(AuthService);
+  private readonly instance = inject(InstanceService);
+
+  /**
+   * A showcase: the authorized agents are listed, and cutting one off is
+   * closed. The page reads the mode and hands it down.
+   */
+  protected readonly demoMode = this.instance.demoMode;
 
   protected readonly placeholder = KEY_PLACEHOLDER;
 
@@ -249,6 +258,7 @@ export class AgentsComponent implements OnInit {
   }
 
   protected async onRevoke(grant: FaasboxOAuthGrant): Promise<void> {
+    if (this.demoMode()) return;
     const name = grantClientName(grant);
     if (
       !confirm(`Revoke "${name}"? It stops working on its next call and has to authorize again.`)

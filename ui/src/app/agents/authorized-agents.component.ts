@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { type FaasboxOAuthGrant, grantClientName } from '@/models/faasbox-oauth-grant.model';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -36,10 +37,20 @@ import { ZardIconComponent } from '@shared/components/icon';
               {{ grant.refreshExpiresAt ? 'expires ' + day(grant.refreshExpiresAt) : 'no expiry' }}
             </p>
           </div>
-          <button z-button zType="outline" zSize="sm" (click)="revoke.emit(grant)">
-            <z-icon zType="trash" class="mr-1.5 h-3.5 w-3.5 text-destructive" />
-            Revoke
-          </button>
+          <!-- The hint goes on the wrapper: a disabled button gets no hover
+               event, so a title placed on it would never show. -->
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button
+              z-button
+              zType="outline"
+              zSize="sm"
+              [zDisabled]="demoMode()"
+              (click)="revoke.emit(grant)"
+            >
+              <z-icon zType="trash" class="mr-1.5 h-3.5 w-3.5 text-destructive" />
+              Revoke
+            </button>
+          </span>
         </div>
       }
     }
@@ -49,7 +60,11 @@ import { ZardIconComponent } from '@shared/components/icon';
 export class AuthorizedAgentsComponent {
   readonly grants = input.required<readonly FaasboxOAuthGrant[]>();
   readonly isLoading = input(false);
+  /** A showcase lists the authorized agents and closes the button that cuts one off. */
+  readonly demoMode = input(false);
   readonly revoke = output<FaasboxOAuthGrant>();
+
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   protected clientName(grant: FaasboxOAuthGrant): string {
     return grantClientName(grant);

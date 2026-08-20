@@ -92,6 +92,9 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `SUPERUSER_PASSWORD` | Admin superuser password | *(required)* |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
 | `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin | *(OAuth disabled)* |
+| `FAASBOX_DEMOMODE` | Turns the instance into a read-only showcase | `false` |
+| `FAASBOX_DEMOMODE_EMAIL` | Email the sign-in form of a demo instance shows prefilled | *(empty)* |
+| `FAASBOX_DEMOMODE_PASSWORD` | Password the sign-in form of a demo instance shows prefilled | *(empty)* |
 | `FAASBOX_MAX_CONCURRENCY` | Max concurrent function executions | `4` |
 | `FAASBOX_MAX_LOG_RETENTION` | Max number of execution logs to keep | `1000` |
 | `FAASBOX_MAX_OUTPUT_SIZE` | Bytes captured per output stream, `stdout` and `stderr` alike | `1048576` |
@@ -103,6 +106,10 @@ These environment variables configure the FaaSBox server itself (not injected in
 Every numeric setting behaves the same way: an absent variable uses the default silently, and a value that is unparsable, negative or zero falls back to the default with a message in the server log. A bad numeric setting never prevents startup.
 
 `FAASBOX_ENCRYPTION_KEY` is the exception, and the only variable of the table that is not optional: absent, malformed, or the wrong length, the server stops and says so.
+
+`FAASBOX_DEMOMODE` is the **second** variable of the table — after `FAASBOX_ENCRYPTION_KEY` — whose unreadable value stops the server instead of falling back. The reason is what it commands: a bound that falls back costs a misconfigured limit, while `FAASBOX_DEMOMODE=treu` would leave every write route of something published as a showcase wide open. `true`, `1`, `false`, `0` and their casings are accepted; anything else is refused by name and by value. Absent, it is simply `false`.
+
+Its two companions command nothing and are read as they stand: they fill the two fields of the sign-in form on a demo instance, and they create no account — the one they name must already exist as a superuser. See [10 - Deployment](10-deployment.md#serving-a-demo-instance) for what the mode stops and what it publishes.
 
 `FAASBOX_PUBLIC_URL` is the exception to the "has a default" rule, because no guessed address would be right: it is what the OAuth authorization server publishes as its own identity. Absent or malformed, the OAuth endpoints are not mounted and a startup line says why; an agent then connects with an API key, as it does today. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints and [10 - Deployment](10-deployment.md#telling-the-instance-its-own-address) for what to put in it.
 

@@ -2,6 +2,7 @@ import { Component, signal, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '@/auth/auth.service';
+import { InstanceService } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardInputDirective } from '@shared/components/input';
 import { ZardCardComponent } from '@shared/components/card';
@@ -26,7 +27,7 @@ import { ZardAlertComponent } from '@shared/components/alert';
     ZardAlertComponent,
   ],
   template: `
-    <div class="flex min-h-screen items-center justify-center p-4">
+    <div class="flex min-h-full items-center justify-center p-4">
       <z-card zTitle="FaaSBox" zDescription="Sign in with your superuser account" class="w-full max-w-sm">
         <form (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           @if (errorMessage()) {
@@ -73,11 +74,22 @@ import { ZardAlertComponent } from '@shared/components/alert';
 })
 export class LoginComponent {
   private readonly authService = inject(AuthService);
+  private readonly instance = inject(InstanceService);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
 
-  email = '';
-  password = '';
+  /**
+   * A showcase hands the visitor the account it wants them to use, already
+   * typed in. Nothing else about signing in changes: the click below opens the
+   * same session as anywhere else, and the two fields are empty on an instance
+   * that publishes no demo credentials.
+   *
+   * Read once, in a field initializer: the mode is loaded before the first
+   * render, so there is nothing to wait for and nothing to overwrite once the
+   * visitor starts typing.
+   */
+  email = this.instance.demoMode() ? this.instance.demoEmail() : '';
+  password = this.instance.demoMode() ? this.instance.demoPassword() : '';
   loading = signal(false);
   errorMessage = signal('');
 

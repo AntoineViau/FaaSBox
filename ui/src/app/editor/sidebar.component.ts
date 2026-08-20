@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
+import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import type { FaasboxFunction } from '@/models/faasbox-function.model';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -40,9 +41,21 @@ import { ZardIconComponent } from '@shared/components/icon';
           >
             <z-icon zType="refresh-cw" class="h-4 w-4" [class.animate-spin]="loading()" />
           </button>
-          <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="create.emit()">
-            <z-icon zType="plus" class="h-4 w-4" />
-          </button>
+          <!-- The hint sits on the wrapper, not on the button: a browser sends
+               no hover event to a disabled element, so a title placed on it
+               would never show. -->
+          <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+            <button
+              z-button
+              zType="ghost"
+              zSize="icon"
+              class="h-7 w-7"
+              [disabled]="demoMode()"
+              (click)="create.emit()"
+            >
+              <z-icon zType="plus" class="h-4 w-4" />
+            </button>
+          </span>
         </div>
       </div>
       <div class="flex-1 overflow-y-auto p-1">
@@ -62,15 +75,18 @@ import { ZardIconComponent } from '@shared/components/icon';
             @if (cronFunctions().has(fn.id)) {
               <z-icon zType="calendar" class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             }
-            <button
-              z-button
-              zType="ghost"
-              zSize="icon"
-              class="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-              (click)="$event.stopPropagation(); deleteItem.emit(fn.id)"
-            >
-              <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
-            </button>
+            <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+              <button
+                z-button
+                zType="ghost"
+                zSize="icon"
+                class="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+                [disabled]="demoMode()"
+                (click)="$event.stopPropagation(); deleteItem.emit(fn.id)"
+              >
+                <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
+              </button>
+            </span>
           </div>
         }
       </div>
@@ -85,6 +101,10 @@ export class SidebarComponent {
   readonly cronFunctions = input<Set<string>>(new Set());
   /** Spins the reload icon and holds the button, so a click reads as an action. */
   readonly loading = input(false);
+  /** A showcase lists the functions and closes what would write one. */
+  readonly demoMode = input(false);
+
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   readonly select = output<string>();
   readonly create = output<void>();

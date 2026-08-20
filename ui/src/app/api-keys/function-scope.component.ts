@@ -57,6 +57,7 @@ export function describeScopeEntry(functions: readonly ScopeFunction[], id: stri
             class="h-3.5 w-3.5 accent-primary"
             [name]="groupName()"
             [checked]="mode() === 'all'"
+            [disabled]="demoMode()"
             (change)="setMode('all')"
           />
           <span class="text-xs">All functions</span>
@@ -67,6 +68,7 @@ export function describeScopeEntry(functions: readonly ScopeFunction[], id: stri
             class="h-3.5 w-3.5 accent-primary"
             [name]="groupName()"
             [checked]="mode() === 'selected'"
+            [disabled]="demoMode()"
             (change)="setMode('selected')"
           />
           <span class="text-xs">Selected functions</span>
@@ -84,6 +86,7 @@ export function describeScopeEntry(functions: readonly ScopeFunction[], id: stri
                   type="checkbox"
                   class="h-3.5 w-3.5 accent-primary"
                   [checked]="selected().has(fn.id)"
+                  [disabled]="demoMode()"
                   (change)="toggle(fn.id, $any($event.target).checked)"
                 />
                 <span class="font-mono text-xs">{{ fn.name }}</span>
@@ -106,6 +109,8 @@ export class FunctionScopeComponent {
   readonly value = input<string[]>([]);
   /** Radio group name, unique per instance on a page holding several pickers. */
   readonly groupName = input('function-scope');
+  /** A showcase shows a scope and closes what would change it. */
+  readonly demoMode = input(false);
 
   readonly valueChange = output<string[] | null>();
 

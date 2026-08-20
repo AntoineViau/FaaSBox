@@ -12,6 +12,7 @@ import {
 } from '@/api-keys/function-scope.component';
 import { AuthService } from '@/auth/auth.service';
 import { FunctionsService } from '@/editor/functions.service';
+import { DEMO_MODE_HINT, InstanceService } from '@/instance/instance.service';
 import type { FaasboxApiKey } from '@/models/faasbox-api-key.model';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
 import { ZardAlertComponent } from '@shared/components/alert';
@@ -49,7 +50,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
     ZardIconComponent,
   ],
   template: `
-    <div class="mx-auto flex h-screen w-full max-w-app flex-col">
+    <div class="mx-auto flex h-full w-full max-w-app flex-col">
       <header class="flex items-center justify-between border-b border-border px-4 py-2">
         <div class="flex items-center gap-3">
           <a z-button zType="ghost" zSize="sm" routerLink="/editor">
@@ -75,6 +76,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
         <app-api-key-create
           [functions]="functions()"
           [createdKey]="createdKey()"
+          [demoMode]="demoMode()"
           (create)="onCreate($event)"
           (dismiss)="createdKey.set(null)"
         />
@@ -111,6 +113,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
                         [groupName]="'scope-' + key.id"
                         [functions]="functions()"
                         [value]="key.allowedFunctions"
+                        [demoMode]="demoMode()"
                         (valueChange)="onScopeChange(key, $event)"
                       />
                     </div>
@@ -118,18 +121,34 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
                 </div>
 
                 <div class="flex flex-col items-center gap-2">
-                  <label class="flex cursor-pointer items-center gap-1.5">
+                  <!-- The hint goes on the wrapper of every control the demo
+                       mode closes: a disabled element receives no hover event,
+                       so a title placed on it would never show. -->
+                  <label
+                    class="flex cursor-pointer items-center gap-1.5"
+                    [title]="demoMode() ? DEMO_MODE_HINT : ''"
+                  >
                     <input
                       type="checkbox"
                       class="h-4 w-4 accent-primary"
                       [checked]="key.active"
+                      [disabled]="demoMode()"
                       (change)="onToggleActive(key, $any($event.target).checked)"
                     />
                     <span class="text-xs text-muted-foreground">Active</span>
                   </label>
-                  <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="onDelete(key)">
-                    <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
-                  </button>
+                  <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
+                    <button
+                      z-button
+                      zType="ghost"
+                      zSize="icon"
+                      class="h-7 w-7"
+                      [disabled]="demoMode()"
+                      (click)="onDelete(key)"
+                    >
+                      <z-icon zType="trash" class="h-3.5 w-3.5 text-destructive" />
+                    </button>
+                  </span>
                 </div>
               </div>
             </div>
@@ -141,7 +160,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
   styles: `
     :host {
       display: block;
-      height: 100vh;
+      height: 100%;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -150,6 +169,14 @@ export class ApiKeysComponent implements OnInit {
   private readonly apiKeysService = inject(ApiKeysService);
   private readonly authService = inject(AuthService);
   private readonly functionsService = inject(FunctionsService);
+  private readonly instance = inject(InstanceService);
+
+  /**
+   * A showcase: the keys are listed, and nothing here writes one. The page
+   * reads the mode and hands it down — the panels below stay presentational.
+   */
+  protected readonly demoMode = this.instance.demoMode;
+  protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
   protected readonly keys = signal<ApiKeyRow[]>([]);
   /** Every function the scopes can point at: recorded by id, shown by name. */
@@ -192,6 +219,7 @@ export class ApiKeysComponent implements OnInit {
   }
 
   protected async onCreate(request: ApiKeyCreateRequest): Promise<void> {
+    if (this.demoMode()) return;
     this.errorMessage.set('');
     try {
       const created = await firstValueFrom(
@@ -223,6 +251,7 @@ export class ApiKeysComponent implements OnInit {
   }
 
   protected async onDelete(key: ApiKeyRow): Promise<void> {
+    if (this.demoMode()) return;
     if (!confirm(`Delete API key "${key.name}"? Applications using it will stop working.`)) return;
     this.errorMessage.set('');
     try {
@@ -234,6 +263,7 @@ export class ApiKeysComponent implements OnInit {
   }
 
   private async patch(key: ApiKeyRow, data: Partial<FaasboxApiKey>): Promise<void> {
+    if (this.demoMode()) return;
     this.errorMessage.set('');
     try {
       const updated = await firstValueFrom(this.apiKeysService.update(key.id, data));
