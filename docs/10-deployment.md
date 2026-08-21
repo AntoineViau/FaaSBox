@@ -415,8 +415,9 @@ Everything is in SQLite, so a backup is a file:
 3.  PocketBase applies its own migrations at startup. FaaSBox creates its four
     collections if they are absent — `faasbox_functions`, `faasbox_api_keys`,
     `faasbox_triggers`, `faasbox_logs` — adds missing fields to
-    `faasbox_functions`, and resizes the `stdout` and `stderr` fields of
-    `faasbox_logs` to match the current `FAASBOX_MAX_LOG_OUTPUT`
+    `faasbox_functions`, and resizes the `stdout`, `stderr` and
+    `requestPayload` fields of `faasbox_logs` to match the current
+    `FAASBOX_MAX_LOG_OUTPUT` and `FAASBOX_MAX_LOG_PAYLOAD`
     (see [04 - Environment Variables](04-environment-variables.md)). It never
     removes or renames a field.
 

@@ -425,6 +425,15 @@ func withMaxLoggedOutput(t testing.TB, value int) {
 	maxLoggedOutput = value
 }
 
+// withMaxLoggedPayload is withMaxLoggedOutput for the other setting, the one
+// that sizes requestPayload.
+func withMaxLoggedPayload(t testing.TB, value int) {
+	t.Helper()
+	previous := maxLoggedPayload
+	t.Cleanup(func() { maxLoggedPayload = previous })
+	maxLoggedPayload = value
+}
+
 // logsTextFieldMax reads the declared size of a faasbox_logs text field.
 func logsTextFieldMax(t testing.TB, app core.App, name string) int {
 	t.Helper()
@@ -437,6 +446,22 @@ func logsTextFieldMax(t testing.TB, app core.App, name string) int {
 		t.Fatalf("%s field is missing or is not a TextField", name)
 	}
 	return field.Max
+}
+
+// logsJSONFieldMaxSize reads the declared size of a faasbox_logs JSON field.
+// It is a separate reader because the unit differs: a JSONField declares bytes,
+// a TextField runes.
+func logsJSONFieldMaxSize(t testing.TB, app core.App, name string) int64 {
+	t.Helper()
+	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field, ok := col.Fields.GetByName(name).(*core.JSONField)
+	if !ok {
+		t.Fatalf("%s field is missing or is not a JSONField", name)
+	}
+	return field.MaxSize
 }
 
 // TestEnsureLogsCollection_FollowsARaisedSetting covers the repair: the declared
@@ -531,8 +556,9 @@ func TestEnsureLogsCollection_LoweringSparesStoredRows(t *testing.T) {
 }
 
 // TestEnsureLogsCollection_SavesTheCollectionOnce guards the cost of the repair:
-// at a steady setting the collection is written when it is created and never
-// again, however many times the server restarts.
+// at steady settings the collection is written when it is created and never
+// again, however many times the server restarts. It covers the three resized
+// columns at once, being a count of writes to the collection itself.
 func TestEnsureLogsCollection_SavesTheCollectionOnce(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -550,6 +576,11 @@ func TestEnsureLogsCollection_SavesTheCollectionOnce(t *testing.T) {
 	app.OnCollectionAfterCreateSuccess().BindFunc(count)
 	app.OnCollectionAfterUpdateSuccess().BindFunc(count)
 
+	// Both settings off their defaults: a sum spelled one way at creation and
+	// another at realignment would show up here as a second write, for either
+	// of the two units.
+	withMaxLoggedOutput(t, 3<<10)
+	withMaxLoggedPayload(t, 5<<10)
 	setupLogsCollection(t, app)
 	for i := range 2 {
 		if err := ensureLogsCollection(app); err != nil {
@@ -603,6 +634,82 @@ func TestRecordExecution_SurvivesARaisedSetting(t *testing.T) {
 	}
 	if records[0].GetBool("truncated") {
 		t.Error("truncated = true, want false: the output fits under the raised cap")
+	}
+}
+
+// TestEnsureLogsCollection_FollowsARaisedPayloadSetting is the stdout story for
+// requestPayload: declared from the setting at creation, and widened at the next
+// start when the setting goes up. Left at the PocketBase default, the column
+// capped the payload at 1 MB whatever FAASBOX_MAX_LOG_PAYLOAD said.
+func TestEnsureLogsCollection_FollowsARaisedPayloadSetting(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	withMaxLoggedPayload(t, 2<<10)
+	setupLogsCollection(t, app)
+
+	if got, want := logsJSONFieldMaxSize(t, app, "requestPayload"), int64(cipherMaxBytes(2<<10+logMarkerSlack)); got != want {
+		t.Errorf("requestPayload MaxSize at creation = %d, want %d", got, want)
+	}
+
+	withMaxLoggedPayload(t, 64<<10)
+	if err := ensureLogsCollection(app); err != nil {
+		t.Fatalf("replaying ensureLogsCollection failed: %v", err)
+	}
+
+	if got, want := logsJSONFieldMaxSize(t, app, "requestPayload"), int64(cipherMaxBytes(64<<10+logMarkerSlack)); got != want {
+		t.Errorf("requestPayload MaxSize = %d, want %d", got, want)
+	}
+}
+
+// TestRecordExecution_SurvivesARaisedPayloadSetting reads the same repair from
+// the far end, and crosses the threshold that makes it matter: an undeclared
+// JSONField caps at PocketBase's 1 MB default, so a setting raised past that is
+// where the column and the setting part company. Without the realignment
+// PocketBase refuses the record, and the invocation answers as if nothing
+// happened while the log line is simply not there.
+func TestRecordExecution_SurvivesARaisedPayloadSetting(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	setupLogsCollection(t, app)
+
+	// Past the 1 MB the column would otherwise be held to, and past what the
+	// sealed value costs on top of the plaintext.
+	const raised = 2 << 20
+	withMaxLoggedPayload(t, raised)
+	if err := ensureLogsCollection(app); err != nil {
+		t.Fatalf("replaying ensureLogsCollection failed: %v", err)
+	}
+
+	// Exactly at the new bound, so it is stored whole: truncateForLog leaves a
+	// value of the cap's own size alone.
+	payload := `{"p":"` + strings.Repeat("x", raised-len(`{"p":""}`)) + `"}`
+	recordExecution(app, logEntry{
+		FunctionName:   "verbose-caller",
+		Trigger:        "http",
+		Status:         "success",
+		RequestPayload: payload,
+	})
+
+	records, err := app.FindAllRecords(faasboxLogsCollection)
+	if err != nil {
+		t.Fatalf("failed to read back logs: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d log records, want 1 — the raised cap dropped the row", len(records))
+	}
+	if got := decryptedJSON(app, records[0], "requestPayload"); got != payload {
+		t.Errorf("stored requestPayload is %d bytes, want the %d written", len(got), len(payload))
+	}
+	if records[0].GetBool("truncated") {
+		t.Error("truncated = true, want false: the payload fits under the raised cap")
 	}
 }
 

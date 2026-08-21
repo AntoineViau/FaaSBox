@@ -245,6 +245,16 @@ func cipherMax(runes int) int {
 	return len(cipherPrefix) + base64.StdEncoding.EncodedLen(utf8.UTFMax*runes+cipherEnvelope)
 }
 
+// cipherMaxBytes is cipherMax for a bound already expressed in bytes. The two
+// differ only by the rune-to-byte majoration: cipherMax has to assume the worst
+// case of utf8.UTFMax bytes per rune, this one has the byte count already.
+//
+// A JSONField declares its size in bytes, where a TextField counts runes, so
+// which of the two applies is read off the field type at the call site.
+func cipherMaxBytes(n int) int {
+	return len(cipherPrefix) + base64.StdEncoding.EncodedLen(n+cipherEnvelope)
+}
+
 // encrypt encrypts plaintext using AES-256-GCM and returns a base64-encoded string
 // containing the nonce prepended to the ciphertext.
 func encrypt(plaintext, key []byte) (string, error) {

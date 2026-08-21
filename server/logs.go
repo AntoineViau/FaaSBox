@@ -21,11 +21,10 @@ const (
 	defaultMaxLoggedPayload = 4 << 10 // 4 KB for the request payload
 
 	// logMarkerSlack covers the truncation marker appended past the cap.
-	// A TextField with no explicit Max defaults to 5000 runes and rejects
-	// the whole record beyond it, so the declared field size must leave
-	// room for the marker. The caps above are counted in bytes while Max
-	// is counted in runes: the mismatch is safe, a byte count always
-	// overshoots the rune count it stands for.
+	// A field with no explicit size takes a default — 5000 runes for a
+	// TextField, 1 MB for a JSONField — and rejects the whole record
+	// beyond it, so the declared field size must leave room for the
+	// marker.
 	logMarkerSlack = 128
 )
 
@@ -35,18 +34,19 @@ var maxLogRetention = envInt("FAASBOX_MAX_LOG_RETENTION", defaultMaxLogRetention
 
 // maxLoggedOutput and maxLoggedPayload bound what a log record stores.
 //
-// maxLoggedOutput also sets the declared size of the stdout and stderr fields,
-// and ensureLogsCollection realigns them on every start: a raised setting
-// widens the stored schema before recordExecution can build a value it would
-// reject.
+// They also set the declared size of the columns they cap — stdout and stderr
+// for the first, requestPayload for the second — and ensureLogsCollection
+// realigns all three on every start: a raised setting widens the stored schema
+// before recordExecution can build a value it would reject.
 var (
 	maxLoggedOutput  = envInt("FAASBOX_MAX_LOG_OUTPUT", defaultMaxLoggedOutput)
 	maxLoggedPayload = envInt("FAASBOX_MAX_LOG_PAYLOAD", defaultMaxLoggedPayload)
 )
 
 // ensureLogsCollection creates the faasbox_logs collection if it doesn't exist,
-// and otherwise makes the declared size of stdout and stderr follow the current
-// FAASBOX_MAX_LOG_OUTPUT setting.
+// and otherwise makes the declared size of stdout, stderr and requestPayload
+// follow the current FAASBOX_MAX_LOG_OUTPUT and FAASBOX_MAX_LOG_PAYLOAD
+// settings.
 //
 // It carries both a relation and a name, and that denormalisation is deliberate.
 // The relation is what filtering and cascade deletion need — a log follows its
@@ -56,14 +56,21 @@ var (
 //
 // It requires faasbox_functions to exist already: OnServe creates it first.
 func ensureLogsCollection(app core.App) error {
-	// Creation and realignment read the wanted size from the same place. Two
-	// spellings of the same sum would make the comparison below miss and save
+	// Creation and realignment read the wanted sizes from the same place. Two
+	// spellings of the same sum would make the comparisons below miss and save
 	// the collection at every boot.
 	//
-	// The declared size measures the *sealed* value: these two columns are
+	// The declared size measures the *sealed* value: these three columns are
 	// encrypted at rest, and a field capped on the plaintext would refuse an
 	// output the setting says to keep.
+	//
+	// The two sums differ by their unit, and only by that. A TextField Max
+	// counts runes, so wantedOutputMax goes through cipherMax and its worst
+	// case of four bytes per rune; a JSONField MaxSize counts bytes, which is
+	// what truncateForLog already cut, so wantedPayloadMax takes the byte
+	// majoration instead of overshooting it fourfold.
 	wantedOutputMax := cipherMax(maxLoggedOutput + logMarkerSlack)
+	wantedPayloadMax := int64(cipherMaxBytes(maxLoggedPayload + logMarkerSlack))
 
 	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
 	if err != nil {
@@ -87,7 +94,7 @@ func ensureLogsCollection(app core.App) error {
 			&core.NumberField{Name: "duration"},
 			&core.TextField{Name: "stdout", Max: wantedOutputMax},
 			&core.TextField{Name: "stderr", Max: wantedOutputMax},
-			&core.JSONField{Name: "requestPayload"},
+			&core.JSONField{Name: "requestPayload", MaxSize: wantedPayloadMax},
 			&core.NumberField{Name: "exitCode"},
 			&core.BoolField{Name: "truncated"},
 			&core.AutodateField{Name: "created", OnCreate: true},
@@ -97,14 +104,15 @@ func ensureLogsCollection(app core.App) error {
 		return app.Save(col)
 	}
 
-	// The collection exists: realign the declared size on the current setting.
-	// Left frozen at its creation-day value, a raised FAASBOX_MAX_LOG_OUTPUT
-	// would have recordExecution build a value the stored schema rejects, and
-	// the whole row would vanish while the invocation reports success.
+	// The collection exists: realign the declared sizes on the current settings.
+	// Left frozen at their creation-day values, a raised FAASBOX_MAX_LOG_OUTPUT
+	// or FAASBOX_MAX_LOG_PAYLOAD would have recordExecution build a value the
+	// stored schema rejects, and the whole row would vanish while the
+	// invocation reports success.
 	//
-	// A field that is absent — or is not a TextField — yields nil, false and is
-	// skipped: it belongs to a collection this code did not create, and there is
-	// nothing here to reconcile.
+	// A field that is absent — or is not of the type expected here — yields
+	// nil, false and is skipped: it belongs to a collection this code did not
+	// create, and there is nothing here to reconcile.
 	needsSave := false
 	for _, name := range []string{"stdout", "stderr"} {
 		field, ok := col.Fields.GetByName(name).(*core.TextField)
@@ -114,6 +122,15 @@ func ensureLogsCollection(app core.App) error {
 		field.Max = wantedOutputMax
 		needsSave = true
 	}
+	// requestPayload is realigned beside that loop rather than in it: it is a
+	// JSONField, the cast the loop makes does not fit it, and its size is
+	// declared in bytes. Same guard, and the same needsSave, so one save
+	// covers the three columns.
+	if field, ok := col.Fields.GetByName("requestPayload").(*core.JSONField); ok && field.MaxSize != wantedPayloadMax {
+		field.MaxSize = wantedPayloadMax
+		needsSave = true
+	}
+
 	if needsSave {
 		return app.Save(col)
 	}
