@@ -389,7 +389,7 @@ func TestSealedName_FunctionNameIsPlaintextOnCron(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runFunction(context.Background(), app, functionsDir, fn.Id, "{}", 0, "")
+	runFunction(context.Background(), app, functionsDir, fn.Id, "{}", 0, "", "cron")
 
 	entries := executionLogsOf(t, app, "scheduled-reporter")
 	if len(entries) != 1 {

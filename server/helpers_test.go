@@ -68,8 +68,7 @@ func setupBlindIndexes(app core.App) {
 // weighs a sealed value, then the fingerprints, then the sealing.
 func setupFieldEncryption(t testing.TB, app core.App) {
 	t.Helper()
-	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
-	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+	bindTriggerHook(app)
 	setupBlindIndexes(app)
 	registerFieldEncryption(app)
 }

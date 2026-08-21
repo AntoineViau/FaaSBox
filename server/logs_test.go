@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -292,6 +293,50 @@ func TestEnsureLogsCollection_TruncatedField(t *testing.T) {
 
 	if _, ok := col.Fields.GetByName("truncated").(*core.BoolField); !ok {
 		t.Fatal("truncated field is missing or is not a BoolField")
+	}
+}
+
+// TestEnsureLogsCollection_TriggerValues pins the closed list of the trigger
+// column. A value missing from it does not degrade the entry: PocketBase
+// refuses the whole record, so the execution leaves no trace at all — and the
+// failure is silent on the caller's side.
+func TestEnsureLogsCollection_TriggerValues(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	setupLogsCollection(t, app)
+
+	col, err := app.FindCollectionByNameOrId(faasboxLogsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field, ok := col.Fields.GetByName("trigger").(*core.SelectField)
+	if !ok {
+		t.Fatalf("trigger is a %T, want a *core.SelectField", col.Fields.GetByName("trigger"))
+	}
+	for _, want := range []string{"http", "cron", "startup"} {
+		if !slices.Contains(field.Values, want) {
+			t.Errorf("trigger values = %v, missing %q", field.Values, want)
+		}
+	}
+
+	// And an entry carrying the new one is actually stored.
+	fn := saveTestFunction(t, app, t.TempDir(), "booted", "console.log(1)", "")
+	recordExecution(app, logEntry{
+		FunctionId:   fn.Id,
+		FunctionName: "booted",
+		Trigger:      "startup",
+		Status:       "success",
+	})
+	entries := executionLogsOf(t, app, "booted")
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want the single startup run", len(entries))
+	}
+	if got := entries[0].GetString("trigger"); got != "startup" {
+		t.Errorf("trigger = %q, want \"startup\"", got)
 	}
 }
 

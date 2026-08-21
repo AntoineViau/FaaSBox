@@ -12,6 +12,7 @@ import { firstValueFrom } from 'rxjs';
 
 import type { FaasboxCronJob } from '@/models/faasbox-cron-job.model';
 import { CronService } from '@/editor/cron.service';
+import { DEFAULT_SCHEDULE } from '@/editor/cron-presets';
 import { CronTriggerCardComponent, type CronRow } from '@/editor/cron-trigger-card.component';
 import { errorText } from '@/editor/error-text';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
@@ -26,9 +27,10 @@ import { ZardIconComponent } from '@shared/components/icon';
  * on screen until Save, which reconciles the list with the database. Immediate
  * writes left a refused schedule displayed as if it had been accepted.
  *
- * Slightly past the 300-line guideline, deliberately: the overshoot is the
- * comments carrying the save/switch constraints, and the helpers at the bottom
- * read nothing but a row.
+ * Past the 300-line guideline, deliberately: the overshoot is the comments
+ * carrying the save/switch constraints, and the helpers at the bottom read
+ * nothing but a row. The next cut, if one is wanted, separates those helpers
+ * from the panel — they belong next to CronRow, which is declared in the card.
  */
 @Component({
   selector: 'app-cron-editor',
@@ -166,10 +168,13 @@ export class CronEditorComponent {
         key: this.nextKey++,
         id: '',
         name: existing === 0 ? fnName : `${fnName}-${existing + 1}`,
-        schedule: '0 * * * *',
+        schedule: DEFAULT_SCHEDULE,
         payload: '{}',
         active: true,
         maxQueue: 0,
+        // The trigger you get without doing anything stays the scheduled one.
+        kind: 'cron',
+        startupDelayMinutes: 0,
       },
       ...list,
     ]);
@@ -236,6 +241,8 @@ export class CronEditorComponent {
         payload: payloads.get(row.key),
         active: row.active,
         maxQueue: row.maxQueue,
+        kind: row.kind,
+        startupDelayMinutes: row.startupDelayMinutes,
       };
       try {
         const record = row.id
@@ -285,6 +292,10 @@ export class CronEditorComponent {
       payload: formatPayload(job.payload),
       active: job.active,
       maxQueue: job.maxQueue ?? 0,
+      // An empty column reads as 'cron', mirroring the server accessor: that is
+      // the shape a record written from the PocketBase admin carries.
+      kind: job.kind === 'startup' ? 'startup' : 'cron',
+      startupDelayMinutes: job.startupDelayMinutes ?? 0,
     };
   }
 
@@ -313,7 +324,9 @@ function sameRow(a: CronRow, b: CronRow): boolean {
     a.schedule === b.schedule &&
     a.payload === b.payload &&
     a.active === b.active &&
-    a.maxQueue === b.maxQueue
+    a.maxQueue === b.maxQueue &&
+    a.kind === b.kind &&
+    a.startupDelayMinutes === b.startupDelayMinutes
   );
 }
 

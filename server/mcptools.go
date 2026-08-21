@@ -56,10 +56,14 @@ import (
 // next to it.
 type mcpCron struct {
 	Name     string `json:"name" jsonschema:"a label for this trigger"`
-	Schedule string `json:"schedule" jsonschema:"cron expression, five fields: minute hour day-of-month month day-of-week"`
+	Schedule string `json:"schedule" jsonschema:"cron expression, five fields: minute hour day-of-month month day-of-week; leave it empty on a startup trigger"`
 	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function on stdin at each firing"`
 	Active   *bool  `json:"active,omitempty" jsonschema:"whether the trigger fires; defaults to true when omitted"`
 	MaxQueue int    `json:"maxQueue,omitempty" jsonschema:"how many runs of this trigger may exist at once, waiting plus running; 0 means no limit"`
+	Kind     string `json:"kind,omitempty" jsonschema:"cron for a scheduled trigger, startup to fire once when the server comes up; defaults to cron when omitted"`
+	// The delay is a whole number of minutes rather than a duration string: it is
+	// what the column holds, and what the bound is expressed in.
+	StartupDelayMinutes int `json:"startupDelayMinutes,omitempty" jsonschema:"on a startup trigger, how long after the server comes up it fires, in minutes, from 0 to 1439"`
 }
 
 // mcpFunctionArgs is what the three tools that only designate a function take.
@@ -73,7 +77,7 @@ type mcpCreateArgs struct {
 	Script      string            `json:"script" jsonschema:"the whole index.ts: read the payload with Bun.stdin.text(), write the JSON result with console.log"`
 	PackageJson string            `json:"packageJson,omitempty" jsonschema:"the whole package.json, as text; leave it out for a function with no npm dependency"`
 	PlainEnv    map[string]string `json:"plainEnv,omitempty" jsonschema:"secrets injected in the environment of the subprocess; leave it out for a function that needs none"`
-	Crons       []mcpCron         `json:"crons,omitempty" jsonschema:"the cron triggers of the function; leave it out for a function invoked over HTTP only"`
+	Crons       []mcpCron         `json:"crons,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
 }
 
 // mcpUpdateArgs is what update_function merges onto the stored function.
@@ -350,11 +354,13 @@ func mcpCrons(crons []mcpCron) ([]manageCron, error) {
 			return nil, fmt.Errorf("the payload of trigger #%d is not serialisable to JSON: %w", i+1, err)
 		}
 		converted = append(converted, manageCron{
-			Name:     c.Name,
-			Schedule: c.Schedule,
-			Payload:  payload,
-			Active:   c.Active,
-			MaxQueue: c.MaxQueue,
+			Name:                c.Name,
+			Schedule:            c.Schedule,
+			Payload:             payload,
+			Active:              c.Active,
+			MaxQueue:            c.MaxQueue,
+			Kind:                c.Kind,
+			StartupDelayMinutes: c.StartupDelayMinutes,
 		})
 	}
 	return converted, nil

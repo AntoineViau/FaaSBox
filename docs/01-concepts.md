@@ -6,7 +6,7 @@ To effectively use FaaSBox, it's important to understand the core concepts and h
 
 FaaSBox uses a **Stdin/Stdout** execution model. This is a classic Unix philosophy applied to serverless:
 
-1.  **Trigger**: An HTTP request or a Cron job triggers a function.
+1.  **Trigger**: An HTTP request, a cron schedule, or the server coming up triggers a function.
 2.  **Input**: The request body (JSON) is passed to the function's **stdin**.
 3.  **Execution**: The Bun runtime executes the function (`index.ts`).
 4.  **Output**: Anything the function writes to **stdout** is captured as the result.

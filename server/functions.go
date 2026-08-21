@@ -249,12 +249,12 @@ func functionEnvHandler(e *core.RequestEvent) error {
 // execution. The guard belongs upstream, at the write.
 //
 // The refusal is an ApiError and not an ordinary error, same reason as
-// validateCronScheduleHook: the record endpoints pass a hook failure through
+// validateTriggerHook: the record endpoints pass a hook failure through
 // firstApiError, which keeps only an argument that already is an ApiError. An
 // ordinary error is replaced by a generic "Failed to update record", and the
 // client is left with a 400 whose body says nothing.
 //
-// The name is read **through the accessor**, exactly as validateCronScheduleHook
+// The name is read **through the accessor**, exactly as validateTriggerHook
 // reads its expression, and for the same reason: a partial update — a script
 // saved on its own, a replacement that never renames — arrives carrying the name
 // loaded from the database, which is sealed. Weighed as it stands, `fbx1:…`

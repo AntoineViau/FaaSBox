@@ -82,7 +82,7 @@ func ensureLogsCollection(app core.App) error {
 				CollectionId:  functions.Id,
 			},
 			&core.TextField{Name: "functionName", Required: true},
-			&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron"}},
+			&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron", "startup"}},
 			&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
 			&core.NumberField{Name: "duration"},
 			&core.TextField{Name: "stdout", Max: wantedOutputMax},
@@ -125,7 +125,7 @@ type logEntry struct {
 	// record was called when the entry was written. See ensureLogsCollection.
 	FunctionId     string
 	FunctionName   string
-	Trigger        string // "http" or "cron"
+	Trigger        string // "http", "cron" or "startup"
 	Status         string // "success", "error", "timeout", "missed"
 	DurationMs     int64
 	Stdout         string

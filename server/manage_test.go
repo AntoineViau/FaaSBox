@@ -31,6 +31,7 @@ func manageApp(t testing.TB) (*tests.TestApp, string, *core.Record) {
 	bindEnvHook(app)
 	bindFunctionNameHook(app)
 	bindFunctionSizeHook(app)
+	bindTriggerHook(app)
 
 	functionsDir, functions := setupTestFunctions(t, app, map[string]string{"echo": ""})
 	record := functions["echo"]
@@ -752,12 +753,66 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 		s.Test(t)
 	})
 
+	t.Run("a startup trigger travels both ways", func(t *testing.T) {
+		app, dir, fn := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "kind and delay written and rendered",
+			Method: http.MethodPut,
+			URL:    "/api/faasbox/functions/echo",
+			Body: strings.NewReader(`{"script":"console.log('{}')",
+				"crons":[{"name":"boot","kind":"startup","startupDelayMinutes":5}]}`),
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"kind":"startup"`, `"startupDelayMinutes":5`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				crons := cronsOf(t, app, fn.Id)
+				if crons["boot"] == nil {
+					t.Fatalf("triggers = %v, want boot", crons)
+				}
+				if got := crons["boot"].GetString("kind"); got != "startup" {
+					t.Errorf("stored kind = %q, want \"startup\"", got)
+				}
+				if got := int(crons["boot"].GetFloat("startupDelayMinutes")); got != 5 {
+					t.Errorf("stored startupDelayMinutes = %d, want 5", got)
+				}
+			},
+		})
+		s.Test(t)
+	})
+
+	t.Run("an absent kind writes an empty column and reads back as cron", func(t *testing.T) {
+		app, dir, fn := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "no default is posed on the way in",
+			Method: http.MethodPut,
+			URL:    "/api/faasbox/functions/echo",
+			Body: strings.NewReader(`{"script":"console.log('{}')",
+				"crons":[{"name":"nightly","schedule":"0 3 * * *"}]}`),
+			Headers:        manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus: 200,
+			// The response is normalised, because it is read through the accessor.
+			ExpectedContent: []string{`"kind":"cron"`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				crons := cronsOf(t, app, fn.Id)
+				if crons["nightly"] == nil {
+					t.Fatalf("triggers = %v, want nightly", crons)
+				}
+				// The column itself stays empty: normalising here as well would
+				// be a second place for the same default to drift.
+				if got := crons["nightly"].GetString("kind"); got != "" {
+					t.Errorf("stored kind = %q, want the column left empty", got)
+				}
+			},
+		})
+		s.Test(t)
+	})
+
 	t.Run("a refused schedule rolls the whole write back", func(t *testing.T) {
 		app, dir, fn := manageApp(t)
 		// The validation hook main.go binds is what refuses the expression; the
 		// transaction is what keeps the refusal from being destructive — and it
 		// has to cover the function record too, not only the triggers.
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
 		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
 		s := manageScenario(app, dir, tests.ApiScenario{
 			Name:   "invalid schedule rolls back",
@@ -792,7 +847,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("a refused schedule creates no function at all", func(t *testing.T) {
 		app, dir, _ := manageApp(t)
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
 		s := manageScenario(app, dir, tests.ApiScenario{
 			Name:   "create rolls back",
 			Method: http.MethodPost,
@@ -815,7 +870,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("a rolled back create fires no after-success hook", func(t *testing.T) {
 		app, dir, _ := manageApp(t)
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
 
 		// syncRecordToDisk and scheduleDepsInstall both hang off this hook. If it
 		// fired for a record the transaction rolled back, a refused POST would
@@ -849,9 +904,10 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("names the trigger when one of its fields is refused", func(t *testing.T) {
 		app, dir, fn := manageApp(t)
-		// No schedule at all: validateCronScheduleHook only looks at a non-empty
-		// one, so this falls through to the Required field validation. That is
-		// the caller's data like any other, and it answers 400, not 500.
+		// No schedule at all: validateTriggerHook refuses it, the field being
+		// no longer Required — a startup trigger legitimately carries none. The
+		// refusal is an ApiError, so the answer carries a message and no
+		// "fields" object; it still names the trigger it is about.
 		s := manageScenario(app, dir, tests.ApiScenario{
 			Name:            "trigger missing its schedule",
 			Method:          http.MethodPut,
@@ -859,7 +915,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			Body:            strings.NewReader(`{"script":"console.log('{}')","crons":[{"name":"no-schedule"}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  400,
-			ExpectedContent: []string{`Trigger \"no-schedule\" was refused`, `"fields"`, `schedule`},
+			ExpectedContent: []string{`Trigger \"no-schedule\" was refused`, `needs a schedule`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
 				if got := cronsOf(t, app, fn.Id); len(got) != 0 {
 					t.Errorf("triggers = %v, want none written", got)

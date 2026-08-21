@@ -1,9 +1,11 @@
 # 05 - Scheduling (Cron)
 
-FaaSBox includes a powerful scheduling system that allows you to run functions at specific intervals.
+FaaSBox includes a powerful scheduling system that allows you to run functions at specific intervals, and a second kind of trigger that fires when the server comes up.
 
 ## How it Works
 FaaSBox leverages PocketBase's internal cron scheduler. It monitors the `faasbox_cron_jobs` collection and dynamically registers or updates cron tasks.
+
+That collection holds both kinds of trigger. A **cron** trigger carries an expression and fires on schedule; a **startup** trigger carries no expression and fires once when the server comes up, after a delay you choose. Everything below applies to both unless it says otherwise — see [Running at Startup](#running-at-startup).
 
 ## Scheduling from the Editor
 
@@ -12,7 +14,7 @@ The easiest way to manage cron jobs is directly from the FaaSBox Editor:
 1. Open your function in the Editor.
 2. Switch to the **Triggers** tab.
 3. Click **Add trigger**. The row appears on screen — nothing is written yet.
-4. Configure the schedule (click an example in the **Cron syntax** fold, or type your own expression), payload, and active state.
+4. Configure the schedule (click an example in the **Cron syntax** fold, or type your own expression), payload, and active state. To run the function when the server comes up instead, tick **Startup trigger** — the schedule field gives way to a delay.
 5. Open the **Advanced** fold if you need to cap concurrency — see **Max queue** below.
 6. Click **Save**.
 
@@ -95,6 +97,25 @@ The scheduler is "hot-reloaded". You don't need to restart the server when you a
 - **Modifying**: The old schedule is canceled and the new one is applied instantly.
 - **Deleting/Disabling**: The task is removed from the scheduler immediately.
 
+## Running at Startup
+
+A cron expression cannot say "when the server comes up". A `0 3 * * *` fires at three in the morning whether the box was restarted at noon or never; and a schedule that runs every minute to test a marker burns 1440 runs a day for an event that happens once per redeployment.
+
+A **startup trigger** is that event. Tick **Startup trigger** on a trigger row and the schedule field is replaced by **Run this long after startup**: two fields, hours and minutes. The function then runs once, that long after the server has come up, and again at every restart.
+
+The delay matters as much as the event. A box comes up before the rest of your infrastructure necessarily does, so a function that calls a third-party service, warms a cache from another host, or checks external state should let things settle first. Leave the delay at `0h00` to fire as soon as the server is up.
+
+At most **23h59**. Past a day it is no longer a startup trigger but a schedule, and cron carries that better.
+
+Three things to know:
+
+- **A startup trigger is not hot-reloaded.** Creating one, editing it or switching it on while the server is running fires nothing. It is armed at boot and only at boot, so it waits for the next start. That is the nature of the deadline, not a limitation — the cron triggers next to it are still picked up in real time.
+- **The same holds the other way round: switching one off does not disarm it.** A trigger already armed and still counting down its delay fires anyway, even if you untick it or delete it in the meantime — what was armed at boot runs for that boot. Deleting the **function** does stop it, since a run resolves its function when it fires. To be sure a startup trigger will not run, untick it and restart.
+- **It fires again at every restart**, including every redeployment. That is the point, and it is also the trap: a startup function that brings the box down will run again the moment it comes back up, and again after that. Nothing on the server side breaks that loop — write the function so a failure is survivable, and test it before ticking the box.
+- **Several startup triggers at `0h00` all queue at once** on the shared concurrency slots. That is the normal behaviour for a trigger nobody is waiting on — the run waits its turn rather than being refused — but **Max queue** applies here too, and staggering the delays is usually simpler.
+
+A startup run is a run like any other: it writes an entry to `faasbox_logs` with `trigger` set to `startup`, and it stamps `lastRunAt` on the trigger record.
+
 ## Monitoring Cron Jobs
 Every time a cron job runs, it creates an entry in the **faasbox_logs** collection with the `trigger` set to `cron`. You can see the success/failure status and the output of the scheduled run there.
 
@@ -103,6 +124,8 @@ Each run also stamps the `lastRunAt` field of the cron job record, whatever the 
 ## When the Server Is Down
 
 The scheduler lives inside the FaaSBox process. While the server is stopped — redeployment, maintenance, crash, host restart — **no cron job fires, and nothing is queued for later**. Triggers due during that window are simply lost.
+
+This is about cron triggers only: a startup trigger cannot be missed, since the event it waits for is the server coming back. It never produces a `missed` entry.
 
 FaaSBox does not replay them, but it does tell you about them. On every startup, each active cron job is checked against the period since its `lastRunAt` (or since its creation date, for a job that never ran):
 

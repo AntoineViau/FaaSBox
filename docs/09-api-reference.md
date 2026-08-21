@@ -136,7 +136,8 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
   "packageJson": "{\"dependencies\":{}}",
   "plainEnv": { "STRIPE_KEY": "sk_test_..." },
   "crons": [
-    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 }
+    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 },
+    { "name": "boot", "kind": "startup", "startupDelayMinutes": 5, "payload": {}, "active": true }
   ]
 }
 ```
@@ -144,6 +145,9 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
 - `name` is read by `POST` only. On `PUT` the **path** identifies the function; a `name` in the body may repeat that identity — either the current name or the id, so a `GET` response can be edited and sent straight back — but a different one is a `400`. **This route never renames.** A silent rename would break every URL wired on the old name with nothing in the exchange saying so; rename from the editor instead.
 - `script` and `packageJson` are **replaced whole**. `PUT` replaces the function: a field the body does not carry becomes empty. Sending only `script` therefore clears `packageJson`, and with it the dependencies. Send the full pair every time.
 - `crons`, when present, is the complete set of triggers, not a patch. `active` defaults to `true` when omitted, `maxQueue` to `0` (no limit).
+- `kind` says which deadline fires a trigger: `"cron"` for a schedule, `"startup"` to fire once when the server comes up. **Omitted, it reads as `"cron"`** — a body written before startup triggers existed still describes what it described. The rules are exclusive: a `cron` trigger must carry a `schedule` that parses, a `startup` trigger must carry **no** `schedule` at all, and either violation is a `400`.
+- `startupDelayMinutes` is how long after the server comes up a `startup` trigger fires. A whole number of minutes, `0` to `1439` (23h59); anything else is a `400`. It is ignored on a cron trigger.
+- A startup trigger is armed **at boot and only at boot**. Writing one through this route does not fire it and does not arm it on the running server — it waits for the next start. Cron triggers, by contrast, are picked up immediately.
 - **The whole request is one write, or none of it is.** The function and its triggers are saved together: if any trigger is refused, the call answers `400` and *nothing* is applied — not the script, not `packageJson`, not `plainEnv`, not the other triggers. A refused `POST` leaves no function behind, so the corrected retry still creates rather than colliding with a `409`.
 
 ### `plainEnv`: absent and empty do not mean the same thing
@@ -181,10 +185,13 @@ Reading secrets back is *not* part of this contract: `GET` never returns them. O
   "depsStatus": "installing",
   "depsError": "",
   "crons": [
-    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 }
+    { "name": "boot", "schedule": "", "payload": {}, "active": true, "maxQueue": 0, "kind": "startup", "startupDelayMinutes": 5 },
+    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1, "kind": "cron", "startupDelayMinutes": 0 }
   ]
 }
 ```
+
+`kind` always comes back filled, even for a trigger written without it: the response says `"cron"` where the stored column is empty.
 
 `DELETE` answers `204` with no body.
 
@@ -194,14 +201,19 @@ Reading secrets back is *not* part of this contract: `GET` never returns them. O
 
 ### What each code means
 
-- `400`: the body is not valid JSON, the name is not a usable identifier, `plainEnv` is not an object of strings, a `name` in a `PUT` body designates another function, or a cron expression is invalid. It is also the answer when a record is refused by field validation, and the body then names the field:
+- `400`: the body is not valid JSON, the name is not a usable identifier, `plainEnv` is not an object of strings, a `name` in a `PUT` body designates another function, or a trigger breaks the rules of its kind. It is also the answer when a record is refused by field validation, and the body then names the field:
     ```json
     { "error": "The function was refused", "fields": { "script": "Must be no more than 1048576 character(s)." } }
     ```
     A trigger refused the same way says which one, since a function and a trigger both carry a `name`:
     ```json
-    { "error": "Trigger \"nightly\" was refused", "fields": { "schedule": "Cannot be blank." } }
+    { "error": "Trigger \"nightly\" was refused", "fields": { "name": "Cannot be blank." } }
     ```
+    **The rules that depend on the kind answer in a different shape**: a message, and **no `fields` object** — there is no single field to blame when what is wrong is the combination.
+    ```json
+    { "error": "Trigger \"nightly\" was refused: A cron trigger needs a schedule: five fields, minute hour day-of-month month day-of-week." }
+    ```
+    That covers a `cron` trigger with a blank or unparsable `schedule`, a `startup` trigger carrying a `schedule`, and a `startupDelayMinutes` outside `0`–`1439`. A client reading `fields.schedule` to detect a blank schedule has to read the message instead.
     `script` and `packageJson` are capped at **1,048,576 characters each** — the editor uses the same ceiling. It is counted in characters, not bytes, so a non-ASCII file gets more than a megabyte of room.
 
     `plainEnv` has its own ceiling, about **75 KB of secrets in clear**. It applies to the encrypted form actually stored, and encryption plus its encoding cost a third on top, which is where the figure comes from.

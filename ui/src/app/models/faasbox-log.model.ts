@@ -4,7 +4,7 @@ export interface FaasboxLog {
   function: string;
   /** What that function was called when the entry was written, not its current name. */
   functionName: string;
-  trigger: 'http' | 'cron';
+  trigger: 'http' | 'cron' | 'startup';
   status: 'success' | 'error' | 'timeout' | 'missed';
   duration: number;
   stdout: string;

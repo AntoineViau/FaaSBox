@@ -185,11 +185,20 @@ func classifyManageFailure(err error) *manageRefusal {
 		return &manageRefusal{status: http.StatusNotFound, message: "Function not found"}
 	}
 
-	// An ApiError carries its own status and wording — that is how the cron hook
-	// reports an invalid expression, and its message names the expression.
+	// An ApiError carries its own status and wording — that is how the trigger
+	// hook reports what it refused, and its message says why.
 	var apiErr *router.ApiError
 	if errors.As(err, &apiErr) && apiErr.Status >= 400 && apiErr.Status < 500 {
-		return &manageRefusal{status: apiErr.Status, message: apiErr.Message}
+		message := apiErr.Message
+		// Named the same way the field-validation branch below names it. The
+		// hook now refuses cases with nothing distinctive in their wording — a
+		// blank schedule reads the same whichever trigger carried it — and a
+		// body may well hold several.
+		var trigger *refusedTrigger
+		if errors.As(err, &trigger) {
+			message = trigger.subject() + " was refused: " + message
+		}
+		return &manageRefusal{status: apiErr.Status, message: message}
 	}
 
 	// Field validation is the caller's data. 400 naming the fields, never 500,

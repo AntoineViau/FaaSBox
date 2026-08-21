@@ -154,6 +154,8 @@ agents. What it stops:
 - **invocations**, by HTTP and from the editor's **Run** button alike;
 - **cron triggers**: the scheduler is never armed, and nothing is filed as
   missed either;
+- **startup triggers**: they are not armed either, so nothing fires when the
+  instance comes up or is redeployed;
 - the **dependency install** that normally runs at startup;
 - the **hourly prune** of the execution logs — the history on display is
   precisely what has to stay intact.

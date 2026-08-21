@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -34,7 +35,10 @@ func TestEnsureCronJobsCollection(t *testing.T) {
 	}
 
 	// Verify expected fields exist
-	expectedFields := []string{"name", "schedule", "function", "payload", "active", "maxQueue", "lastRunAt"}
+	expectedFields := []string{
+		"name", "schedule", "function", "payload", "active", "maxQueue", "lastRunAt",
+		"kind", "startupDelayMinutes",
+	}
 	for _, fieldName := range expectedFields {
 		if col.Fields.GetByName(fieldName) == nil {
 			t.Errorf("field %q not found in collection", fieldName)
@@ -54,10 +58,33 @@ func TestEnsureCronJobsCollection(t *testing.T) {
 			t.Error("name field should be required")
 		}
 	}
+	// Not required any more: a startup trigger carries no expression. The refusal
+	// of a blank one on a cron trigger belongs to validateTriggerHook, which is
+	// the only place that knows which kind it is weighing.
 	scheduleField := col.Fields.GetByName("schedule")
-	if scheduleField != nil {
-		if tf, ok := scheduleField.(*core.TextField); ok && !tf.Required {
-			t.Error("schedule field should be required")
+	if tf, ok := scheduleField.(*core.TextField); ok && tf.Required {
+		t.Error("schedule is still Required: a startup trigger could not be saved")
+	}
+
+	kind, ok := col.Fields.GetByName("kind").(*core.SelectField)
+	if !ok {
+		t.Fatalf("kind is a %T, want a *core.SelectField", col.Fields.GetByName("kind"))
+	}
+	if kind.Required {
+		t.Error("kind is Required: an empty column has to stay writable, it reads as \"cron\"")
+	}
+	if kind.MaxSelect != 1 {
+		t.Errorf("kind MaxSelect = %d, want 1", kind.MaxSelect)
+	}
+	if len(kind.Values) != 2 || kind.Values[0] != "cron" || kind.Values[1] != "startup" {
+		t.Errorf("kind values = %v, want [cron startup]", kind.Values)
+	}
+
+	// In the clear, like active, maxQueue and lastRunAt: a discriminant and a
+	// delay say nothing of the business content.
+	for _, name := range []string{"kind", "startupDelayMinutes"} {
+		if slices.Contains(encryptedTextFields[faasboxCronJobsCollection], name) {
+			t.Errorf("%s is listed as an encrypted column", name)
 		}
 	}
 
@@ -132,12 +159,16 @@ func TestEnsureCronJobsCollection_Migration(t *testing.T) {
 	}
 }
 
-func TestValidateCronScheduleHook(t *testing.T) {
-	// A test app starts with no hook bound: wire them the way main.go does.
-	bindCronHooks := func(app core.App) {
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
-		app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
-	}
+// bindTriggerHook wires the trigger guard the way main.go does. A test app
+// starts with no hook bound — and since a blank schedule is refused here rather
+// than by the field, an app that skips it accepts a trigger the server would not.
+func bindTriggerHook(app core.App) {
+	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+}
+
+func TestValidateTriggerHook(t *testing.T) {
+	bindCronHooks := bindTriggerHook
 
 	scenarios := []tests.ApiScenario{
 		{
@@ -194,6 +225,120 @@ func TestValidateCronScheduleHook(t *testing.T) {
 	}
 }
 
+// TestTriggerKind_EmptyReadsAsCron pins the single point of normalisation. An
+// empty column is the shape every record had before startup triggers existed,
+// and the one the PocketBase admin writes when it leaves the select untouched.
+func TestTriggerKind_EmptyReadsAsCron(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(col)
+
+	if got := cronKind(record); got != "cron" {
+		t.Errorf("cronKind on an empty column = %q, want \"cron\"", got)
+	}
+	record.Set("kind", "startup")
+	if got := cronKind(record); got != "startup" {
+		t.Errorf("cronKind = %q, want \"startup\"", got)
+	}
+	record.Set("kind", "cron")
+	if got := cronKind(record); got != "cron" {
+		t.Errorf("cronKind = %q, want \"cron\"", got)
+	}
+}
+
+// TestValidateTriggerHook_ByKind covers the three rules the kind brings: a cron
+// trigger needs an expression, a startup trigger must not carry one, and its
+// delay is a whole number of minutes within bounds.
+func TestValidateTriggerHook_ByKind(t *testing.T) {
+	// Every case posts one record and reads the outcome off the status: what is
+	// under test is what the hook lets through, and the wording that comes back
+	// when it does not.
+	cases := []struct {
+		name    string
+		body    string
+		status  int
+		content []string
+	}{
+		{
+			name:    "cron trigger with a blank schedule is refused",
+			body:    `{"name":"blank","schedule":"","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`A cron trigger needs a schedule`},
+		},
+		{
+			name:    "kind left empty is weighed as a cron trigger",
+			body:    `{"name":"implicit","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`A cron trigger needs a schedule`},
+		},
+		{
+			name:    "startup trigger carrying a schedule is refused",
+			body:    `{"name":"both","kind":"startup","schedule":"0 * * * *","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`A startup trigger carries no schedule`},
+		},
+		{
+			name:    "startup delay past the bound is refused",
+			body:    `{"name":"far","kind":"startup","startupDelayMinutes":1440,"function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Invalid startup delay`, `between 0 and 1439`},
+		},
+		{
+			name:    "negative startup delay is refused",
+			body:    `{"name":"back","kind":"startup","startupDelayMinutes":-1,"function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Invalid startup delay`},
+		},
+		{
+			name:    "fractional startup delay is refused",
+			body:    `{"name":"half","kind":"startup","startupDelayMinutes":3.5,"function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Invalid startup delay`},
+		},
+		{
+			name:    "startup trigger with no schedule goes through",
+			body:    `{"name":"boot","kind":"startup","startupDelayMinutes":5,"function":"echofunction001","active":true}`,
+			status:  200,
+			content: []string{`"kind":"startup"`, `"startupDelayMinutes":5`},
+		},
+		{
+			name:    "the bound itself goes through",
+			body:    `{"name":"edge","kind":"startup","startupDelayMinutes":1439,"function":"echofunction001","active":true}`,
+			status:  200,
+			content: []string{`"startupDelayMinutes":1439`},
+		},
+	}
+
+	for _, c := range cases {
+		s := tests.ApiScenario{
+			Name:   c.name,
+			Method: http.MethodPost,
+			URL:    "/api/collections/" + faasboxCronJobsCollection + "/records",
+			Body:   strings.NewReader(c.body),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				saveTestFunctionAs(t, app, t.TempDir(), testFunctionId, "echo", "console.log(1)", "")
+				bindTriggerHook(app)
+			},
+			ExpectedStatus:  c.status,
+			ExpectedContent: c.content,
+		}
+		s.Test(t)
+	}
+}
+
 func TestRunFunction_MaxQueue(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
@@ -219,7 +364,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 		before := counter.Load()
 		// Call with a non-existent function — it will fail at execution but
 		// should pass the queue check.
-		runFunction(context.Background(), app, t.TempDir(), "unlimited-func", "{}", 0, "")
+		runFunction(context.Background(), app, t.TempDir(), "unlimited-func", "{}", 0, "", "cron")
 		after := counter.Load()
 
 		if before != after {
@@ -235,7 +380,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 
 		// With maxQueue=2 and depth already at 2, a new call should be skipped.
 		// The counter will be incremented to 3 then checked > 2, so it returns early.
-		runFunction(context.Background(), app, t.TempDir(), "limited-func", "{}", 2, "")
+		runFunction(context.Background(), app, t.TempDir(), "limited-func", "{}", 2, "", "cron")
 
 		// Counter should be back to 2 (incremented to 3, then decremented by defer)
 		if got := counter.Load(); got != 2 {
@@ -422,7 +567,7 @@ func TestSyncAllCronJobs_SurvivesARename(t *testing.T) {
 	}
 
 	// And firing it reaches the function under its new name.
-	runFunction(context.Background(), app, functionsDir, fn.Id, "{}", 0, job.Id)
+	runFunction(context.Background(), app, functionsDir, fn.Id, "{}", 0, job.Id, "cron")
 
 	entries, err := app.FindAllRecords(faasboxLogsCollection)
 	if err != nil {
@@ -450,7 +595,7 @@ func TestRunFunction_StampsLastRunAt(t *testing.T) {
 	fn := saveTestFunction(t, app, t.TempDir(), "missing-func", "console.log(1)", "")
 	record := createTestCronJob(t, app, "stamped-cron", "* * * * *", fn.Id, true)
 
-	runFunction(context.Background(), app, t.TempDir(), fn.Id, "{}", 0, record.Id)
+	runFunction(context.Background(), app, t.TempDir(), fn.Id, "{}", 0, record.Id, "cron")
 
 	updated, err := app.FindRecordById(faasboxCronJobsCollection, record.Id)
 	if err != nil {
@@ -477,7 +622,7 @@ func TestRunFunction_PublishesDependencyState(t *testing.T) {
 	record := saveTestFunction(t, app, functionsDir, "cron-broken-deps",
 		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
 
-	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "")
+	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "", "cron")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -505,7 +650,7 @@ func TestRunFunction_SafetyNetPublishesReady(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
 	setDepsState(app, record.Id, "cron-fresh-deps", depsStatusPending, "")
 
-	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "")
+	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "", "cron")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -532,7 +677,7 @@ func TestRunFunction_SafetyNetPersistsLockfile(t *testing.T) {
 	record := saveTestFunction(t, app, functionsDir, "cron-pins",
 		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 
-	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "")
+	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "", "cron")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {

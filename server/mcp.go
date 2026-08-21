@@ -151,7 +151,7 @@ func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mc
 // is written nowhere a machine receives without being handed it.
 //
 // Distilled from docs/ — 03-writing-functions.md for the execution contract, the
-// naming rule and the caps, 05-scheduling-cron.md for the expression, and
+// naming rule and the caps, 05-scheduling-cron.md for the triggers, and
 // 09-api-reference.md for what a write replaces. It lives in the code rather
 // than in a served file so what an agent receives follows the version of the
 // server serving it.
@@ -184,8 +184,12 @@ What you need to know before writing one:
    a pending install rather than failing. An install that fails leaves the
    function with no dependencies at all until its "packageJson" is fixed.
 
-5. Cron schedules are five fields: minute hour day-of-month month day-of-week.
-   A trigger points at the function itself, so renaming it keeps it firing.
+5. A trigger points at the function itself, so renaming it keeps it firing. It
+   comes in two kinds. A "cron" trigger carries a schedule of five fields:
+   minute hour day-of-month month day-of-week. A "startup" trigger carries no
+   schedule and fires once when the server comes up, "startupDelayMinutes"
+   after it — 0 to 1439. A startup trigger is armed at boot and nowhere else:
+   creating or changing one does not fire it, it waits for the next start.
 
 6. Writes replace, they do not patch. update_function reads the function first
    and merges what you send onto what is stored, so a field you leave out is

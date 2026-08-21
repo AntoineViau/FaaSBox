@@ -10,7 +10,7 @@ Each log entry contains comprehensive details about a function run:
 |-------|-------------|
 | `function` | The function the entry belongs to. Filter and group on this one. |
 | `functionName` | The name that function carried **when it ran** — see below. |
-| `trigger` | `http` (API call) or `cron` (scheduled task). |
+| `trigger` | `http` (API call), `cron` (scheduled task) or `startup` (fired when the server came up). |
 | `status` | `success`, `error`, `timeout`, or `missed`. |
 | `duration` | Total execution time in milliseconds. |
 | `stdout` | The output of the function (captured from stdout), truncated to 8 KB. |
@@ -61,7 +61,7 @@ The FaaSBox Editor includes a built-in **Logs** panel for each function:
 2. Click **Logs** in the header — it toggles a panel below the code, alongside the **Runner**.
 3. Logs appear in real time — new entries are pushed automatically as the function runs.
 
-Each entry shows the status (success, error, timeout, missed), trigger type (http/cron), duration, and relative timestamp. Click on any entry to expand it and see the full stdout, stderr, payload, and exit code.
+Each entry shows the status (success, error, timeout, missed), trigger type (http/cron/startup), duration, and relative timestamp. Click on any entry to expand it and see the full stdout, stderr, payload, and exit code.
 
 The log viewer displays the 50 most recent entries for the current function. Use the refresh button to reload the list.
 
@@ -69,7 +69,7 @@ The log viewer displays the 50 most recent entries for the current function. Use
 
 `GET /api/faasbox/functions/{idOrName}/logs` returns the same history to a script or an agent, with an API key carrying `canManage` — no superuser token. See [Read a Function's Logs](09-api-reference.md#4-read-a-functions-logs) for the contract, the `limit` parameter and the codes.
 
-That endpoint matters most for **cron functions**: a scheduled run answers no HTTP response, so its log entry is the only account of what it printed and why it failed.
+That endpoint matters most for functions **nobody is waiting on** — a cron or a startup trigger: such a run answers no HTTP response, so its log entry is the only account of what it printed and why it failed.
 
 ## From the Admin UI (optional)
 

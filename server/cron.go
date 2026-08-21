@@ -14,6 +14,13 @@ import (
 	"github.com/pocketbase/pocketbase/tools/types"
 )
 
+// This file carries two subjects at once, and that is why it runs past the
+// 300-line guideline: what any trigger is — the collection, its encrypted
+// column accessors, runFunction and the queue depth — and what only a cron
+// trigger is, the five-field expression and the PocketBase scheduler built
+// from it. The name says the second; the top half serves the startup trigger
+// of cronstartup.go just as much.
+
 // cronQueueDepth tracks the number of in-flight (waiting + running) cron
 // executions per function, keyed on the function id — the depth of a function
 // must not reset because someone renamed it mid-flight.
@@ -26,6 +33,10 @@ const (
 
 // ensureCronJobsCollection creates the faasbox_cron_jobs collection if it doesn't exist,
 // or migrates it by adding missing fields (maxQueue, lastRunAt).
+//
+// The collection holds every trigger, not only the scheduled ones: kind tells a
+// cron trigger from a startup one, and startupDelayMinutes says how long after
+// boot the latter fires.
 //
 // The target function is a relation, not a name. A name is editable, so a
 // trigger wired on one fired into the void from the moment its function was
@@ -47,7 +58,10 @@ func ensureCronJobsCollection(app core.App) error {
 		col = core.NewBaseCollection(faasboxCronJobsCollection)
 		col.Fields.Add(
 			&core.TextField{Name: "name", Required: true},
-			&core.TextField{Name: "schedule", Required: true},
+			// Not Required: a startup trigger carries no expression. The refusal
+			// of a blank schedule on a cron trigger moves to validateTriggerHook,
+			// which is the only place that knows which kind it is weighing.
+			&core.TextField{Name: "schedule"},
 			&core.RelationField{
 				Name:          "function",
 				Required:      true,
@@ -59,6 +73,11 @@ func ensureCronJobsCollection(app core.App) error {
 			&core.BoolField{Name: "active"},
 			&core.NumberField{Name: "maxQueue"},
 			&core.DateField{Name: "lastRunAt"},
+			// Left in the clear, like active, maxQueue and lastRunAt: a
+			// discriminant and a delay say nothing about the business content.
+			// Not Required either — see triggerKind for what an empty value reads as.
+			&core.SelectField{Name: "kind", MaxSelect: 1, Values: []string{"cron", "startup"}},
+			&core.NumberField{Name: "startupDelayMinutes"},
 			&core.AutodateField{Name: "created", OnCreate: true},
 			&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 		)
@@ -81,15 +100,6 @@ func ensureCronJobsCollection(app core.App) error {
 	return nil
 }
 
-// validateCronScheduleHook rejects cron job records with an invalid schedule expression.
-//
-// The refusal is an ApiError and not an ordinary error on purpose: the record
-// endpoints wrap a hook failure through firstApiError, which keeps the first
-// argument that already is an ApiError and discards anything else. An ordinary
-// error is replaced by a bare "Failed to create record", and the client is left
-// with nothing to show. The message is written for the user — the cron library
-// error talks about internal field bounds and belongs in the server log, not in
-// the response.
 // cronName, cronSchedule and cronPayloadText are the only way to read the three
 // encrypted columns of a trigger. Nothing else touches them, whichever accessor.
 func cronName(app core.App, record *core.Record) string {
@@ -105,7 +115,32 @@ func cronPayloadText(app core.App, record *core.Record) string {
 	return decryptedJSON(app, record, "payload")
 }
 
-func validateCronScheduleHook(e *core.RecordEvent) error {
+// cronKind reads the trigger kind. An empty value reads as "cron": that is the
+// shape every record had before startup triggers existed, and the one the
+// PocketBase admin writes when it leaves the select untouched.
+//
+// This is the only place that normalisation happens. Neither the hook nor the
+// management contract replays the default — two places normalising the same
+// absence diverge at the third caller.
+func cronKind(record *core.Record) string {
+	if kind := record.GetString("kind"); kind != "" {
+		return kind
+	}
+	return "cron"
+}
+
+// validateTriggerHook weighs a trigger record against the rules of its kind: a
+// cron trigger needs an expression that parses, a startup trigger needs no
+// expression at all and a delay within bounds.
+//
+// Every refusal is an ApiError and not an ordinary error on purpose: the record
+// endpoints wrap a hook failure through firstApiError, which keeps the first
+// argument that already is an ApiError and discards anything else. An ordinary
+// error is replaced by a bare "Failed to create record", and the client is left
+// with nothing to show. The messages are written for the user — the cron library
+// error talks about internal field bounds and belongs in the server log, not in
+// the response.
+func validateTriggerHook(e *core.RecordEvent) error {
 	// Read through the accessor, not off the column. A partial update — a
 	// trigger merely toggled off — arrives carrying the schedule loaded from the
 	// database, which is sealed: parsing that as a cron expression would refuse
@@ -113,15 +148,38 @@ func validateCronScheduleHook(e *core.RecordEvent) error {
 	// submitted value it weighs is still the plaintext, and the accessor is what
 	// makes the case the caller did not submit work too.
 	schedule := cronSchedule(e.App, e.Record)
-	if schedule != "" {
-		if _, err := cron.NewSchedule(schedule); err != nil {
-			e.App.Logger().Debug("faasbox cron: rejected schedule",
-				"schedule", schedule, "error", err)
+
+	if cronKind(e.Record) == "startup" {
+		if schedule != "" {
+			return apis.NewBadRequestError(
+				"A startup trigger carries no schedule. Clear the schedule, or set the kind to \"cron\".",
+				nil)
+		}
+		// GetFloat yields 0 for anything unparsable, so the fractional check is
+		// what catches a delay sent as 3.5 — the column is a whole number of
+		// minutes and nothing rounds it later.
+		delay := e.Record.GetFloat("startupDelayMinutes")
+		if delay < 0 || delay != float64(int(delay)) || int(delay) > maxStartupDelayMinutes {
 			return apis.NewBadRequestError(fmt.Sprintf(
-				"Invalid cron expression %q. Expected 5 fields: minute hour day-of-month month day-of-week.",
-				schedule,
+				"Invalid startup delay %v. Expected a whole number of minutes between 0 and %d.",
+				delay, maxStartupDelayMinutes,
 			), nil)
 		}
+		return e.Next()
+	}
+
+	if schedule == "" {
+		return apis.NewBadRequestError(
+			"A cron trigger needs a schedule: five fields, minute hour day-of-month month day-of-week.",
+			nil)
+	}
+	if _, err := cron.NewSchedule(schedule); err != nil {
+		e.App.Logger().Debug("faasbox cron: rejected schedule",
+			"schedule", schedule, "error", err)
+		return apis.NewBadRequestError(fmt.Sprintf(
+			"Invalid cron expression %q. Expected 5 fields: minute hour day-of-month month day-of-week.",
+			schedule,
+		), nil)
 	}
 	return e.Next()
 }
@@ -150,6 +208,13 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 			continue
 		}
 
+		// Startup triggers are armed by scheduleStartupRuns, not registered here.
+		// The blank-schedule guard below would drop them anyway, but the reader
+		// must not have to deduce the intent from a side effect.
+		if cronKind(record) == "startup" {
+			continue
+		}
+
 		functionId := record.GetString("function")
 		schedule := cronSchedule(app, record)
 		payload := cronPayloadText(app, record)
@@ -172,7 +237,7 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 		jobId := cronJobPrefix + record.Id
 		recordId := record.Id
 		err = app.Cron().Add(jobId, schedule, func() {
-			runFunction(ctx, app, functionsDir, functionId, payload, maxQueue, recordId)
+			runFunction(ctx, app, functionsDir, functionId, payload, maxQueue, recordId, "cron")
 		})
 		if err != nil {
 			app.Logger().Error("faasbox: failed to register cron",
@@ -181,17 +246,19 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 	}
 }
 
-// runFunction executes a function outside of an HTTP context (for cron jobs).
-// maxQueue limits how many executions (waiting + running) can exist simultaneously
-// for this function. 0 means no limit. recordId identifies the faasbox_cron_jobs
-// record whose lastRunAt is stamped once the execution is over; an empty value
-// skips the stamping.
+// runFunction executes a function outside of an HTTP context, for a trigger that
+// nobody is waiting on. maxQueue limits how many executions (waiting + running)
+// can exist simultaneously for this function. 0 means no limit. recordId
+// identifies the faasbox_cron_jobs record whose lastRunAt is stamped once the
+// execution is over; an empty value skips the stamping. trigger is what the log
+// entry carries — "cron" or "startup"; each caller is a single one and knows
+// which, so it passes a constant.
 //
 // The function is resolved here, at fire time, and not captured when the job was
 // registered: the scheduler is only rebuilt when a cron record changes, so a name
 // captured at registration would go stale the moment the function was renamed.
 // This is the same single read the secrets used to cost.
-func runFunction(ctx context.Context, app core.App, functionsDir, functionId, payload string, maxQueue int, recordId string) {
+func runFunction(ctx context.Context, app core.App, functionsDir, functionId, payload string, maxQueue int, recordId, trigger string) {
 	// Check queue depth before blocking on the semaphore
 	if maxQueue > 0 {
 		val, _ := cronQueueDepth.LoadOrStore(functionId, &atomic.Int32{})
@@ -246,7 +313,7 @@ func runFunction(ctx context.Context, app core.App, functionsDir, functionId, pa
 	recordExecution(app, logEntry{
 		FunctionId:     fn.Id,
 		FunctionName:   name,
-		Trigger:        "cron",
+		Trigger:        trigger,
 		Status:         status,
 		DurationMs:     res.Duration.Milliseconds(),
 		Stdout:         res.Stdout,

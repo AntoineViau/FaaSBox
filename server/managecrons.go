@@ -27,15 +27,24 @@ type manageCron struct {
 	Payload  json.RawMessage `json:"payload"`
 	Active   *bool           `json:"active"`
 	MaxQueue int             `json:"maxQueue"`
+	// Kind is written as received, with no default of its own: an absent field
+	// writes an empty column, which cronKind reads back as "cron". The
+	// normalisation lives in the accessor and nowhere else — the PocketBase
+	// admin can write an empty column outside of any contract.
+	Kind                string `json:"kind"`
+	StartupDelayMinutes int    `json:"startupDelayMinutes"`
 }
 
-// cronContract is one trigger in a response.
+// cronContract is one trigger in a response. Kind is normalised, because it is
+// read through the accessor.
 type cronContract struct {
-	Name     string          `json:"name"`
-	Schedule string          `json:"schedule"`
-	Payload  json.RawMessage `json:"payload"`
-	Active   bool            `json:"active"`
-	MaxQueue int             `json:"maxQueue"`
+	Name                string          `json:"name"`
+	Schedule            string          `json:"schedule"`
+	Payload             json.RawMessage `json:"payload"`
+	Active              bool            `json:"active"`
+	MaxQueue            int             `json:"maxQueue"`
+	Kind                string          `json:"kind"`
+	StartupDelayMinutes int             `json:"startupDelayMinutes"`
 }
 
 // refusedTrigger marks a write that a *trigger* refused, rather than the
@@ -102,6 +111,8 @@ func replaceCronJobs(app core.App, fn *core.Record, crons []manageCron) error {
 			record.Set("function", fn.Id)
 			record.Set("active", c.Active == nil || *c.Active)
 			record.Set("maxQueue", c.MaxQueue)
+			record.Set("kind", c.Kind)
+			record.Set("startupDelayMinutes", c.StartupDelayMinutes)
 			if len(c.Payload) > 0 {
 				record.Set("payload", c.Payload)
 			}
@@ -125,11 +136,13 @@ func functionCronContracts(app core.App, functionId string) ([]cronContract, err
 	crons := make([]cronContract, 0, len(records))
 	for _, record := range records {
 		crons = append(crons, cronContract{
-			Name:     cronName(app, record),
-			Schedule: cronSchedule(app, record),
-			Payload:  cronPayload(app, record),
-			Active:   record.GetBool("active"),
-			MaxQueue: int(record.GetFloat("maxQueue")),
+			Name:                cronName(app, record),
+			Schedule:            cronSchedule(app, record),
+			Payload:             cronPayload(app, record),
+			Active:              record.GetBool("active"),
+			MaxQueue:            int(record.GetFloat("maxQueue")),
+			Kind:                cronKind(record),
+			StartupDelayMinutes: int(record.GetFloat("startupDelayMinutes")),
 		})
 	}
 	slices.SortFunc(crons, func(a, b cronContract) int {

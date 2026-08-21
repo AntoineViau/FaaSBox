@@ -56,7 +56,7 @@ var writeExceptions = map[string]struct{}{
 // Closing it costs the showcase nothing. The flow it opens cannot finish
 // anyway — POST /oauth/token and the POST carrying the consent decision are
 // both refused — so all it would leave behind is a table of pending grants that
-// nothing collects any more: the hourly prune is one of the four startups a
+// nothing collects any more: the hourly prune is one of the five startups a
 // showcase skips, and a caller can loop the request.
 //
 // **Every GET route that writes has to be named here.** That is the price of

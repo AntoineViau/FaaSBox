@@ -108,7 +108,7 @@ var enrichedCollections = []string{
 // registerFieldEncryption binds the hooks that seal these columns on the way in
 // and open them on the way out.
 //
-// **It must be bound after the validation hooks.** validateCronScheduleHook
+// **It must be bound after the validation hooks.** validateTriggerHook
 // weighs a cron expression, and a hook that sealed it first would hand it
 // base64 to parse. The accessors it reads through make it robust either way —
 // a partial update arrives carrying the sealed value loaded from the database —

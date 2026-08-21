@@ -351,7 +351,7 @@ func demoOAuthScenario(app *tests.TestApp, s tests.ApiScenario) tests.ApiScenari
 //
 // /oauth/authorize records a pending grant before it redirects, so the method
 // rule alone would let a caller grow faasbox_oauth_grants without bound — the
-// hourly prune that collected them is one of the four startups a showcase
+// hourly prune that collected them is one of the five startups a showcase
 // skips. The assertion that matters is the second one: nothing was written.
 func TestDemoModeRefusesTheAuthorizeRequest(t *testing.T) {
 	app := demoApp(t)

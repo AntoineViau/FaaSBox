@@ -23,6 +23,12 @@ export const CRON_PRESETS: Record<string, string> = {
   '0 0 1 * *': 'First day of every month',
 };
 
+/**
+ * What a new cron trigger starts on, and what a trigger switched back from
+ * startup gets. Read from here by both, so the two cannot drift apart.
+ */
+export const DEFAULT_SCHEDULE = '0 * * * *';
+
 /** The same table as a list, for whatever has to render every entry. */
 export const CRON_PRESET_LIST: ReadonlyArray<{ expression: string; label: string }> =
   Object.entries(CRON_PRESETS).map(([expression, label]) => ({ expression, label }));

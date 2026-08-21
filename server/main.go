@@ -96,11 +96,12 @@ func main() {
 
 			// The middleware above closes the caller; it says nothing about what
 			// the server starts for its own account, and a showcase starts none
-			// of it. Each of the four writes to the database on its own, for
+			// of it. Each of the five writes to the database on its own, for
 			// something nothing will ever call: an install stamps its state, a
 			// scheduler would execute code and log the run, the missed-run report
-			// files `missed` entries for a scheduler that is not running, and the
-			// hourly prune would delete the very history the showcase displays.
+			// files `missed` entries for a scheduler that is not running, a startup
+			// trigger would execute code at boot and log that too, and the hourly
+			// prune would delete the very history the showcase displays.
 			if !demo.Enabled {
 				// Reinstall the dependencies the disk lost, from the files just restored.
 				// Detached: OnServe runs before the server listens, so anything synchronous
@@ -112,6 +113,12 @@ func main() {
 
 				// Report the triggers that were due while the server was down
 				reportMissedCronRuns(e.App, time.Now())
+
+				// Arm what has to fire because the server just came up. It reads
+				// the same records, and comes last so the sequence reads in order:
+				// register the schedules, report what was missed, arm what starts
+				// now. Every wait and every run inside is detached.
+				scheduleStartupRuns(lifecycleCtx, e.App, functionsDir)
 
 				// Internal hourly cron: prunes the logs, and behind them the OAuth
 				// registrations and grants that /oauth/register lets anyone create.
@@ -273,9 +280,9 @@ func main() {
 	app.OnRecordCreate(faasboxFunctionsCollection).BindFunc(encryptPlainEnvHook)
 	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(encryptPlainEnvHook)
 
-	// Validate cron expression before saving
-	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
-	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+	// Validate the trigger against the rules of its kind before saving
+	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
 
 	// Stamp the fingerprint of the two columns SQL still has to find. Before the
 	// encryption, so the value hashed is the one the caller sent.

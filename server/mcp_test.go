@@ -134,6 +134,19 @@ func TestMCPServerAdvertises(t *testing.T) {
 		if d := got["update_function"].Description; !strings.Contains(d, "plainEnv") {
 			t.Errorf("update_function description does not name the plainEnv trap: %q", d)
 		}
+
+		// A trigger field an agent cannot see in the schema is a trigger it will
+		// never propose. Read off the marshalled schema rather than the struct:
+		// what is under test is what reaches the other end.
+		schema, err := json.Marshal(got["create_function"].InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range []string{"kind", "startupDelayMinutes", "1439"} {
+			if !strings.Contains(string(schema), marker) {
+				t.Errorf("the create_function schema does not carry %q", marker)
+			}
+		}
 	})
 
 	t.Run("the instructions carry the writing contract", func(t *testing.T) {
@@ -149,6 +162,8 @@ func TestMCPServerAdvertises(t *testing.T) {
 			"1048576",      // size caps
 			"background",   // installs do not finish with the write
 			"day-of-week",  // cron expression
+			"startup",      // the second kind of trigger
+			"1439",         // and the bound on its delay
 			"empty object", // plainEnv erases
 			"do not patch", // a write replaces
 		} {
@@ -471,8 +486,8 @@ func TestMCPFailureIsClassified(t *testing.T) {
 		app, functionsDir, _ := manageApp(t)
 		session := mcpSession(t, app, functionsDir, unrestricted)
 
-		// A trigger with no schedule: the hook only looks at a non-empty
-		// expression, so the empty one falls through to the field's Required.
+		// A trigger with no schedule: the hook refuses it, the field being no
+		// longer Required — a startup trigger legitimately carries none.
 		got := callToolErr(t, session, "create_function", map[string]any{
 			"name":   "no-schedule",
 			"script": "console.log('{}')",
@@ -487,7 +502,7 @@ func TestMCPFailureIsClassified(t *testing.T) {
 		app, functionsDir, _ := manageApp(t)
 		// The hook main.go binds, and the one refusal that arrives as an
 		// *router.ApiError rather than as field validation.
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateCronScheduleHook)
+		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
 		session := mcpSession(t, app, functionsDir, unrestricted)
 
 		got := callToolErr(t, session, "create_function", map[string]any{
@@ -844,6 +859,7 @@ func invokeMCPApp(t testing.TB) (*tests.TestApp, string, *core.Record) {
 	setupFaaSCollections(t, app)
 	bindEnvHook(app)
 	bindFunctionNameHook(app)
+	bindTriggerHook(app)
 
 	functionsDir, functions := setupTestFunctions(t, app, map[string]string{
 		"echo": `console.error("diagnostic");
