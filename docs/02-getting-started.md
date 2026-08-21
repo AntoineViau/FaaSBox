@@ -69,7 +69,7 @@ If you started the server without superuser credentials, open `http://localhost:
 `http://localhost:8080/` is the interface you will spend your time in. It covers everything you need to run functions:
 
 - **Write and test.** Five tabs per function — **Script**, **package.json**, **Triggers**, **Environment**, **Files** — plus a **Runner** to invoke a function on demand and a **Logs** panel to read its history. Both open from the buttons in the header.
-- **Schedule.** Cron triggers are created and edited in the **Triggers** tab, with ready-made expressions and a free field. See [05 - Scheduling (Cron)](05-scheduling-cron.md).
+- **Schedule.** Cron triggers are created and edited in the **Triggers** tab, with ready-made expressions and a free field. See [05 - Triggers](05-triggers.md).
 - **Secrets.** Encrypted environment variables are edited as key/value pairs in the **Environment** tab. See [04 - Environment Variables](04-environment-variables.md).
 - **Look at the disk.** The **Files** tab browses the function's own folder as it exists on the server — `index.ts`, `package.json`, `bun.lock`, `node_modules` and whatever else is in there. Read-only. See [03 - Writing Functions](03-writing-functions.md).
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
@@ -100,7 +100,7 @@ That last one is not a curiosity. Because `Tab` indents, it no longer moves focu
 
 `http://localhost:8080/_/` is the standard PocketBase dashboard. You no longer need it for day-to-day work; it is there when you want the raw data:
 
-- Browse and query the collections directly: `faasbox_functions`, `faasbox_cron_jobs`, `faasbox_logs` and `faasbox_api_keys`, plus `faasbox_oauth_clients` and `faasbox_oauth_grants` on an instance where `FAASBOX_PUBLIC_URL` is set — those last two are created the first time the OAuth endpoints go up.
+- Browse and query the collections directly: `faasbox_functions`, `faasbox_triggers`, `faasbox_logs` and `faasbox_api_keys`, plus `faasbox_oauth_clients` and `faasbox_oauth_grants` on an instance where `FAASBOX_PUBLIC_URL` is set — those last two are created the first time the OAuth endpoints go up.
 - Read a field in its raw form rather than through the editor's rendering — `depsStatus` and `depsError`, for instance, which the **package.json** tab already shows you.
 - Manage the instance itself: superuser accounts, backups, server settings, and the rate limiter rules.
 
@@ -179,4 +179,4 @@ You should receive a JSON response:
 
 - Learn how to [manage dependencies](03-writing-functions.md).
 - Secure your function with [encrypted environment variables](04-environment-variables.md).
-- Schedule your function with [Cron jobs](05-scheduling-cron.md).
+- Fire your function on a schedule or at startup with [Triggers](05-triggers.md).

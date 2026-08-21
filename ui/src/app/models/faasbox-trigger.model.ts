@@ -1,4 +1,4 @@
-export interface FaasboxCronJob {
+export interface FaasboxTrigger {
   id: string;
   name: string;
   schedule: string;
@@ -19,10 +19,10 @@ export interface FaasboxCronJob {
   updated: string;
 }
 
-export interface FaasboxCronJobListResponse {
+export interface FaasboxTriggerListResponse {
   page: number;
   perPage: number;
   totalItems: number;
   totalPages: number;
-  items: FaasboxCronJob[];
+  items: FaasboxTrigger[];
 }

@@ -49,7 +49,7 @@ build on it.
   another one calls it over HTTP like any other client would.
 - **No replay of missed schedules.** A cron trigger due while the server was down
   is reported, never fired late. See
-  [05 - Scheduling (Cron)](05-scheduling-cron.md#when-the-server-is-down).
+  [05 - Triggers](05-triggers.md#when-the-server-is-down).
 
 ## Philosophy
 

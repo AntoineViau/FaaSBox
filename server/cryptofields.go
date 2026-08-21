@@ -50,7 +50,7 @@ import (
 // index declared underneath — never a weaker cipher.
 var encryptedTextFields = map[string][]string{
 	faasboxFunctionsCollection:    {"name", "script", "packageJson", "bunLock", "depsError"},
-	faasboxCronJobsCollection:     {"name", "schedule"},
+	faasboxTriggersCollection:     {"name", "schedule"},
 	faasboxLogsCollection:         {"functionName", "stdout", "stderr"},
 	faasboxAPIKeysCollection:      {"name", "keyPrefix"},
 	faasboxOAuthClientsCollection: {"name", "clientId"},
@@ -85,7 +85,7 @@ var blindIndexedColumns = map[string][]blindIndexedColumn{
 // type moving — which is what leaves the editor's contract intact: it sends a
 // parsed object and reads one back.
 var encryptedJSONFields = map[string][]string{
-	faasboxCronJobsCollection:     {"payload"},
+	faasboxTriggersCollection:     {"payload"},
 	faasboxLogsCollection:         {"requestPayload"},
 	faasboxOAuthClientsCollection: {"redirectUris"},
 }
@@ -99,7 +99,7 @@ var encryptedJSONFields = map[string][]string{
 // nothing and widen what a serialisation carries.
 var enrichedCollections = []string{
 	faasboxFunctionsCollection,
-	faasboxCronJobsCollection,
+	faasboxTriggersCollection,
 	faasboxLogsCollection,
 	faasboxAPIKeysCollection,
 	faasboxOAuthClientsCollection,

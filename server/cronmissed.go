@@ -50,9 +50,9 @@ func countMissedRuns(schedule *cron.Schedule, since, now time.Time) (int, bool) 
 // never one per occurrence: a minutely job over a two-day outage would otherwise
 // insert 2880 rows and flush the whole log collection through the pruner.
 func reportMissedCronRuns(app core.App, now time.Time) {
-	records, err := app.FindAllRecords(faasboxCronJobsCollection)
+	records, err := app.FindAllRecords(faasboxTriggersCollection)
 	if err != nil {
-		app.Logger().Error("faasbox cron: failed to load cron jobs for missed run detection", "error", err)
+		app.Logger().Error("faasbox cron: failed to load triggers for missed run detection", "error", err)
 		return
 	}
 
@@ -61,7 +61,7 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 			continue
 		}
 
-		expr := cronSchedule(app, record)
+		expr := triggerSchedule(app, record)
 		functionId := record.GetString("function")
 		if expr == "" || functionId == "" {
 			continue
@@ -71,7 +71,7 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 		// record says what it is called right now.
 		fn, err := app.FindRecordById(faasboxFunctionsCollection, functionId)
 		if err != nil {
-			app.Logger().Error("faasbox cron: cron job points at no function, skipping missed run detection",
+			app.Logger().Error("faasbox cron: cron trigger points at no function, skipping missed run detection",
 				"recordId", record.Id, "functionId", functionId, "error", err)
 			continue
 		}

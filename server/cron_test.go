@@ -12,7 +12,7 @@ import (
 	"github.com/pocketbase/pocketbase/tests"
 )
 
-func TestEnsureCronJobsCollection(t *testing.T) {
+func TestEnsureTriggersCollection(t *testing.T) {
 	app, err := tests.NewTestApp()
 	if err != nil {
 		t.Fatal(err)
@@ -25,11 +25,11 @@ func TestEnsureCronJobsCollection(t *testing.T) {
 	}
 
 	// First call: should create the collection
-	if err := ensureCronJobsCollection(app); err != nil {
+	if err := ensureTriggersCollection(app); err != nil {
 		t.Fatalf("first call failed: %v", err)
 	}
 
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
 	if err != nil {
 		t.Fatalf("collection not found after creation: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestEnsureCronJobsCollection(t *testing.T) {
 	// In the clear, like active, maxQueue and lastRunAt: a discriminant and a
 	// delay say nothing of the business content.
 	for _, name := range []string{"kind", "startupDelayMinutes"} {
-		if slices.Contains(encryptedTextFields[faasboxCronJobsCollection], name) {
+		if slices.Contains(encryptedTextFields[faasboxTriggersCollection], name) {
 			t.Errorf("%s is listed as an encrypted column", name)
 		}
 	}
@@ -110,52 +110,8 @@ func TestEnsureCronJobsCollection(t *testing.T) {
 	}
 
 	// Second call: should be idempotent (no error)
-	if err := ensureCronJobsCollection(app); err != nil {
+	if err := ensureTriggersCollection(app); err != nil {
 		t.Fatalf("second call (idempotent) failed: %v", err)
-	}
-}
-
-func TestEnsureCronJobsCollection_Migration(t *testing.T) {
-	app, err := tests.NewTestApp()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer app.Cleanup()
-
-	if err := ensureFunctionsCollection(app); err != nil {
-		t.Fatal(err)
-	}
-	functions, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create collection without maxQueue (simulate old schema)
-	col := core.NewBaseCollection(faasboxCronJobsCollection)
-	col.Fields.Add(
-		&core.TextField{Name: "name", Required: true},
-		&core.TextField{Name: "schedule", Required: true},
-		&core.RelationField{
-			Name: "function", Required: true, MaxSelect: 1,
-			CascadeDelete: true, CollectionId: functions.Id,
-		},
-		&core.JSONField{Name: "payload"},
-		&core.BoolField{Name: "active"},
-	)
-	if err := app.Save(col); err != nil {
-		t.Fatal(err)
-	}
-
-	// ensureCronJobsCollection should add every missing field in one pass
-	if err := ensureCronJobsCollection(app); err != nil {
-		t.Fatalf("migration failed: %v", err)
-	}
-
-	col, _ = app.FindCollectionByNameOrId(faasboxCronJobsCollection)
-	for _, fieldName := range []string{"maxQueue", "lastRunAt"} {
-		if col.Fields.GetByName(fieldName) == nil {
-			t.Errorf("%s field not added during migration", fieldName)
-		}
 	}
 }
 
@@ -163,8 +119,8 @@ func TestEnsureCronJobsCollection_Migration(t *testing.T) {
 // starts with no hook bound — and since a blank schedule is refused here rather
 // than by the field, an app that skips it accepts a trigger the server would not.
 func bindTriggerHook(app core.App) {
-	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
-	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+	app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
+	app.OnRecordUpdate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
 }
 
 func TestValidateTriggerHook(t *testing.T) {
@@ -174,7 +130,7 @@ func TestValidateTriggerHook(t *testing.T) {
 		{
 			Name:   "invalid expression refused with a message the client can display",
 			Method: http.MethodPost,
-			URL:    "/api/collections/" + faasboxCronJobsCollection + "/records",
+			URL:    "/api/collections/" + faasboxTriggersCollection + "/records",
 			Body: strings.NewReader(
 				`{"name":"bad-schedule","schedule":"0 0 0 * *","function":"echofunction001","active":true}`,
 			),
@@ -195,7 +151,7 @@ func TestValidateTriggerHook(t *testing.T) {
 				`minute hour day-of-month month day-of-week`,
 			},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if _, err := app.FindFirstRecordByData(faasboxCronJobsCollection, "name", "bad-schedule"); err == nil {
+				if _, err := app.FindFirstRecordByData(faasboxTriggersCollection, "name", "bad-schedule"); err == nil {
 					t.Error("record was created despite the rejected schedule")
 				}
 			},
@@ -203,7 +159,7 @@ func TestValidateTriggerHook(t *testing.T) {
 		{
 			Name:   "valid expression goes through",
 			Method: http.MethodPost,
-			URL:    "/api/collections/" + faasboxCronJobsCollection + "/records",
+			URL:    "/api/collections/" + faasboxTriggersCollection + "/records",
 			Body: strings.NewReader(
 				`{"name":"good-schedule","schedule":"0 0 * * *","function":"echofunction001","active":true}`,
 			),
@@ -236,22 +192,22 @@ func TestTriggerKind_EmptyReadsAsCron(t *testing.T) {
 	defer app.Cleanup()
 	setupFaaSCollections(t, app)
 
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
 	if err != nil {
 		t.Fatal(err)
 	}
 	record := core.NewRecord(col)
 
-	if got := cronKind(record); got != "cron" {
-		t.Errorf("cronKind on an empty column = %q, want \"cron\"", got)
+	if got := triggerKind(record); got != "cron" {
+		t.Errorf("triggerKind on an empty column = %q, want \"cron\"", got)
 	}
 	record.Set("kind", "startup")
-	if got := cronKind(record); got != "startup" {
-		t.Errorf("cronKind = %q, want \"startup\"", got)
+	if got := triggerKind(record); got != "startup" {
+		t.Errorf("triggerKind = %q, want \"startup\"", got)
 	}
 	record.Set("kind", "cron")
-	if got := cronKind(record); got != "cron" {
-		t.Errorf("cronKind = %q, want \"cron\"", got)
+	if got := triggerKind(record); got != "cron" {
+		t.Errorf("triggerKind = %q, want \"cron\"", got)
 	}
 }
 
@@ -322,7 +278,7 @@ func TestValidateTriggerHook_ByKind(t *testing.T) {
 		s := tests.ApiScenario{
 			Name:   c.name,
 			Method: http.MethodPost,
-			URL:    "/api/collections/" + faasboxCronJobsCollection + "/records",
+			URL:    "/api/collections/" + faasboxTriggersCollection + "/records",
 			Body:   strings.NewReader(c.body),
 			Headers: map[string]string{
 				"Authorization": superuserToken,
@@ -346,15 +302,15 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 	}
 	defer app.Cleanup()
 
-	// Reset cronQueueDepth between tests
-	cronQueueDepth.Range(func(key, _ any) bool {
-		cronQueueDepth.Delete(key)
+	// Reset triggerQueueDepth between tests
+	triggerQueueDepth.Range(func(key, _ any) bool {
+		triggerQueueDepth.Delete(key)
 		return true
 	})
 
 	t.Run("maxQueue=0 does not limit", func(t *testing.T) {
 		// Simulate 3 in-flight executions by pre-loading the counter
-		val, _ := cronQueueDepth.LoadOrStore("unlimited-func", &atomic.Int32{})
+		val, _ := triggerQueueDepth.LoadOrStore("unlimited-func", &atomic.Int32{})
 		counter := val.(*atomic.Int32)
 		counter.Store(0)
 
@@ -374,7 +330,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 
 	t.Run("maxQueue=2 skips when full", func(t *testing.T) {
 		// Pre-load counter at 2 (simulating 2 already in-flight)
-		val, _ := cronQueueDepth.LoadOrStore("limited-func", &atomic.Int32{})
+		val, _ := triggerQueueDepth.LoadOrStore("limited-func", &atomic.Int32{})
 		counter := val.(*atomic.Int32)
 		counter.Store(2)
 
@@ -410,7 +366,7 @@ func TestSyncAllCronJobs_WithRecords(t *testing.T) {
 	setupFaaSCollections(t, app)
 
 	// Create a cron job record
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +411,7 @@ func TestSyncAllCronJobs_SkipsInactive(t *testing.T) {
 
 	functionsDir := t.TempDir()
 	fn := saveTestFunction(t, app, functionsDir, "echo", "console.log(1)", "")
-	record := createTestCronJob(t, app, "inactive-cron", "*/5 * * * *", fn.Id, false)
+	record := createTestTrigger(t, app, "inactive-cron", "*/5 * * * *", fn.Id, false)
 
 	syncAllCronJobs(app, functionsDir, context.Background())
 
@@ -497,15 +453,15 @@ func TestDeleteFunction_CascadesToItsTriggers(t *testing.T) {
 	setupFaaSCollections(t, app)
 
 	functionsDir := t.TempDir()
-	app.OnRecordAfterDeleteSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
+	app.OnRecordAfterDeleteSuccess(faasboxTriggersCollection).BindFunc(func(e *core.RecordEvent) error {
 		syncAllCronJobs(e.App, functionsDir, context.Background())
 		return e.Next()
 	})
 
 	doomed := saveTestFunction(t, app, functionsDir, "doomed", "console.log(1)", "")
 	survivor := saveTestFunction(t, app, functionsDir, "survivor", "console.log(1)", "")
-	mine := createTestCronJob(t, app, "mine", "* * * * *", doomed.Id, true)
-	theirs := createTestCronJob(t, app, "theirs", "* * * * *", survivor.Id, true)
+	mine := createTestTrigger(t, app, "mine", "* * * * *", doomed.Id, true)
+	theirs := createTestTrigger(t, app, "theirs", "* * * * *", survivor.Id, true)
 
 	syncAllCronJobs(app, functionsDir, context.Background())
 	if !hasCronJob(app, mine.Id) || !hasCronJob(app, theirs.Id) {
@@ -516,10 +472,10 @@ func TestDeleteFunction_CascadesToItsTriggers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := app.FindRecordById(faasboxCronJobsCollection, mine.Id); err == nil {
+	if _, err := app.FindRecordById(faasboxTriggersCollection, mine.Id); err == nil {
 		t.Error("the trigger of the deleted function is still there")
 	}
-	if _, err := app.FindRecordById(faasboxCronJobsCollection, theirs.Id); err != nil {
+	if _, err := app.FindRecordById(faasboxTriggersCollection, theirs.Id); err != nil {
 		t.Errorf("the trigger of another function was swept away too: %v", err)
 	}
 
@@ -545,7 +501,7 @@ func TestSyncAllCronJobs_SurvivesARename(t *testing.T) {
 	functionsDir := t.TempDir()
 	fakeBun(t, "exit 0")
 	fn := saveTestFunction(t, app, functionsDir, "before", "console.log(1)", "")
-	job := createTestCronJob(t, app, "nightly", "* * * * *", fn.Id, true)
+	job := createTestTrigger(t, app, "nightly", "* * * * *", fn.Id, true)
 
 	syncAllCronJobs(app, functionsDir, context.Background())
 
@@ -593,11 +549,11 @@ func TestRunFunction_StampsLastRunAt(t *testing.T) {
 	// fails — and the stamp must still be written, since what it records is that
 	// the trigger fired.
 	fn := saveTestFunction(t, app, t.TempDir(), "missing-func", "console.log(1)", "")
-	record := createTestCronJob(t, app, "stamped-cron", "* * * * *", fn.Id, true)
+	record := createTestTrigger(t, app, "stamped-cron", "* * * * *", fn.Id, true)
 
 	runFunction(context.Background(), app, t.TempDir(), fn.Id, "{}", 0, record.Id, "cron")
 
-	updated, err := app.FindRecordById(faasboxCronJobsCollection, record.Id)
+	updated, err := app.FindRecordById(faasboxTriggersCollection, record.Id)
 	if err != nil {
 		t.Fatal(err)
 	}

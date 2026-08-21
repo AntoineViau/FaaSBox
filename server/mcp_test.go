@@ -258,7 +258,7 @@ func TestMCPCreateFunction(t *testing.T) {
 			"script":      "console.log('{}')",
 			"packageJson": `{"dependencies":{}}`,
 			"plainEnv":    map[string]any{"TOKEN": "v"},
-			"crons": []any{
+			"triggers": []any{
 				map[string]any{"name": "nightly", "schedule": "0 3 * * *", "payload": map[string]any{"n": 1}},
 			},
 		}, &contract)
@@ -266,8 +266,8 @@ func TestMCPCreateFunction(t *testing.T) {
 		if contract.Name != "greet" || contract.Id == "" {
 			t.Fatalf("contract = %+v, want a named function carrying an id", contract)
 		}
-		if len(contract.Crons) != 1 || contract.Crons[0].Schedule != "0 3 * * *" {
-			t.Errorf("contract.Crons = %+v, want the nightly trigger", contract.Crons)
+		if len(contract.Triggers) != 1 || contract.Triggers[0].Schedule != "0 3 * * *" {
+			t.Errorf("contract.Triggers = %+v, want the nightly trigger", contract.Triggers)
 		}
 		if got := secretsOf(t, app, contract.Id); got["TOKEN"] != "v" {
 			t.Errorf("secrets = %v, want TOKEN stored", got)
@@ -350,24 +350,24 @@ func TestMCPUpdateFunction(t *testing.T) {
 		}
 	})
 
-	t.Run("no crons leaves the triggers intact, an empty list removes them", func(t *testing.T) {
+	t.Run("no triggers leaves the triggers intact, an empty list removes them", func(t *testing.T) {
 		app, functionsDir, fn := manageApp(t)
 		session := mcpSession(t, app, functionsDir, unrestricted)
-		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
+		createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
 
 		callToolOK(t, session, "update_function", map[string]any{
 			"idOrName": "echo",
 			"script":   "console.log('{}')",
 		}, nil)
-		if got := cronsOf(t, app, fn.Id); len(got) != 1 {
+		if got := triggersOf(t, app, fn.Id); len(got) != 1 {
 			t.Fatalf("triggers = %v, want the one that was there", got)
 		}
 
 		callToolOK(t, session, "update_function", map[string]any{
 			"idOrName": "echo",
-			"crons":    []any{},
+			"triggers": []any{},
 		}, nil)
-		if got := cronsOf(t, app, fn.Id); len(got) != 0 {
+		if got := triggersOf(t, app, fn.Id); len(got) != 0 {
 			t.Errorf("triggers = %v, want none left", got)
 		}
 	})
@@ -489,9 +489,9 @@ func TestMCPFailureIsClassified(t *testing.T) {
 		// A trigger with no schedule: the hook refuses it, the field being no
 		// longer Required — a startup trigger legitimately carries none.
 		got := callToolErr(t, session, "create_function", map[string]any{
-			"name":   "no-schedule",
-			"script": "console.log('{}')",
-			"crons":  []any{map[string]any{"name": "nightly", "schedule": ""}},
+			"name":     "no-schedule",
+			"script":   "console.log('{}')",
+			"triggers": []any{map[string]any{"name": "nightly", "schedule": ""}},
 		})
 		if !strings.Contains(got, "nightly") || !strings.Contains(got, "schedule") {
 			t.Errorf("error = %q, want the refused trigger and its field named", got)
@@ -502,13 +502,13 @@ func TestMCPFailureIsClassified(t *testing.T) {
 		app, functionsDir, _ := manageApp(t)
 		// The hook main.go binds, and the one refusal that arrives as an
 		// *router.ApiError rather than as field validation.
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+		app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
 		session := mcpSession(t, app, functionsDir, unrestricted)
 
 		got := callToolErr(t, session, "create_function", map[string]any{
-			"name":   "bad-schedule",
-			"script": "console.log('{}')",
-			"crons":  []any{map[string]any{"name": "nightly", "schedule": "not a cron"}},
+			"name":     "bad-schedule",
+			"script":   "console.log('{}')",
+			"triggers": []any{map[string]any{"name": "nightly", "schedule": "not a cron"}},
 		})
 		if !strings.Contains(got, "not a cron") {
 			t.Errorf("error = %q, want the refused expression quoted back", got)

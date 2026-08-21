@@ -111,7 +111,7 @@ func createFunction(app core.App, allowed []string, req manageRequest) (function
 		return functionContract{}, err
 	}
 
-	return saveFunction(app, record, req.Crons)
+	return saveFunction(app, record, req.Triggers)
 }
 
 // getFunction answers with the contract of the function a caller designates, by
@@ -150,7 +150,7 @@ func replaceFunction(app core.App, allowed []string, idOrName string, req manage
 		return functionContract{}, err
 	}
 
-	return saveFunction(app, record, req.Crons)
+	return saveFunction(app, record, req.Triggers)
 }
 
 // deleteFunction removes the function a caller designates.
@@ -278,15 +278,15 @@ func scopedFunction(app core.App, allowed []string, idOrName string) (*core.Reco
 // the corrected retry into a conflict, and a replacement carrying an empty
 // plainEnv destroyed the secrets while reporting a failure. What the caller is
 // told did not happen must not have happened.
-func saveFunction(app core.App, record *core.Record, crons []manageCron) (functionContract, error) {
+func saveFunction(app core.App, record *core.Record, triggers []manageTrigger) (functionContract, error) {
 	err := app.RunInTransaction(func(txApp core.App) error {
 		if err := txApp.Save(record); err != nil {
 			return err
 		}
 		// A nil list is an absent key: the triggers are left alone. An empty one
 		// is an instruction, and removes them all.
-		if crons != nil {
-			return replaceCronJobs(txApp, record, crons)
+		if triggers != nil {
+			return replaceTriggers(txApp, record, triggers)
 		}
 		return nil
 	})
@@ -310,7 +310,7 @@ func saveFunction(app core.App, record *core.Record, crons []manageCron) (functi
 
 // functionContractOf renders the public shape of a function record.
 func functionContractOf(app core.App, record *core.Record) (functionContract, error) {
-	crons, err := functionCronContracts(app, record.Id)
+	triggers, err := functionTriggerContracts(app, record.Id)
 	if err != nil {
 		app.Logger().Error("faasbox: failed to read the triggers of a function",
 			"functionId", record.Id, "error", err)
@@ -324,7 +324,7 @@ func functionContractOf(app core.App, record *core.Record) (functionContract, er
 		PackageJson: functionPackageJson(app, record),
 		DepsStatus:  record.GetString("depsStatus"),
 		DepsError:   functionDepsError(app, record),
-		Crons:       crons,
+		Triggers:    triggers,
 	}, nil
 }
 

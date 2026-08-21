@@ -154,7 +154,7 @@ func findGrantByHash(app core.App, column, hash string) (*core.Record, error) {
 // Neither collection carries a hook, so nothing is skipped by going around the
 // record layer. `updated` is stamped by hand for the same reason: the autodate
 // field is applied by app.Save, which is precisely what is not being used. The
-// project already writes this way where the same argument holds — markCronJobRun
+// project already writes this way where the same argument holds — markTriggerRun
 // and pruneOldLogs.
 
 // revokeGrant kills an authorization whole.

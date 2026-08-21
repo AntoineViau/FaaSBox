@@ -151,7 +151,7 @@ func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mc
 // is written nowhere a machine receives without being handed it.
 //
 // Distilled from docs/ — 03-writing-functions.md for the execution contract, the
-// naming rule and the caps, 05-scheduling-cron.md for the triggers, and
+// naming rule and the caps, 05-triggers.md for the triggers, and
 // 09-api-reference.md for what a write replaces. It lives in the code rather
 // than in a served file so what an agent receives follows the version of the
 // server serving it.

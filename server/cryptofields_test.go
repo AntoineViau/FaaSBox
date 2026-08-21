@@ -163,7 +163,7 @@ func TestSealedJSON_PayloadLookingSealedIsStillSealed(t *testing.T) {
 	app := sealedApp(t)
 	fn := saveSealedFunction(t, app, "lookalike-payload", "console.log('hi')", "")
 
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,17 +177,17 @@ func TestSealedJSON_PayloadLookingSealedIsStillSealed(t *testing.T) {
 		t.Fatalf("failed to save the trigger: %v", err)
 	}
 
-	stored := storedColumn(t, app, faasboxCronJobsCollection, "payload", job.Id)
+	stored := storedColumn(t, app, faasboxTriggersCollection, "payload", job.Id)
 	if strings.Contains(stored, "not a ciphertext") {
 		t.Fatalf("payload = %q in the database, want it sealed", stored)
 	}
 
-	fresh, err := app.FindRecordById(faasboxCronJobsCollection, job.Id)
+	fresh, err := app.FindRecordById(faasboxTriggersCollection, job.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var payload string
-	if err := json.Unmarshal([]byte(cronPayloadText(app, fresh)), &payload); err != nil {
+	if err := json.Unmarshal([]byte(triggerPayloadText(app, fresh)), &payload); err != nil {
 		t.Fatalf("the payload does not read back as a JSON string: %v", err)
 	}
 	if want := cipherPrefix + "not a ciphertext either"; payload != want {
@@ -449,10 +449,10 @@ func TestSealedCron_MissedRunsAreStillDetected(t *testing.T) {
 	now := time.Now()
 
 	fn := saveSealedFunction(t, app, "scheduled", "console.log('hi')", "")
-	job := createTestCronJob(t, app, "every minute", "* * * * *", fn.Id, true)
+	job := createTestTrigger(t, app, "every minute", "* * * * *", fn.Id, true)
 	setCronJobDate(t, app, job.Id, "lastRunAt", now.Add(-10*time.Minute))
 
-	if got := storedColumn(t, app, faasboxCronJobsCollection, "schedule", job.Id); !strings.HasPrefix(got, cipherPrefix) {
+	if got := storedColumn(t, app, faasboxTriggersCollection, "schedule", job.Id); !strings.HasPrefix(got, cipherPrefix) {
 		t.Fatalf("schedule = %q, want a sealed value — the test would prove nothing", got)
 	}
 

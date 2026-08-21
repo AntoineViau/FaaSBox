@@ -72,7 +72,7 @@ import { ZardIconComponent } from '@shared/components/icon';
           >
             <z-icon zType="folder-code" class="h-4 w-4 shrink-0 text-muted-foreground" />
             <span class="flex-1 truncate">{{ fn.name }}</span>
-            @if (cronFunctions().has(fn.id)) {
+            @if (triggerFunctions().has(fn.id)) {
               <z-icon zType="calendar" class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             }
             <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
@@ -98,7 +98,7 @@ export class SidebarComponent {
   readonly functions = input.required<FaasboxFunction[]>();
   readonly selectedId = input.required<string | null>();
   /** Ids of the functions carrying at least one active trigger. */
-  readonly cronFunctions = input<Set<string>>(new Set());
+  readonly triggerFunctions = input<Set<string>>(new Set());
   /** Spins the reload icon and holds the button, so a click reads as an action. */
   readonly loading = input(false);
   /** A showcase lists the functions and closes what would write one. */

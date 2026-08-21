@@ -23,7 +23,7 @@ func shortStartupDelayUnit(t testing.TB, d time.Duration) {
 // createTestStartupTrigger saves a startup trigger pointing at a function id.
 func createTestStartupTrigger(t testing.TB, app core.App, name string, delayMinutes int, functionId string, active bool) *core.Record {
 	t.Helper()
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestScheduleStartupRuns_FiresAZeroDelay(t *testing.T) {
 		t.Errorf("trigger = %q, want \"startup\"", got)
 	}
 
-	stamped, err := app.FindRecordById(faasboxCronJobsCollection, trigger.Id)
+	stamped, err := app.FindRecordById(faasboxTriggersCollection, trigger.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,14 +147,14 @@ func TestScheduleStartupRuns_SkipsWhatItMustNotArm(t *testing.T) {
 	enableServerLogs(t, app)
 
 	createTestStartupTrigger(t, app, "off", 0, fn.Id, false)
-	createTestCronJob(t, app, "scheduled", "0 * * * *", fn.Id, true)
+	createTestTrigger(t, app, "scheduled", "0 * * * *", fn.Id, true)
 
 	dangling := createTestStartupTrigger(t, app, "orphan", 0, fn.Id, true)
 	dangling.Set("function", "doesnotexist000")
 	// Straight to SQL: the relation refuses an id that resolves to nothing, and
 	// what is under test is precisely how the pass survives one that does not.
 	if _, err := app.DB().NewQuery(
-		"UPDATE " + faasboxCronJobsCollection + " SET function = 'doesnotexist000' WHERE id = {:id}",
+		"UPDATE " + faasboxTriggersCollection + " SET function = 'doesnotexist000' WHERE id = {:id}",
 	).Bind(map[string]any{"id": dangling.Id}).Execute(); err != nil {
 		t.Fatal(err)
 	}

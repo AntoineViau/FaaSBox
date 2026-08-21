@@ -75,10 +75,10 @@ func secretsOf(t testing.TB, app core.App, recordId string) map[string]string {
 	return env
 }
 
-// cronsOf returns the trigger records of a function, keyed by name.
-func cronsOf(t testing.TB, app core.App, functionId string) map[string]*core.Record {
+// triggersOf returns the trigger records of a function, keyed by name.
+func triggersOf(t testing.TB, app core.App, functionId string) map[string]*core.Record {
 	t.Helper()
-	records, err := app.FindAllRecords(faasboxCronJobsCollection, dbx.HashExp{"function": functionId})
+	records, err := app.FindAllRecords(faasboxTriggersCollection, dbx.HashExp{"function": functionId})
 	if err != nil {
 		t.Fatalf("failed to read the triggers of %q: %v", functionId, err)
 	}
@@ -106,7 +106,7 @@ func TestCreateFunctionHandler(t *testing.T) {
 				`"name":"greet"`,
 				`"packageJson":"{}"`,
 				`"depsStatus":""`,
-				`"crons":[]`,
+				`"triggers":[]`,
 				`"id":"`,
 			},
 			NotExpectedContent: []string{`"env"`, `"bunLock"`, `"plainEnv"`},
@@ -122,11 +122,11 @@ func TestCreateFunctionHandler(t *testing.T) {
 	t.Run("creates the triggers carried by the body", func(t *testing.T) {
 		app, dir, _ := manageApp(t)
 		s := manageScenario(app, dir, tests.ApiScenario{
-			Name:   "create with crons",
+			Name:   "create with triggers",
 			Method: http.MethodPost,
 			URL:    "/api/faasbox/functions",
 			Body: strings.NewReader(`{"name":"nightly-job","script":"console.log('{}')",
-				"crons":[{"name":"nightly","schedule":"0 3 * * *","payload":{"a":1},"maxQueue":2}]}`),
+				"triggers":[{"name":"nightly","schedule":"0 3 * * *","payload":{"a":1},"maxQueue":2}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  201,
 			ExpectedContent: []string{`"name":"nightly"`, `"schedule":"0 3 * * *"`, `"maxQueue":2`, `"active":true`},
@@ -135,16 +135,16 @@ func TestCreateFunctionHandler(t *testing.T) {
 				if err != nil {
 					t.Fatalf("the function was not persisted: %v", err)
 				}
-				crons := cronsOf(t, app, fn.Id)
-				if len(crons) != 1 {
-					t.Fatalf("got %d triggers, want 1", len(crons))
+				triggers := triggersOf(t, app, fn.Id)
+				if len(triggers) != 1 {
+					t.Fatalf("got %d triggers, want 1", len(triggers))
 				}
 				// An omitted "active" means the trigger fires: declaring one is
 				// asking for it, and the zero value would answer the opposite.
-				if !crons["nightly"].GetBool("active") {
+				if !triggers["nightly"].GetBool("active") {
 					t.Error("the trigger was created inactive")
 				}
-				if got := crons["nightly"].GetString("function"); got != fn.Id {
+				if got := triggers["nightly"].GetString("function"); got != fn.Id {
 					t.Errorf("trigger relation = %q, want the function id %q", got, fn.Id)
 				}
 			},
@@ -283,7 +283,7 @@ func TestGetFunctionHandler(t *testing.T) {
 			URL:             "/api/faasbox/functions/echo",
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  200,
-			ExpectedContent: []string{`"name":"echo"`, `"packageJson":"{\"dependencies\":{}}"`, `"crons":[]`},
+			ExpectedContent: []string{`"name":"echo"`, `"packageJson":"{\"dependencies\":{}}"`, `"triggers":[]`},
 			// The encrypted env and the lockfile are on the record and must not
 			// reach the caller: they are mechanics, not contract.
 			NotExpectedContent: []string{`"env"`, `"bunLock"`, `lockfileVersion`},
@@ -688,11 +688,11 @@ func TestReplaceFunctionHandler(t *testing.T) {
 // --- Replace: the triggers ---
 
 func TestReplaceFunctionHandler_Crons(t *testing.T) {
-	t.Run("an absent crons key leaves the triggers in place", func(t *testing.T) {
+	t.Run("an absent triggers key leaves the triggers in place", func(t *testing.T) {
 		app, dir, fn := manageApp(t)
-		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
+		createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
 		s := manageScenario(app, dir, tests.ApiScenario{
-			Name:            "crons preserved",
+			Name:            "triggers preserved",
 			Method:          http.MethodPut,
 			URL:             "/api/faasbox/functions/echo",
 			Body:            strings.NewReader(`{"script":"console.log('{}')"}`),
@@ -700,7 +700,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			ExpectedStatus:  200,
 			ExpectedContent: []string{`"name":"nightly"`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if got := cronsOf(t, app, fn.Id); len(got) != 1 {
+				if got := triggersOf(t, app, fn.Id); len(got) != 1 {
 					t.Errorf("got %d triggers, want the existing one preserved", len(got))
 				}
 			},
@@ -710,17 +710,17 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("an empty list removes every trigger", func(t *testing.T) {
 		app, dir, fn := manageApp(t)
-		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
+		createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
 		s := manageScenario(app, dir, tests.ApiScenario{
-			Name:            "crons cleared",
+			Name:            "triggers cleared",
 			Method:          http.MethodPut,
 			URL:             "/api/faasbox/functions/echo",
-			Body:            strings.NewReader(`{"script":"console.log('{}')","crons":[]}`),
+			Body:            strings.NewReader(`{"script":"console.log('{}')","triggers":[]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  200,
-			ExpectedContent: []string{`"crons":[]`},
+			ExpectedContent: []string{`"triggers":[]`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if got := cronsOf(t, app, fn.Id); len(got) != 0 {
+				if got := triggersOf(t, app, fn.Id); len(got) != 0 {
 					t.Errorf("got %d triggers, want none left", len(got))
 				}
 			},
@@ -730,22 +730,22 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("a non-empty list replaces the whole set", func(t *testing.T) {
 		app, dir, fn := manageApp(t)
-		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
+		createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
 		s := manageScenario(app, dir, tests.ApiScenario{
-			Name:   "crons replaced",
+			Name:   "triggers replaced",
 			Method: http.MethodPut,
 			URL:    "/api/faasbox/functions/echo",
 			Body: strings.NewReader(`{"script":"console.log('{}')",
-				"crons":[{"name":"hourly","schedule":"0 * * * *","active":false,"maxQueue":3}]}`),
+				"triggers":[{"name":"hourly","schedule":"0 * * * *","active":false,"maxQueue":3}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  200,
 			ExpectedContent: []string{`"name":"hourly"`, `"active":false`, `"maxQueue":3`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				crons := cronsOf(t, app, fn.Id)
-				if len(crons) != 1 || crons["hourly"] == nil {
-					t.Fatalf("triggers = %v, want only hourly", crons)
+				triggers := triggersOf(t, app, fn.Id)
+				if len(triggers) != 1 || triggers["hourly"] == nil {
+					t.Fatalf("triggers = %v, want only hourly", triggers)
 				}
-				if crons["hourly"].GetBool("active") {
+				if triggers["hourly"].GetBool("active") {
 					t.Error("active:false was not honoured")
 				}
 			},
@@ -760,19 +760,19 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			Method: http.MethodPut,
 			URL:    "/api/faasbox/functions/echo",
 			Body: strings.NewReader(`{"script":"console.log('{}')",
-				"crons":[{"name":"boot","kind":"startup","startupDelayMinutes":5}]}`),
+				"triggers":[{"name":"boot","kind":"startup","startupDelayMinutes":5}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  200,
 			ExpectedContent: []string{`"kind":"startup"`, `"startupDelayMinutes":5`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				crons := cronsOf(t, app, fn.Id)
-				if crons["boot"] == nil {
-					t.Fatalf("triggers = %v, want boot", crons)
+				triggers := triggersOf(t, app, fn.Id)
+				if triggers["boot"] == nil {
+					t.Fatalf("triggers = %v, want boot", triggers)
 				}
-				if got := crons["boot"].GetString("kind"); got != "startup" {
+				if got := triggers["boot"].GetString("kind"); got != "startup" {
 					t.Errorf("stored kind = %q, want \"startup\"", got)
 				}
-				if got := int(crons["boot"].GetFloat("startupDelayMinutes")); got != 5 {
+				if got := int(triggers["boot"].GetFloat("startupDelayMinutes")); got != 5 {
 					t.Errorf("stored startupDelayMinutes = %d, want 5", got)
 				}
 			},
@@ -787,19 +787,19 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			Method: http.MethodPut,
 			URL:    "/api/faasbox/functions/echo",
 			Body: strings.NewReader(`{"script":"console.log('{}')",
-				"crons":[{"name":"nightly","schedule":"0 3 * * *"}]}`),
+				"triggers":[{"name":"nightly","schedule":"0 3 * * *"}]}`),
 			Headers:        manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus: 200,
 			// The response is normalised, because it is read through the accessor.
 			ExpectedContent: []string{`"kind":"cron"`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				crons := cronsOf(t, app, fn.Id)
-				if crons["nightly"] == nil {
-					t.Fatalf("triggers = %v, want nightly", crons)
+				triggers := triggersOf(t, app, fn.Id)
+				if triggers["nightly"] == nil {
+					t.Fatalf("triggers = %v, want nightly", triggers)
 				}
 				// The column itself stays empty: normalising here as well would
 				// be a second place for the same default to drift.
-				if got := crons["nightly"].GetString("kind"); got != "" {
+				if got := triggers["nightly"].GetString("kind"); got != "" {
 					t.Errorf("stored kind = %q, want the column left empty", got)
 				}
 			},
@@ -812,21 +812,21 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 		// The validation hook main.go binds is what refuses the expression; the
 		// transaction is what keeps the refusal from being destructive — and it
 		// has to cover the function record too, not only the triggers.
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
-		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
+		app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
+		createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
 		s := manageScenario(app, dir, tests.ApiScenario{
 			Name:   "invalid schedule rolls back",
 			Method: http.MethodPut,
 			URL:    "/api/faasbox/functions/echo",
 			Body: strings.NewReader(`{"script":"console.log('replaced')","plainEnv":{},
-				"crons":[{"name":"broken","schedule":"not a cron"}]}`),
+				"triggers":[{"name":"broken","schedule":"not a cron"}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`Invalid cron expression`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				crons := cronsOf(t, app, fn.Id)
-				if len(crons) != 1 || crons["nightly"] == nil {
-					t.Fatalf("triggers = %v, want the existing one still there", crons)
+				triggers := triggersOf(t, app, fn.Id)
+				if len(triggers) != 1 || triggers["nightly"] == nil {
+					t.Fatalf("triggers = %v, want the existing one still there", triggers)
 				}
 				record, err := app.FindRecordById(faasboxFunctionsCollection, fn.Id)
 				if err != nil {
@@ -847,13 +847,13 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("a refused schedule creates no function at all", func(t *testing.T) {
 		app, dir, _ := manageApp(t)
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+		app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
 		s := manageScenario(app, dir, tests.ApiScenario{
 			Name:   "create rolls back",
 			Method: http.MethodPost,
 			URL:    "/api/faasbox/functions",
 			Body: strings.NewReader(`{"name":"greet","script":"console.log('{}')",
-				"crons":[{"name":"broken","schedule":"not a cron"}]}`),
+				"triggers":[{"name":"broken","schedule":"not a cron"}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`Invalid cron expression`},
@@ -870,7 +870,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 
 	t.Run("a rolled back create fires no after-success hook", func(t *testing.T) {
 		app, dir, _ := manageApp(t)
-		app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+		app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
 
 		// syncRecordToDisk and scheduleDepsInstall both hang off this hook. If it
 		// fired for a record the transaction rolled back, a refused POST would
@@ -889,7 +889,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			Method: http.MethodPost,
 			URL:    "/api/faasbox/functions",
 			Body: strings.NewReader(`{"name":"greet","script":"console.log('{}')",
-				"crons":[{"name":"broken","schedule":"not a cron"}]}`),
+				"triggers":[{"name":"broken","schedule":"not a cron"}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`Invalid cron expression`},
@@ -912,12 +912,12 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			Name:            "trigger missing its schedule",
 			Method:          http.MethodPut,
 			URL:             "/api/faasbox/functions/echo",
-			Body:            strings.NewReader(`{"script":"console.log('{}')","crons":[{"name":"no-schedule"}]}`),
+			Body:            strings.NewReader(`{"script":"console.log('{}')","triggers":[{"name":"no-schedule"}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
 			ExpectedStatus:  400,
 			ExpectedContent: []string{`Trigger \"no-schedule\" was refused`, `needs a schedule`},
 			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-				if got := cronsOf(t, app, fn.Id); len(got) != 0 {
+				if got := triggersOf(t, app, fn.Id); len(got) != 0 {
 					t.Errorf("triggers = %v, want none written", got)
 				}
 				record, err := app.FindRecordById(faasboxFunctionsCollection, fn.Id)
@@ -939,7 +939,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			Name:   "trigger missing its name",
 			Method: http.MethodPut,
 			URL:    "/api/faasbox/functions/echo",
-			Body: strings.NewReader(`{"script":"console.log('{}')","crons":[
+			Body: strings.NewReader(`{"script":"console.log('{}')","triggers":[
 				{"name":"first","schedule":"0 3 * * *"},
 				{"schedule":"0 4 * * *"}]}`),
 			Headers:         manageKeyHeader(t, app, "manager", nil),
@@ -955,7 +955,7 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 func TestDeleteFunctionHandler(t *testing.T) {
 	t.Run("deletes and answers 204, triggers included", func(t *testing.T) {
 		app, dir, fn := manageApp(t)
-		createTestCronJob(t, app, "nightly", "0 3 * * *", fn.Id, true)
+		createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
 		s := manageScenario(app, dir, tests.ApiScenario{
 			Name:           "delete",
 			Method:         http.MethodDelete,
@@ -967,7 +967,7 @@ func TestDeleteFunctionHandler(t *testing.T) {
 					t.Error("the function record survived the delete")
 				}
 				// No cleanup code of ours: the relation carries CascadeDelete.
-				if got := cronsOf(t, app, fn.Id); len(got) != 0 {
+				if got := triggersOf(t, app, fn.Id); len(got) != 0 {
 					t.Errorf("got %d triggers, want them gone with the function", len(got))
 				}
 			},
@@ -1133,7 +1133,7 @@ func TestManageContractShape(t *testing.T) {
 			if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 				t.Fatalf("failed to decode the response: %v", err)
 			}
-			want := []string{"id", "name", "script", "packageJson", "depsStatus", "depsError", "crons"}
+			want := []string{"id", "name", "script", "packageJson", "depsStatus", "depsError", "triggers"}
 			if len(body) != len(want) {
 				t.Errorf("the contract carries %d keys (%v), want %d", len(body), body, len(want))
 			}

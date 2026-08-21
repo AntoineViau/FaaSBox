@@ -74,7 +74,7 @@ func setupFieldEncryption(t testing.TB, app core.App) {
 }
 
 // setupFaaSCollections creates the four FaaSBox collections on the test app, in
-// the order OnServe uses: functions first, since the cron jobs and the logs
+// the order OnServe uses: functions first, since the triggers and the logs
 // carry a relation to it.
 func setupFaaSCollections(t testing.TB, app core.App) {
 	t.Helper()
@@ -85,8 +85,8 @@ func setupFaaSCollections(t testing.TB, app core.App) {
 	if err := ensureAPIKeysCollection(app); err != nil {
 		t.Fatalf("failed to create API keys collection: %v", err)
 	}
-	if err := ensureCronJobsCollection(app); err != nil {
-		t.Fatalf("failed to create cron jobs collection: %v", err)
+	if err := ensureTriggersCollection(app); err != nil {
+		t.Fatalf("failed to create triggers collection: %v", err)
 	}
 	if err := ensureLogsCollection(app); err != nil {
 		t.Fatalf("failed to create logs collection: %v", err)
@@ -404,17 +404,17 @@ func setRecordDate(t testing.TB, app core.App, collection, recordId, column stri
 	}
 }
 
-// setCronJobDate is setRecordDate on faasbox_cron_jobs.
+// setCronJobDate is setRecordDate on faasbox_triggers.
 func setCronJobDate(t testing.TB, app core.App, recordId, column string, at time.Time) {
 	t.Helper()
-	setRecordDate(t, app, faasboxCronJobsCollection, recordId, column, at)
+	setRecordDate(t, app, faasboxTriggersCollection, recordId, column, at)
 }
 
-// createTestCronJob saves a cron job record pointing at a function id, and
+// createTestTrigger saves a trigger record pointing at a function id, and
 // returns it.
-func createTestCronJob(t testing.TB, app core.App, name, schedule, functionId string, active bool) *core.Record {
+func createTestTrigger(t testing.TB, app core.App, name, schedule, functionId string, active bool) *core.Record {
 	t.Helper()
-	col, err := app.FindCollectionByNameOrId(faasboxCronJobsCollection)
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
 	if err != nil {
 		t.Fatal(err)
 	}

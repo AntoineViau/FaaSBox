@@ -1,12 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 
-import type { FaasboxCronJob, FaasboxCronJobListResponse } from '@/models/faasbox-cron-job.model';
+import type { FaasboxTrigger, FaasboxTriggerListResponse } from '@/models/faasbox-trigger.model';
 
-const BASE_URL = '/api/collections/faasbox_cron_jobs/records';
+const BASE_URL = '/api/collections/faasbox_triggers/records';
 
 @Injectable({ providedIn: 'root' })
-export class CronService {
+export class TriggersService {
   private readonly http = inject(HttpClient);
 
   /**
@@ -19,23 +19,23 @@ export class CronService {
    * fully loaded, so it costs nothing.
    */
   list(functionId: string) {
-    return this.http.get<FaasboxCronJobListResponse>(BASE_URL, {
+    return this.http.get<FaasboxTriggerListResponse>(BASE_URL, {
       params: { filter: `function='${functionId}'`, perPage: '200' },
     });
   }
 
   listAll() {
-    return this.http.get<FaasboxCronJobListResponse>(BASE_URL, {
+    return this.http.get<FaasboxTriggerListResponse>(BASE_URL, {
       params: { perPage: '200' },
     });
   }
 
-  create(data: Partial<FaasboxCronJob>) {
-    return this.http.post<FaasboxCronJob>(BASE_URL, data);
+  create(data: Partial<FaasboxTrigger>) {
+    return this.http.post<FaasboxTrigger>(BASE_URL, data);
   }
 
-  update(id: string, data: Partial<FaasboxCronJob>) {
-    return this.http.patch<FaasboxCronJob>(`${BASE_URL}/${id}`, data);
+  update(id: string, data: Partial<FaasboxTrigger>) {
+    return this.http.patch<FaasboxTrigger>(`${BASE_URL}/${id}`, data);
   }
 
   delete(id: string) {

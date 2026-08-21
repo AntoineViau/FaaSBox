@@ -295,7 +295,7 @@ func TestNoCollectionDeclaresAnAccessRule(t *testing.T) {
 	names := []string{
 		faasboxFunctionsCollection,
 		faasboxAPIKeysCollection,
-		faasboxCronJobsCollection,
+		faasboxTriggersCollection,
 		faasboxLogsCollection,
 		faasboxOAuthClientsCollection,
 		faasboxOAuthGrantsCollection,

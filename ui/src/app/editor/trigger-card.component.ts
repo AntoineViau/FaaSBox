@@ -17,7 +17,7 @@ import { ZardInputDirective } from '@shared/components/input';
  * The payload stays the raw text that was typed: parsing it at save time is
  * what allows an invalid document to be reported instead of dropped.
  */
-export interface CronRow {
+export interface TriggerRow {
   key: number;
   id: string;
   name: string;
@@ -44,7 +44,7 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
 
 /** Presentational: it owns no state and writes nothing. */
 @Component({
-  selector: 'app-cron-trigger-card',
+  selector: 'app-trigger-card',
   standalone: true,
   imports: [CronHelpComponent, ZardButtonComponent, ZardIconComponent, ZardInputDirective],
   template: `
@@ -207,13 +207,13 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CronTriggerCardComponent {
-  readonly row = input.required<CronRow>();
+export class TriggerCardComponent {
+  readonly row = input.required<TriggerRow>();
   /** A showcase shows a trigger and closes every field and button that writes it. */
   readonly demoMode = input(false);
 
   /** The fields the user just touched; the panel owns the list. */
-  readonly rowChange = output<Partial<CronRow>>();
+  readonly rowChange = output<Partial<TriggerRow>>();
   readonly removeRow = output<void>();
 
   protected readonly describe = describeSchedule;

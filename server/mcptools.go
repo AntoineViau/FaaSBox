@@ -49,12 +49,12 @@ import (
 // domain would scatter seven ten-line handlers across three files and separate
 // the guardrails from the tools that carry them.
 
-// mcpCron is one trigger as an agent describes it. It mirrors manageCron field
-// for field, with two differences that are about schema inference rather than
+// mcpTrigger is one trigger as an agent describes it. It mirrors manageTrigger
+// field for field, with two differences that are about schema inference rather than
 // meaning: the payload is a plain value rather than json.RawMessage, which would
 // infer as a base64 string, and every field carries the sentence the agent reads
 // next to it.
-type mcpCron struct {
+type mcpTrigger struct {
 	Name     string `json:"name" jsonschema:"a label for this trigger"`
 	Schedule string `json:"schedule" jsonschema:"cron expression, five fields: minute hour day-of-month month day-of-week; leave it empty on a startup trigger"`
 	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function on stdin at each firing"`
@@ -77,7 +77,7 @@ type mcpCreateArgs struct {
 	Script      string            `json:"script" jsonschema:"the whole index.ts: read the payload with Bun.stdin.text(), write the JSON result with console.log"`
 	PackageJson string            `json:"packageJson,omitempty" jsonschema:"the whole package.json, as text; leave it out for a function with no npm dependency"`
 	PlainEnv    map[string]string `json:"plainEnv,omitempty" jsonschema:"secrets injected in the environment of the subprocess; leave it out for a function that needs none"`
-	Crons       []mcpCron         `json:"crons,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
+	Triggers    []mcpTrigger      `json:"triggers,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
 }
 
 // mcpUpdateArgs is what update_function merges onto the stored function.
@@ -90,7 +90,7 @@ type mcpUpdateArgs struct {
 	Script      *string           `json:"script,omitempty" jsonschema:"the whole new index.ts; leave it out to keep the stored one"`
 	PackageJson *string           `json:"packageJson,omitempty" jsonschema:"the whole new package.json; leave it out to keep the stored one, send an empty string to drop the dependencies"`
 	PlainEnv    map[string]string `json:"plainEnv,omitempty" jsonschema:"replaces every secret of the function; leave it out to keep them, send an empty object to delete them all"`
-	Crons       []mcpCron         `json:"crons,omitempty" jsonschema:"replaces every trigger of the function; leave it out to keep them, send an empty list to delete them all"`
+	Triggers    []mcpTrigger      `json:"triggers,omitempty" jsonschema:"replaces every trigger of the function; leave it out to keep them, send an empty list to delete them all"`
 }
 
 // mcpInvokeArgs is what invoke_function runs.
@@ -143,7 +143,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_function",
 		Title:       "Read a function",
-		Description: "Read one function: its script, its package.json, its cron triggers and where its dependency install stands. Secrets are never returned — they can be written, not read back.",
+		Description: "Read one function: its script, its package.json, its triggers and where its dependency install stands. Secrets are never returned — they can be written, not read back.",
 		Annotations: readOnly,
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpFunctionArgs) (*mcp.CallToolResult, any, error) {
 		contract, err := getFunction(app, allowed, in.IdOrName)
@@ -156,14 +156,14 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:  "create_function",
 		Title: "Create a function",
-		Description: "Create a function, with its cron triggers and its secrets. " +
+		Description: "Create a function, with its triggers and its secrets. " +
 			"The dependencies declared in packageJson install in the background: the depsStatus returned is not the end of the install. " +
 			"Fails with a conflict if another function already carries the name, and a key whose scope names precise functions cannot create at all.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpCreateArgs) (*mcp.CallToolResult, any, error) {
 		// A payload that will not serialise is the caller's own data, not a
 		// failure of the operation: it never reaches classifyManageFailure and
 		// travels as it stands.
-		crons, err := mcpCrons(in.Crons)
+		triggers, err := mcpTriggers(in.Triggers)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -172,7 +172,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 			Script:      in.Script,
 			PackageJson: in.PackageJson,
 			PlainEnv:    mcpPlainEnv(in.PlainEnv),
-			Crons:       crons,
+			Triggers:    triggers,
 		})
 		if err != nil {
 			return nil, nil, mcpFailure(app, err, "Failed to save the function")
@@ -184,7 +184,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		Name:  "update_function",
 		Title: "Update a function",
 		Description: "Update a function in place. The tool reads it first and merges what you send onto what is stored, so anything you leave out is preserved: sending only a script keeps the package.json, the triggers and the secrets. " +
-			"Sending plainEnv as an empty object deletes every secret of the function, and sending crons as an empty list deletes every trigger — both are what an explicit empty value means here. " +
+			"Sending plainEnv as an empty object deletes every secret of the function, and sending triggers as an empty list deletes every trigger — both are what an explicit empty value means here. " +
 			"This never renames: the function keeps the name it has.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpUpdateArgs) (*mcp.CallToolResult, any, error) {
@@ -208,12 +208,12 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 			req.PackageJson = *in.PackageJson
 		}
 		// A nil list leaves the triggers alone; an empty one removes them all.
-		if in.Crons != nil {
-			crons, err := mcpCrons(in.Crons)
+		if in.Triggers != nil {
+			triggers, err := mcpTriggers(in.Triggers)
 			if err != nil {
 				return nil, nil, err
 			}
-			req.Crons = crons
+			req.Triggers = triggers
 		}
 
 		contract, err := replaceFunction(app, allowed, in.IdOrName, req)
@@ -226,7 +226,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:  "delete_function",
 		Title: "Delete a function",
-		Description: "Delete a function. Its cron triggers and its entire execution history are destroyed with it, and there is no undo. " +
+		Description: "Delete a function. Its triggers and its entire execution history are destroyed with it, and there is no undo. " +
 			"This is not a way to tidy up: ask before calling it.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: &destructive},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpFunctionArgs) (*mcp.CallToolResult, any, error) {
@@ -285,7 +285,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		Name:  "get_function_logs",
 		Title: "Read a function's history",
 		Description: "Read the last runs of a function, most recent first: status, duration, stdout, stderr, exit code and the payload each run received. " +
-			"This is the only way to see what a cron trigger did — a scheduled run answers no one, and its log entry is the trace it leaves.",
+			"This is the only way to see what a trigger did — a run nobody asked for answers no one, and its log entry is the trace it leaves.",
 		Annotations: readOnly,
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpLogsArgs) (*mcp.CallToolResult, any, error) {
 		logs, err := functionLogs(app, allowed, in.IdOrName, in.Limit)
@@ -339,21 +339,21 @@ func mcpPlainEnv(env map[string]string) json.RawMessage {
 	return raw
 }
 
-// mcpCrons converts the triggers an agent described into the ones the operation
-// takes. A nil list stays nil — the triggers are left alone — while an empty one
+// mcpTriggers converts the triggers an agent described into the ones the
+// operation takes. A nil list stays nil — the triggers are left alone — while an empty one
 // travels as empty, which removes them all.
-func mcpCrons(crons []mcpCron) ([]manageCron, error) {
-	if crons == nil {
+func mcpTriggers(triggers []mcpTrigger) ([]manageTrigger, error) {
+	if triggers == nil {
 		return nil, nil
 	}
 
-	converted := make([]manageCron, 0, len(crons))
-	for i, c := range crons {
+	converted := make([]manageTrigger, 0, len(triggers))
+	for i, c := range triggers {
 		payload, err := mcpRawJSON(c.Payload)
 		if err != nil {
 			return nil, fmt.Errorf("the payload of trigger #%d is not serialisable to JSON: %w", i+1, err)
 		}
-		converted = append(converted, manageCron{
+		converted = append(converted, manageTrigger{
 			Name:                c.Name,
 			Schedule:            c.Schedule,
 			Payload:             payload,

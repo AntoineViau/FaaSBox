@@ -12,7 +12,7 @@ import (
 
 // This file answers "how is a log read by the API"; logs.go answers "how is a
 // log written and pruned". Same cut as deps.go / depsstate.go and manage.go /
-// managecrons.go — both live in package main, so it changes no visibility.
+// managetriggers.go — both live in package main, so it changes no visibility.
 //
 // It exists because faasbox_logs was only reachable through the PocketBase
 // collections API, whose rules are nil: reading three lines of stderr took a

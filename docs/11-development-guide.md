@@ -66,7 +66,7 @@ identifiers without ceremony.
 - `main.go`: Entry point, hooks, route registration, and app bootstrap.
 - `exec.go`: The shared execution engine — spawning and bounding Bun processes.
 - `resolve.go`: The one rule that says what a path segment designates, id first then name.
-- `cron.go` / `cronmissed.go`: The scheduled path, and the report of the runs that came due while the server was down.
+- `triggers.go` / `cron.go` / `cronstartup.go` / `cronmissed.go`: What a trigger is whatever its kind, what only a five-field expression is worth, the "server just came up" deadline, and the report of the runs that came due while the server was down.
 - `limitedwriter.go` / `config.go`: Bounded output capture, and reading tunable bounds from the environment.
 
 **Transport and operation.** Several domains are cut in two: a file that reads a
@@ -75,7 +75,7 @@ the request is out of the picture. The second is what the MCP tools call, which
 is why the pair exists at all — a tool has no request to read.
 
 - `invoke.go` / `invokeops.go`: The HTTP path with its body limit, and invoking a function as an operation. The concurrency semaphore lives on the operation side.
-- `manage.go` / `manageops.go` / `managecrons.go`: The four management routes, the verbs behind them, and the triggers a write carries.
+- `manage.go` / `manageops.go` / `managetriggers.go`: The four management routes, the verbs behind them, and the triggers a write carries.
 - `logs.go` / `logsread.go`: Writing and pruning execution logs, and reading them back through the API.
 - `functions.go` / `files.go`: The functions collection and disk sync, and the read-only routes that browse a function's folder.
 - `deps.go` / `depsstate.go` / `depsstartup.go`: Running `bun install`, recording its outcome on the record, and reinstalling at startup.

@@ -201,7 +201,7 @@ var errScopeUnreadable = errors.New("API key scope cannot be read")
 var errScopeRestricted = errors.New("API key is not authorized for this function")
 
 // refusedScope is one such refusal, spelled out for the caller. Same shape as
-// refusedTrigger in managecrons.go: a sentinel says what class of refusal it is,
+// refusedTrigger in managetriggers.go: a sentinel says what class of refusal it is,
 // the value says which one.
 type refusedScope struct{ message string }
 

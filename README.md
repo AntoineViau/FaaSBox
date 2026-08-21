@@ -96,7 +96,7 @@ curl -X POST http://localhost:8080/invoke/echo \
 
 ### 6. Or Set Up a Scheduler
 
-The **Triggers** tab of a function: a cron expression — fifteen ready-made ones, or your own — and the JSON payload each run receives. Changes take effect immediately, nothing restarts. See [05 - Scheduling (Cron)](docs/05-scheduling-cron.md).
+The **Triggers** tab of a function: a cron expression — fifteen ready-made ones, or your own — and the JSON payload each run receives. Changes take effect immediately, nothing restarts. See [05 - Triggers](docs/05-triggers.md).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="site/assets/shots/tab-triggers-dark.png">
@@ -140,7 +140,7 @@ Found a vulnerability? **Do not open a public issue.** Report it privately — s
 - [**02 - Getting Started**](docs/02-getting-started.md)
 - [**03 - Writing Functions**](docs/03-writing-functions.md)
 - [**04 - Environment Variables**](docs/04-environment-variables.md)
-- [**05 - Scheduling (Cron)**](docs/05-scheduling-cron.md)
+- [**05 - Triggers**](docs/05-triggers.md)
 - [**06 - API Keys & Security**](docs/06-api-keys-and-security.md)
 - [**07 - Execution Logs**](docs/07-execution-logs.md)
 - [**08 - Architecture Deep Dive**](docs/08-architecture-deep-dive.md)

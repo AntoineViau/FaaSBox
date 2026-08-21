@@ -42,7 +42,7 @@ import (
 // Three fields distinguish *absent* from *empty*, and that distinction is the
 // whole contract:
 //   - PlainEnv nil means untouched, `{}` means erase every secret;
-//   - Crons nil means the triggers stay, `[]` means remove them all.
+//   - Triggers nil means the triggers stay, `[]` means remove them all.
 //
 // Script and PackageJson do not: PUT replaces the function, so what the body
 // does not carry is what the function no longer has.
@@ -51,20 +51,20 @@ type manageRequest struct {
 	Script      string          `json:"script"`
 	PackageJson string          `json:"packageJson"`
 	PlainEnv    json.RawMessage `json:"plainEnv"`
-	Crons       []manageCron    `json:"crons"`
+	Triggers    []manageTrigger `json:"triggers"`
 }
 
 // functionContract is what the three reading routes answer with. The id is here
 // because the id is the identity: it is what survives a rename, what a key scope
 // lists, and what an integration should be wired on.
 type functionContract struct {
-	Id          string         `json:"id"`
-	Name        string         `json:"name"`
-	Script      string         `json:"script"`
-	PackageJson string         `json:"packageJson"`
-	DepsStatus  string         `json:"depsStatus"`
-	DepsError   string         `json:"depsError"`
-	Crons       []cronContract `json:"crons"`
+	Id          string            `json:"id"`
+	Name        string            `json:"name"`
+	Script      string            `json:"script"`
+	PackageJson string            `json:"packageJson"`
+	DepsStatus  string            `json:"depsStatus"`
+	DepsError   string            `json:"depsError"`
+	Triggers    []triggerContract `json:"triggers"`
 }
 
 // createFunctionHandler answers POST /api/faasbox/functions.

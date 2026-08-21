@@ -32,10 +32,10 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from '@/auth/auth.service';
-import { CronService } from '@/editor/cron.service';
+import { TriggersService } from '@/editor/triggers.service';
 import { FunctionsStore } from '@/editor/functions.store';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
-import { CronEditorComponent } from '@/editor/cron-editor.component';
+import { TriggersEditorComponent } from '@/editor/triggers-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
 import {
   DEFAULT_EDITOR_TAB,
@@ -65,7 +65,7 @@ import { ZardInputDirective } from '@shared/components/input';
     ZardIconComponent,
     ZardInputDirective,
     CodeEditorComponent,
-    CronEditorComponent,
+    TriggersEditorComponent,
     DepsStatusComponent,
     EnvEditorComponent,
     FilesTabComponent,
@@ -123,7 +123,7 @@ import { ZardInputDirective } from '@shared/components/input';
           <app-sidebar
             [functions]="store.sortedFunctions()"
             [selectedId]="store.selectedId()"
-            [cronFunctions]="cronFunctions()"
+            [triggerFunctions]="triggerFunctions()"
             [loading]="store.isLoading()"
             [demoMode]="demoMode()"
             (select)="onSelectFunction($event)"
@@ -280,11 +280,11 @@ import { ZardInputDirective } from '@shared/components/input';
                         </div>
                       }
                       @case ('triggers') {
-                        <app-cron-editor
+                        <app-triggers-editor
                           [functionId]="fn.id"
                           [functionName]="fn.name"
                           [demoMode]="demoMode()"
-                          (cronCountChange)="loadCronFunctions()"
+                          (triggerCountChange)="loadTriggerFunctions()"
                         />
                       }
                       @case ('environment') {
@@ -353,7 +353,7 @@ import { ZardInputDirective } from '@shared/components/input';
 })
 export class EditorComponent implements OnInit {
   private readonly authService = inject(AuthService);
-  private readonly cronService = inject(CronService);
+  private readonly triggersService = inject(TriggersService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly instance = inject(InstanceService);
   private readonly route = inject(ActivatedRoute);
@@ -402,13 +402,13 @@ export class EditorComponent implements OnInit {
   protected readonly showLogs = signal(true);
   protected readonly running = signal(false);
   /** Ids of the functions carrying at least one active trigger. */
-  protected readonly cronFunctions = signal<Set<string>>(new Set());
+  protected readonly triggerFunctions = signal<Set<string>>(new Set());
 
   private readonly runner = viewChild(RunnerComponent);
   private readonly envEditor = viewChild(EnvEditorComponent);
   // Both resolve from any tab: the tab bar hides panels, it does not destroy
   // them, so what was typed in one is still there while another is on screen.
-  private readonly cronEditor = viewChild(CronEditorComponent);
+  private readonly triggersEditor = viewChild(TriggersEditorComponent);
   private readonly tabButtons = viewChildren<ElementRef<HTMLButtonElement>>('tabButton');
 
   /** Guards the sync effect below: see why it keys on the id and not the record. */
@@ -489,7 +489,7 @@ export class EditorComponent implements OnInit {
 
   ngOnInit(): void {
     void this.store.loadFunctions().then(() => this.listLoaded.set(true));
-    this.loadCronFunctions();
+    this.loadTriggerFunctions();
 
     // The install runs in the background for up to a minute after the save
     // answered, so the save response alone would show one frozen value. The
@@ -551,7 +551,7 @@ export class EditorComponent implements OnInit {
     const dirty =
       this.isDirty() ||
       (this.envEditor()?.isDirty() ?? false) ||
-      (this.cronEditor()?.isDirty() ?? false);
+      (this.triggersEditor()?.isDirty() ?? false);
     return !dirty || confirm('You have unsaved changes. Discard and switch?');
   }
 
@@ -594,24 +594,24 @@ export class EditorComponent implements OnInit {
   /**
    * Re-reads what the sidebar shows: the functions and their trigger markers.
    * The two go together — a function written from the API may arrive with its
-   * crons, and reloading one without the other would show it without its mark.
+   * triggers, and reloading one without the other would show it without its mark.
    *
    * The open buffers are left alone: the sync effect keys on the selected id,
    * which a reload does not change, so nothing typed here is discarded.
    */
   protected async onRefresh(): Promise<void> {
-    await Promise.all([this.store.loadFunctions(), this.loadCronFunctions()]);
+    await Promise.all([this.store.loadFunctions(), this.loadTriggerFunctions()]);
   }
 
-  protected async loadCronFunctions(): Promise<void> {
-    const res = await firstValueFrom(this.cronService.listAll());
+  protected async loadTriggerFunctions(): Promise<void> {
+    const res = await firstValueFrom(this.triggersService.listAll());
     const ids = new Set<string>();
-    for (const cron of res.items) {
-      if (cron.active) {
-        ids.add(cron.function);
+    for (const trigger of res.items) {
+      if (trigger.active) {
+        ids.add(trigger.function);
       }
     }
-    this.cronFunctions.set(ids);
+    this.triggerFunctions.set(ids);
   }
 
   @HostListener('window:keydown', ['$event'])

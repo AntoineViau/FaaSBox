@@ -10,10 +10,10 @@ import {
 } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
-import type { FaasboxCronJob } from '@/models/faasbox-cron-job.model';
-import { CronService } from '@/editor/cron.service';
+import type { FaasboxTrigger } from '@/models/faasbox-trigger.model';
+import { TriggersService } from '@/editor/triggers.service';
 import { DEFAULT_SCHEDULE } from '@/editor/cron-presets';
-import { CronTriggerCardComponent, type CronRow } from '@/editor/cron-trigger-card.component';
+import { TriggerCardComponent, type TriggerRow } from '@/editor/trigger-card.component';
 import { errorText } from '@/editor/error-text';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardAlertComponent } from '@shared/components/alert';
@@ -30,12 +30,12 @@ import { ZardIconComponent } from '@shared/components/icon';
  * Past the 300-line guideline, deliberately: the overshoot is the comments
  * carrying the save/switch constraints, and the helpers at the bottom read
  * nothing but a row. The next cut, if one is wanted, separates those helpers
- * from the panel — they belong next to CronRow, which is declared in the card.
+ * from the panel — they belong next to TriggerRow, which is declared in the card.
  */
 @Component({
-  selector: 'app-cron-editor',
+  selector: 'app-triggers-editor',
   standalone: true,
-  imports: [CronTriggerCardComponent, ZardAlertComponent, ZardButtonComponent, ZardIconComponent],
+  imports: [TriggerCardComponent, ZardAlertComponent, ZardButtonComponent, ZardIconComponent],
   template: `
     <div class="flex h-full flex-col overflow-y-auto p-4">
       @if (errorMessage()) {
@@ -50,7 +50,7 @@ import { ZardIconComponent } from '@shared/components/icon';
         }
 
         @for (row of rows(); track row.key) {
-          <app-cron-trigger-card
+          <app-trigger-card
             [row]="row"
             [demoMode]="demoMode()"
             (rowChange)="patch(row.key, $event)"
@@ -84,8 +84,8 @@ import { ZardIconComponent } from '@shared/components/icon';
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CronEditorComponent {
-  private readonly cronService = inject(CronService);
+export class TriggersEditorComponent {
+  private readonly triggersService = inject(TriggersService);
 
   /** What a trigger points at, and what the panel loads and writes on. */
   readonly functionId = input.required<string>();
@@ -93,11 +93,11 @@ export class CronEditorComponent {
   readonly functionName = input.required<string>();
   /** A showcase shows the triggers and closes everything that would write one. */
   readonly demoMode = input(false);
-  readonly cronCountChange = output<void>();
+  readonly triggerCountChange = output<void>();
 
   protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
-  protected readonly rows = signal<CronRow[]>([]);
+  protected readonly rows = signal<TriggerRow[]>([]);
   protected readonly isLoading = signal(false);
   protected readonly saving = signal(false);
   protected readonly errorMessage = signal('');
@@ -109,7 +109,7 @@ export class CronEditorComponent {
    * from these two lists is what keeps a delete-then-re-add from turning into a
    * removal followed by a different record.
    */
-  private readonly saved = signal<Map<string, CronRow>>(new Map());
+  private readonly saved = signal<Map<string, TriggerRow>>(new Map());
 
   private nextKey = 0;
 
@@ -146,7 +146,7 @@ export class CronEditorComponent {
     this.isLoading.set(true);
     this.errorMessage.set('');
     try {
-      const res = await firstValueFrom(this.cronService.list(functionId));
+      const res = await firstValueFrom(this.triggersService.list(functionId));
       // A slow answer must not land on the function the user switched to.
       if (this.functionId() !== functionId) return;
       this.rows.set(byNameDescending(res.items.map((item) => this.toRow(item))));
@@ -180,7 +180,7 @@ export class CronEditorComponent {
     ]);
   }
 
-  protected patch(key: number, changes: Partial<CronRow>): void {
+  protected patch(key: number, changes: Partial<TriggerRow>): void {
     this.rows.update((list) => list.map((row) => (row.key === key ? { ...row, ...changes } : row)));
   }
 
@@ -223,7 +223,7 @@ export class CronEditorComponent {
     for (const [id, previous] of this.saved()) {
       if (rows.some((row) => row.id === id)) continue;
       try {
-        await firstValueFrom(this.cronService.delete(id));
+        await firstValueFrom(this.triggersService.delete(id));
         saved.delete(id);
         written = true;
       } catch (e) {
@@ -234,7 +234,7 @@ export class CronEditorComponent {
     for (const row of rows) {
       const previous = row.id ? saved.get(row.id) : undefined;
       if (previous && sameRow(previous, row)) continue;
-      const data: Partial<FaasboxCronJob> = {
+      const data: Partial<FaasboxTrigger> = {
         name: row.name,
         schedule: row.schedule,
         function: functionId,
@@ -246,8 +246,8 @@ export class CronEditorComponent {
       };
       try {
         const record = row.id
-          ? await firstValueFrom(this.cronService.update(row.id, data))
-          : await firstValueFrom(this.cronService.create(data));
+          ? await firstValueFrom(this.triggersService.update(row.id, data))
+          : await firstValueFrom(this.triggersService.create(data));
         // A creation only becomes an update on the next save once its row
         // carries the id the server just handed back.
         this.patch(row.key, { id: record.id });
@@ -267,7 +267,7 @@ export class CronEditorComponent {
     // at once, and the writes that just landed are real whichever function the
     // panel is showing by now.
     if (written) {
-      this.cronCountChange.emit();
+      this.triggerCountChange.emit();
     }
 
     // Past here everything describes the function this save started on. If the
@@ -283,19 +283,19 @@ export class CronEditorComponent {
     }
   }
 
-  private toRow(job: FaasboxCronJob): CronRow {
+  private toRow(trigger: FaasboxTrigger): TriggerRow {
     return {
       key: this.nextKey++,
-      id: job.id,
-      name: job.name,
-      schedule: job.schedule,
-      payload: formatPayload(job.payload),
-      active: job.active,
-      maxQueue: job.maxQueue ?? 0,
+      id: trigger.id,
+      name: trigger.name,
+      schedule: trigger.schedule,
+      payload: formatPayload(trigger.payload),
+      active: trigger.active,
+      maxQueue: trigger.maxQueue ?? 0,
       // An empty column reads as 'cron', mirroring the server accessor: that is
       // the shape a record written from the PocketBase admin carries.
-      kind: job.kind === 'startup' ? 'startup' : 'cron',
-      startupDelayMinutes: job.startupDelayMinutes ?? 0,
+      kind: trigger.kind === 'startup' ? 'startup' : 'cron',
+      startupDelayMinutes: trigger.startupDelayMinutes ?? 0,
     };
   }
 
@@ -313,12 +313,12 @@ export class CronEditorComponent {
  * `localeCompare`, which is what SQLite's default collation did — the point is
  * the same order as before, not a better one.
  */
-function byNameDescending(rows: CronRow[]): CronRow[] {
+function byNameDescending(rows: TriggerRow[]): TriggerRow[] {
   return rows.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
 }
 
 /** Compares what is stored; the on-screen key and the record id are not part of it. */
-function sameRow(a: CronRow, b: CronRow): boolean {
+function sameRow(a: TriggerRow, b: TriggerRow): boolean {
   return (
     a.name === b.name &&
     a.schedule === b.schedule &&
@@ -331,7 +331,7 @@ function sameRow(a: CronRow, b: CronRow): boolean {
 }
 
 /** What names a trigger in a message: its name, or its schedule for an unnamed one. */
-function label(row: CronRow): string {
+function label(row: TriggerRow): string {
   return row.name.trim() || row.schedule.trim() || 'unnamed trigger';
 }
 

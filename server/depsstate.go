@@ -127,7 +127,7 @@ func persistLockfile(app core.App, functionsDir, functionId string) {
 // them broadcasts afterwards. What looks common is the three-line dbx idiom, and
 // folding it into a generic column writer would mean building the SET clause from
 // a map — machinery that costs more in indirection than the lines it saves.
-// markCronJobRun does its own targeted UPDATE for the same reason.
+// markTriggerRun does its own targeted UPDATE for the same reason.
 //
 // The reasons app.Save is out of the question are the ones documented on
 // updateDepsState: it would fire OnRecordAfterUpdateSuccess, hence a new install,

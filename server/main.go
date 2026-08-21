@@ -64,7 +64,7 @@ func main() {
 				e.Router.BindFunc(refuseWrites)
 			}
 
-			// Ensure collections exist. Functions first: the cron jobs and the
+			// Ensure collections exist. Functions first: the triggers and the
 			// logs carry a relation to it, and a relation field needs the id of
 			// the collection it points at.
 			if err := ensureFunctionsCollection(e.App); err != nil {
@@ -73,8 +73,8 @@ func main() {
 			if err := ensureAPIKeysCollection(e.App); err != nil {
 				return fmt.Errorf("failed to create %s collection: %w", faasboxAPIKeysCollection, err)
 			}
-			if err := ensureCronJobsCollection(e.App); err != nil {
-				return fmt.Errorf("failed to create %s collection: %w", faasboxCronJobsCollection, err)
+			if err := ensureTriggersCollection(e.App); err != nil {
+				return fmt.Errorf("failed to create %s collection: %w", faasboxTriggersCollection, err)
 			}
 			if err := ensureLogsCollection(e.App); err != nil {
 				return fmt.Errorf("failed to create %s collection: %w", faasboxLogsCollection, err)
@@ -108,7 +108,7 @@ func main() {
 				// here delays the first response — and bun takes its time.
 				go installMissingDeps(lifecycleCtx, e.App, functionsDir)
 
-				// Load existing cron jobs
+				// Register the schedules of the existing cron triggers
 				syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 
 				// Report the triggers that were due while the server was down
@@ -281,8 +281,8 @@ func main() {
 	app.OnRecordUpdate(faasboxFunctionsCollection).BindFunc(encryptPlainEnvHook)
 
 	// Validate the trigger against the rules of its kind before saving
-	app.OnRecordCreate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
-	app.OnRecordUpdate(faasboxCronJobsCollection).BindFunc(validateTriggerHook)
+	app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
+	app.OnRecordUpdate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
 
 	// Stamp the fingerprint of the two columns SQL still has to find. Before the
 	// encryption, so the value hashed is the one the caller sent.
@@ -292,16 +292,16 @@ func main() {
 	// for the responses the editor reads. Bound last, for the ordering above.
 	registerFieldEncryption(app)
 
-	// Live-sync cron jobs when records change
-	app.OnRecordAfterCreateSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
+	// Live-sync the cron scheduler when a trigger record changes
+	app.OnRecordAfterCreateSuccess(faasboxTriggersCollection).BindFunc(func(e *core.RecordEvent) error {
 		syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 		return e.Next()
 	})
-	app.OnRecordAfterUpdateSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
+	app.OnRecordAfterUpdateSuccess(faasboxTriggersCollection).BindFunc(func(e *core.RecordEvent) error {
 		syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 		return e.Next()
 	})
-	app.OnRecordAfterDeleteSuccess(faasboxCronJobsCollection).BindFunc(func(e *core.RecordEvent) error {
+	app.OnRecordAfterDeleteSuccess(faasboxTriggersCollection).BindFunc(func(e *core.RecordEvent) error {
 		syncAllCronJobs(e.App, functionsDir, lifecycleCtx)
 		return e.Next()
 	})

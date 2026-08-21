@@ -414,12 +414,18 @@ Everything is in SQLite, so a backup is a file:
 2.  Rebuild and restart the container or service.
 3.  PocketBase applies its own migrations at startup. FaaSBox creates its four
     collections if they are absent — `faasbox_functions`, `faasbox_api_keys`,
-    `faasbox_cron_jobs`, `faasbox_logs` — adds missing fields to
-    `faasbox_functions` and `faasbox_cron_jobs`, and resizes the `stdout` and
-    `stderr` fields of `faasbox_logs` to match the current
-    `FAASBOX_MAX_LOG_OUTPUT`
+    `faasbox_triggers`, `faasbox_logs` — adds missing fields to
+    `faasbox_functions`, and resizes the `stdout` and `stderr` fields of
+    `faasbox_logs` to match the current `FAASBOX_MAX_LOG_OUTPUT`
     (see [04 - Environment Variables](04-environment-variables.md)). It never
     removes or renames a field.
+
+    **The triggers collection was renamed** to `faasbox_triggers`, because it
+    holds startup triggers as well as scheduled ones. **No migration is
+    provided.** On a database that predates the rename, startup finds no
+    `faasbox_triggers` and creates an empty one, leaving the old collection
+    untouched beside it: the triggers it holds stop firing and the editor shows
+    none. Recreate them, or start from an empty data directory.
 
     Two more — `faasbox_oauth_clients` and `faasbox_oauth_grants` — are created
     the first time the OAuth endpoints go up, which is to say the first startup

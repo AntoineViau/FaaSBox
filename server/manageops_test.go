@@ -33,7 +33,7 @@ func TestCreateFunctionOperation(t *testing.T) {
 			Script:      "console.log('{}')",
 			PackageJson: `{"dependencies":{}}`,
 			PlainEnv:    json.RawMessage(`{"TOKEN":"v"}`),
-			Crons: []manageCron{
+			Triggers: []manageTrigger{
 				{Name: "nightly", Schedule: "0 3 * * *"},
 			},
 		})
@@ -44,13 +44,13 @@ func TestCreateFunctionOperation(t *testing.T) {
 		if contract.Name != "greet" || contract.Id == "" {
 			t.Errorf("contract = %+v, want a named function carrying an id", contract)
 		}
-		if len(contract.Crons) != 1 || contract.Crons[0].Name != "nightly" {
-			t.Errorf("contract.Crons = %+v, want the nightly trigger", contract.Crons)
+		if len(contract.Triggers) != 1 || contract.Triggers[0].Name != "nightly" {
+			t.Errorf("contract.Triggers = %+v, want the nightly trigger", contract.Triggers)
 		}
 		if got := secretsOf(t, app, contract.Id); got["TOKEN"] != "v" {
 			t.Errorf("secrets = %v, want TOKEN stored", got)
 		}
-		if got := cronsOf(t, app, contract.Id); len(got) != 1 {
+		if got := triggersOf(t, app, contract.Id); len(got) != 1 {
 			t.Errorf("triggers = %v, want exactly one", got)
 		}
 	})

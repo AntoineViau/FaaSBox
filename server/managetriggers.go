@@ -18,26 +18,26 @@ import (
 // They live in package main like everything else, so the cut changes no
 // visibility.
 
-// manageCron is one trigger in a request body. Active is a pointer so an omitted
+// manageTrigger is one trigger in a request body. Active is a pointer so an omitted
 // field can default to true: declaring a trigger is asking for it to fire, and
 // the zero value of a bool would answer the opposite.
-type manageCron struct {
+type manageTrigger struct {
 	Name     string          `json:"name"`
 	Schedule string          `json:"schedule"`
 	Payload  json.RawMessage `json:"payload"`
 	Active   *bool           `json:"active"`
 	MaxQueue int             `json:"maxQueue"`
 	// Kind is written as received, with no default of its own: an absent field
-	// writes an empty column, which cronKind reads back as "cron". The
+	// writes an empty column, which triggerKind reads back as "cron". The
 	// normalisation lives in the accessor and nowhere else — the PocketBase
 	// admin can write an empty column outside of any contract.
 	Kind                string `json:"kind"`
 	StartupDelayMinutes int    `json:"startupDelayMinutes"`
 }
 
-// cronContract is one trigger in a response. Kind is normalised, because it is
+// triggerContract is one trigger in a response. Kind is normalised, because it is
 // read through the accessor.
-type cronContract struct {
+type triggerContract struct {
 	Name                string          `json:"name"`
 	Schedule            string          `json:"schedule"`
 	Payload             json.RawMessage `json:"payload"`
@@ -70,7 +70,7 @@ func (r *refusedTrigger) subject() string {
 	return fmt.Sprintf("Trigger %q", r.name)
 }
 
-// replaceCronJobs makes the triggers of a function match the list given, and
+// replaceTriggers makes the triggers of a function match the list given, and
 // nothing else. The replacement is whole — matching what the editor's Triggers
 // tab does — so a list is read as the complete set, never as a patch.
 //
@@ -88,9 +88,9 @@ func (r *refusedTrigger) subject() string {
 //
 // The relation is set to the function id, never to its name (cf. the cron
 // collection: a trigger wired on a name fired into the void the day it changed).
-func replaceCronJobs(app core.App, fn *core.Record, crons []manageCron) error {
+func replaceTriggers(app core.App, fn *core.Record, triggers []manageTrigger) error {
 	return app.RunInTransaction(func(txApp core.App) error {
-		existing, err := txApp.FindAllRecords(faasboxCronJobsCollection, dbx.HashExp{"function": fn.Id})
+		existing, err := txApp.FindAllRecords(faasboxTriggersCollection, dbx.HashExp{"function": fn.Id})
 		if err != nil {
 			return err
 		}
@@ -100,11 +100,11 @@ func replaceCronJobs(app core.App, fn *core.Record, crons []manageCron) error {
 			}
 		}
 
-		col, err := txApp.FindCollectionByNameOrId(faasboxCronJobsCollection)
+		col, err := txApp.FindCollectionByNameOrId(faasboxTriggersCollection)
 		if err != nil {
 			return err
 		}
-		for i, c := range crons {
+		for i, c := range triggers {
 			record := core.NewRecord(col)
 			record.Set("name", c.Name)
 			record.Set("schedule", c.Schedule)
@@ -124,38 +124,38 @@ func replaceCronJobs(app core.App, fn *core.Record, crons []manageCron) error {
 	})
 }
 
-// functionCronContracts reads the triggers of a function, ordered by name. The
+// functionTriggerContracts reads the triggers of a function, ordered by name. The
 // order is settled server-side, like the file listing, so a client renders what
 // it receives instead of inventing a sort of its own.
-func functionCronContracts(app core.App, functionId string) ([]cronContract, error) {
-	records, err := app.FindAllRecords(faasboxCronJobsCollection, dbx.HashExp{"function": functionId})
+func functionTriggerContracts(app core.App, functionId string) ([]triggerContract, error) {
+	records, err := app.FindAllRecords(faasboxTriggersCollection, dbx.HashExp{"function": functionId})
 	if err != nil {
 		return nil, err
 	}
 
-	crons := make([]cronContract, 0, len(records))
+	triggers := make([]triggerContract, 0, len(records))
 	for _, record := range records {
-		crons = append(crons, cronContract{
-			Name:                cronName(app, record),
-			Schedule:            cronSchedule(app, record),
-			Payload:             cronPayload(app, record),
+		triggers = append(triggers, triggerContract{
+			Name:                triggerName(app, record),
+			Schedule:            triggerSchedule(app, record),
+			Payload:             triggerPayload(app, record),
 			Active:              record.GetBool("active"),
 			MaxQueue:            int(record.GetFloat("maxQueue")),
-			Kind:                cronKind(record),
+			Kind:                triggerKind(record),
 			StartupDelayMinutes: int(record.GetFloat("startupDelayMinutes")),
 		})
 	}
-	slices.SortFunc(crons, func(a, b cronContract) int {
+	slices.SortFunc(triggers, func(a, b triggerContract) int {
 		return strings.Compare(a.Name, b.Name)
 	})
-	return crons, nil
+	return triggers, nil
 }
 
-// cronPayload reads the stored payload back as raw JSON. An unset field reads as
+// triggerPayload reads the stored payload back as raw JSON. An unset field reads as
 // the empty object rather than as null, which is what runFunction feeds a
 // trigger that carries none.
-func cronPayload(app core.App, record *core.Record) json.RawMessage {
-	payload := cronPayloadText(app, record)
+func triggerPayload(app core.App, record *core.Record) json.RawMessage {
+	payload := triggerPayloadText(app, record)
 	if payload == "" || payload == "null" {
 		return json.RawMessage("{}")
 	}

@@ -36,14 +36,14 @@ var startupDelayUnit = time.Minute
 // dependency pass lands on ensureDeps inside executeFunction, which takes the
 // directory lock and installs or waits. That is the existing safety net.
 func scheduleStartupRuns(ctx context.Context, app core.App, functionsDir string) {
-	records, err := app.FindAllRecords(faasboxCronJobsCollection)
+	records, err := app.FindAllRecords(faasboxTriggersCollection)
 	if err != nil {
 		app.Logger().Error("faasbox startup: failed to load triggers", "error", err)
 		return
 	}
 
 	for _, record := range records {
-		if !record.GetBool("active") || cronKind(record) != "startup" {
+		if !record.GetBool("active") || triggerKind(record) != "startup" {
 			continue
 		}
 
@@ -63,7 +63,7 @@ func scheduleStartupRuns(ctx context.Context, app core.App, functionsDir string)
 			continue
 		}
 
-		payload := cronPayloadText(app, record)
+		payload := triggerPayloadText(app, record)
 		maxQueue := int(record.GetFloat("maxQueue"))
 		delay := time.Duration(int(record.GetFloat("startupDelayMinutes"))) * startupDelayUnit
 		recordId := record.Id

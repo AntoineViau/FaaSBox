@@ -108,7 +108,7 @@ To prevent the database from growing indefinitely, FaaSBox includes an automatic
 
 ## Missed Cron Runs
 
-A `missed` entry is not an execution: it reports scheduled runs that never happened because the server was stopped when they were due. It is written at startup, one per affected cron job, with `trigger: "cron"`, a `duration` of 0, and a `stderr` message stating how many triggers were lost and over which period. See [05 - Scheduling (Cron)](05-scheduling-cron.md) for the full behaviour.
+A `missed` entry is not an execution: it reports scheduled runs that never happened because the server was stopped when they were due. It is written at startup, one per affected cron trigger, with `trigger: "cron"`, a `duration` of 0, and a `stderr` message stating how many triggers were lost and over which period. See [05 - Triggers](05-triggers.md) for the full behaviour.
 
 Filter on `status="missed"` in the Admin UI to review downtime impact.
 

@@ -97,7 +97,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 		setupFaaSCollections(t, app)
 		fn := saveTestFunction(t, app, t.TempDir(), "echo", "console.log(1)", "")
 
-		record := createTestCronJob(t, app, "missed-cron", "* * * * *", fn.Id, true)
+		record := createTestTrigger(t, app, "missed-cron", "* * * * *", fn.Id, true)
 		setCronJobDate(t, app, record.Id, "lastRunAt", now.Add(-10*time.Minute))
 
 		reportMissedCronRuns(app, now)
@@ -126,7 +126,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 		setupFaaSCollections(t, app)
 		fn := saveTestFunction(t, app, t.TempDir(), "echo", "console.log(1)", "")
 
-		record := createTestCronJob(t, app, "inactive-cron", "* * * * *", fn.Id, false)
+		record := createTestTrigger(t, app, "inactive-cron", "* * * * *", fn.Id, false)
 		setCronJobDate(t, app, record.Id, "lastRunAt", now.Add(-10*time.Minute))
 
 		reportMissedCronRuns(app, now)
@@ -145,7 +145,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 		setupFaaSCollections(t, app)
 		fn := saveTestFunction(t, app, t.TempDir(), "echo", "console.log(1)", "")
 
-		record := createTestCronJob(t, app, "never-ran", "* * * * *", fn.Id, true)
+		record := createTestTrigger(t, app, "never-ran", "* * * * *", fn.Id, true)
 		setCronJobDate(t, app, record.Id, "created", now.Add(-10*time.Minute))
 
 		reportMissedCronRuns(app, now)
@@ -164,7 +164,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 		setupFaaSCollections(t, app)
 		fn := saveTestFunction(t, app, t.TempDir(), "echo", "console.log(1)", "")
 
-		createTestCronJob(t, app, "fresh", "* * * * *", fn.Id, true)
+		createTestTrigger(t, app, "fresh", "* * * * *", fn.Id, true)
 
 		reportMissedCronRuns(app, now)
 
@@ -184,7 +184,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 
 		// Midnight-only schedule, over a ten-minute window that excludes it.
 		noon := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
-		record := createTestCronJob(t, app, "daily-cron", "0 0 * * *", fn.Id, true)
+		record := createTestTrigger(t, app, "daily-cron", "0 0 * * *", fn.Id, true)
 		setCronJobDate(t, app, record.Id, "lastRunAt", noon.Add(-10*time.Minute))
 
 		reportMissedCronRuns(app, noon)
@@ -208,7 +208,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 		// walk cannot observe it, so nothing is reported — asserting a miss on
 		// the truncation flag alone would be a false positive.
 		reference := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
-		record := createTestCronJob(t, app, "yearly-cron", "0 0 1 1 *", fn.Id, true)
+		record := createTestTrigger(t, app, "yearly-cron", "0 0 1 1 *", fn.Id, true)
 		setCronJobDate(t, app, record.Id, "lastRunAt", time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC))
 
 		reportMissedCronRuns(app, reference)
@@ -229,7 +229,7 @@ func TestReportMissedCronRuns(t *testing.T) {
 
 		reference := time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC)
 		lastRun := reference.Add(-90 * 24 * time.Hour)
-		record := createTestCronJob(t, app, "long-outage", "* * * * *", fn.Id, true)
+		record := createTestTrigger(t, app, "long-outage", "* * * * *", fn.Id, true)
 		setCronJobDate(t, app, record.Id, "lastRunAt", lastRun)
 
 		reportMissedCronRuns(app, reference)
