@@ -333,6 +333,7 @@ normally, from the local file alone.
 | `LITESTREAM_REPLICA_BUCKET` | Bucket name — its presence is what turns replication on |
 | `LITESTREAM_ACCESS_KEY_ID` | Access key |
 | `LITESTREAM_SECRET_ACCESS_KEY` | Secret key |
+| `LITESTREAM_REPLICA_PATH` | Prefix the replica is written under, `data.db` by default. Used exactly as given — no leading and no trailing slash |
 
 ```bash
 docker run -d -p 8080:8080 \
@@ -343,8 +344,22 @@ docker run -d -p 8080:8080 \
   -e LITESTREAM_REPLICA_BUCKET=my-faasbox-backup \
   -e LITESTREAM_ACCESS_KEY_ID=your_access_key \
   -e LITESTREAM_SECRET_ACCESS_KEY=your_secret_key \
+  -e LITESTREAM_REPLICA_PATH=faasbox/prod \
   ghcr.io/antoineviau/faasbox:latest
 ```
+
+`LITESTREAM_REPLICA_PATH` is what lets one bucket hold more than one instance,
+or lets the replica sit under the prefix your storage policy asks for. Leave it
+out and everything lands under `data.db/` at the root of the bucket, which is
+what a bucket dedicated to one instance wants anyway.
+
+It is the address of your data, in both directions: the same value is what
+`restore` reads on the next boot. Change it — or drop it after having set it —
+and the restore looks under the new prefix, finds nothing, and **starts from an
+empty database without saying anything**. That silence is `-if-replica-exists`
+doing its job, since a first boot has no replica to find either. The old prefix
+still holds everything that was written under it, so the fix is to put the value
+back and restart.
 
 The startup sequence becomes:
 

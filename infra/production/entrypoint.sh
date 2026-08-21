@@ -3,6 +3,9 @@ set -e
 
 DATA_DIR=/app/data/pb_data
 DB_PATH="$DATA_DIR/data.db"
+# Prefix the replica lands under in the bucket. Exported so both litestream
+# calls see it; the fallback covers the variable being unset and being set empty.
+export LITESTREAM_REPLICA_PATH="${LITESTREAM_REPLICA_PATH:-data.db}"
 
 mkdir -p "$DATA_DIR"
 

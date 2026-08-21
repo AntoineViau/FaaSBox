@@ -4,7 +4,7 @@ dbs:
       - type: s3
         endpoint: ${LITESTREAM_REPLICA_ENDPOINT}
         bucket: ${LITESTREAM_REPLICA_BUCKET}
-        path: data.db
+        path: ${LITESTREAM_REPLICA_PATH}
         access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
         secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
         force-path-style: true
