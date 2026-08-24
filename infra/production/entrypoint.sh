@@ -9,9 +9,12 @@ export LITESTREAM_REPLICA_PATH="${LITESTREAM_REPLICA_PATH:-data.db}"
 
 mkdir -p "$DATA_DIR"
 
-# Restore DB from S3 (skip silently if no backup exists yet)
+# Restore DB from S3 into a fresh volume only: the local database wins, being
+# at least as recent as its own replica. -if-db-not-exists skips when data.db
+# is already there, -if-replica-exists when the bucket holds nothing yet; both
+# exit 0, so set -e still catches a real restore failure.
 if [ -n "$LITESTREAM_REPLICA_BUCKET" ]; then
-  litestream restore -if-replica-exists -config /etc/litestream.yml "$DB_PATH"
+  litestream restore -if-db-not-exists -if-replica-exists -config /etc/litestream.yml "$DB_PATH"
 fi
 
 # Create/update superuser

@@ -354,22 +354,38 @@ out and everything lands under `data.db/` at the root of the bucket, which is
 what a bucket dedicated to one instance wants anyway.
 
 It is the address of your data, in both directions: the same value is what
-`restore` reads on the next boot. Change it — or drop it after having set it —
-and the restore looks under the new prefix, finds nothing, and **starts from an
-empty database without saying anything**. That silence is `-if-replica-exists`
-doing its job, since a first boot has no replica to find either. The old prefix
-still holds everything that was written under it, so the fix is to put the value
-back and restart.
+`restore` reads on the next boot. What changing it costs you depends on whether
+you kept the volume from the section above.
+
+With a persistent volume — the setup this guide recommends — nothing is lost.
+The local database is already there, so no restore is attempted at all; the
+instance comes up on its own data and replication simply starts writing under
+the new prefix. The old one is left untouched, holding everything that was
+written under it.
+
+Without a local database — a fresh container, a wiped volume — the restore
+looks under the new prefix, finds nothing, and **starts from an empty database
+without saying anything**. That silence is `-if-replica-exists` doing its job,
+since a first boot has no replica to find either. The old prefix still holds
+your data, so the fix is to put the value back and restart.
 
 The startup sequence becomes:
 
-1. `litestream restore -if-replica-exists` puts the database back before
-   anything reads it. A first boot with no replica passes silently.
+1. `litestream restore -if-db-not-exists -if-replica-exists` puts the database
+   back before anything reads it — but only into an empty volume. **The local
+   database wins**: if `pb_data/data.db` is already there, the restore is
+   skipped and that file is what starts, untouched. The replica is a way to
+   rebuild an instance that has lost its disk, never a source that overwrites a
+   live one. A first boot with no replica passes silently too, so both a fresh
+   deployment and every restart after it come up without an error. The one
+   case this rule does not arbitrate for you is a local file that survived but
+   is corrupt: it still wins, and the replica is not consulted. Falling back to
+   it is a deliberate act — remove the volume, then restart.
 2. The superuser is created or updated, if credentials were given.
 3. Litestream starts the server as its **child** (`replicate -exec`) and
    mirrors every write as it happens. A clean shutdown of the server triggers a
    last sync.
-4. The server rebuilds `functions/` from the database it just restored, then
+4. The server rebuilds `functions/` from that database, then
    reinstalls the dependencies that the fresh filesystem does not have.
 
 Together those two facts are what make the container disposable: the database
