@@ -10,12 +10,12 @@ Each log entry contains comprehensive details about a function run:
 |-------|-------------|
 | `function` | The function the entry belongs to. Filter and group on this one. |
 | `functionName` | The name that function carried **when it ran** — see below. |
-| `trigger` | `http` (API call), `cron` (scheduled task) or `startup` (fired when the server came up). |
+| `trigger` | `http` (API call), `cron` (scheduled task), `startup` (fired when the server came up) or `mcp` (an [AI agent](13-ai-agents.md) called it). |
 | `status` | `success`, `error`, `timeout`, or `missed`. |
 | `duration` | Total execution time in milliseconds. |
 | `stdout` | The output of the function (captured from stdout), truncated to 8 KB. |
 | `stderr` | Debug logs or error messages (captured from stderr), truncated to 8 KB. |
-| `requestPayload` | The JSON input sent to the function, truncated to 4 KB. |
+| `requestPayload` | The [envelope](03-writing-functions.md#the-input-envelope) the run received, truncated to 4 KB. |
 | `exitCode` | The process exit code (0 usually means success). |
 | `truncated` | `true` when at least one of the three fields above was cut to fit this record. |
 
@@ -31,9 +31,18 @@ So an old entry can show a name the editor no longer uses. That is the intended 
 
 **Deleting a function deletes its logs**, in the same operation. Nothing survives it. If you need the history of a function you are about to remove, export it first — the retention purge is not the only thing that can take it away.
 
+### The Envelope, Not Just the Payload
+
+`requestPayload` holds the whole envelope handed to the function — the trigger, and on an HTTP call the method, path, query and headers as well. A log entry therefore says **how** a run was called, not only with what, which is what you need when one caller out of ten is sending something the others are not.
+
+Two consequences:
+
+- **The four headers FaaSBox refuses to forward are not stored either.** `x-api-key`, `authorization`, `cookie` and `proxy-authorization` never enter the envelope, so they never reach this collection. Every other header does — including anything custom your callers send, so treat this column as you would any request log.
+- **Entries are bigger than they used to be**, and more of them hit the 4 KB cap below. That is the price of the context; raise `FAASBOX_MAX_LOG_PAYLOAD` if your callers send headers worth keeping.
+
 ## Output Truncation
 
-Stored logs are capped: **8 KB** per output stream (`FAASBOX_MAX_LOG_OUTPUT`) and **4 KB** for the request payload (`FAASBOX_MAX_LOG_PAYLOAD`). Beyond the cap, the value is cut and a marker stating the original size is appended:
+Stored logs are capped: **8 KB** per output stream (`FAASBOX_MAX_LOG_OUTPUT`) and **4 KB** for the envelope (`FAASBOX_MAX_LOG_PAYLOAD`). Beyond the cap, the value is cut and a marker stating the original size is appended:
 
 ```
 ...[truncated, 5242880 bytes total]
@@ -49,7 +58,7 @@ It is `true` as soon as **any one** of `stdout`, `stderr` or `requestPayload` wa
 
 > **It reports the cut made when writing the record, not the one made during the run.** These are two different events, and an output can hit both: capped at 1 MB while the function was running (`FAASBOX_MAX_OUTPUT_SIZE`), then trimmed to 8 KB on its way into the log. The `truncated` field of a log record only ever means the second. The `truncated` field of an [invocation response](09-api-reference.md) only ever means the first. An output of 10 KB is the common case where they disagree: it survived the run whole, so the response says `false`, and it was trimmed for storage, so the log says `true`.
 
-One consequence to know if you read logs programmatically: a truncated `requestPayload` is no longer valid JSON, so it is stored as an escaped **string** instead of an object. A payload under 4 KB keeps its original shape. Code consuming the logs — through [Read a Function's Logs](09-api-reference.md#4-read-a-functions-logs) or the PocketBase Records API — should handle both.
+One consequence to know if you read logs programmatically: a truncated `requestPayload` is no longer valid JSON, so it is stored as an escaped **string** instead of an object. An envelope under 4 KB keeps its original shape. Code consuming the logs — through [Read a Function's Logs](09-api-reference.md#4-read-a-functions-logs) or the PocketBase Records API — should handle both.
 
 Truncation applies **only to the persisted copy**. The HTTP response of `POST /invoke/{name}` still carries the full captured output — that is where you read it while debugging. Once the response is gone, the trimmed part is lost, which matters most for cron functions whose response nobody reads: keep diagnostic output short enough to survive in the logs.
 
@@ -61,7 +70,7 @@ The FaaSBox Editor includes a built-in **Logs** panel for each function:
 2. Click **Logs** in the header — it toggles a panel below the code, alongside the **Runner**.
 3. Logs appear in real time — new entries are pushed automatically as the function runs.
 
-Each entry shows the status (success, error, timeout, missed), trigger type (http/cron/startup), duration, and relative timestamp. Click on any entry to expand it and see the full stdout, stderr, payload, and exit code.
+Each entry shows the status (success, error, timeout, missed), trigger type (http/cron/startup/mcp), duration, and relative timestamp. Click on any entry to expand it and see the full stdout, stderr, envelope, and exit code.
 
 The log viewer displays the 50 most recent entries for the current function. Use the refresh button to reload the list.
 

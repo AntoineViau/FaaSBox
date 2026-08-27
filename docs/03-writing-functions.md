@@ -30,24 +30,26 @@ A function is an `index.ts`, written in the **Script** tab of the editor.
 ```typescript
 // index.ts
 
-// 1. Read input from stdin (JSON)
-const payload = await Bun.stdin.text();
-let body = {};
+// 1. Read the envelope from stdin, then its body — which is a string
+const req = JSON.parse(await Bun.stdin.text());
+let data = {};
 try {
-  body = JSON.parse(payload || "{}");
+  data = JSON.parse(req.body || "{}");
 } catch (e) {
-  console.error("Failed to parse payload:", e);
+  console.error("Failed to parse the body:", e);
 }
 
 // 2. Business Logic
 const result = {
-  hello: body.name || "world",
-  received: body,
+  hello: data.name || "world",
+  received: data,
 };
 
 // 3. Return output via stdout (JSON)
 console.log(JSON.stringify(result));
 ```
+
+Two parses, not one, and that is deliberate — see [The Input Envelope](#the-input-envelope) below.
 
 You do not have to type that skeleton from memory: in the **Script** tab, type `faasbox` and the completion popup offers it as `faasbox-handler`. The individual steps are there too — `faasbox-input` to read the payload, `faasbox-output` to return a JSON result, `faasbox-log` to write to stderr, and `faasbox-env` to read a secret.
 
@@ -55,9 +57,92 @@ You do not have to type that skeleton from memory: in the **Script** tab, type `
 
 ## Input and Output
 
-- **Input**: Passed as a JSON string to `stdin`. Access it via `Bun.stdin.text()`.
+- **Input**: An envelope describing the call, passed as JSON to `stdin`. Read it with `Bun.stdin.text()` and parse it — see [The Input Envelope](#the-input-envelope).
 - **Output**: Anything written to `stdout` is captured and returned as the `result` field in the API response. We highly recommend returning a JSON string.
 - **Logs**: Anything written to `stderr` (e.g., `console.error()`) is captured in the `stderr` field of the response and saved to the execution logs.
+
+## The Input Envelope
+
+`stdin` carries an envelope, not the raw payload. A function is therefore told *how* it was called and not only what it was sent — which is what makes a signed webhook verifiable, and what lets a function wired on two schedules know which one woke it.
+
+Its shape follows the trigger.
+
+**An HTTP call** — `POST /invoke/{name}`:
+
+```json
+{
+  "trigger": "http",
+  "method": "POST",
+  "path": "/invoke/stripe-webhook",
+  "query": { "dry": "1" },
+  "headers": { "stripe-signature": "t=1756290000,v1=8f3a…", "content-type": "application/json" },
+  "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\"}"
+}
+```
+
+**A trigger** — a cron schedule, or the server coming up:
+
+```json
+{ "trigger": "cron", "triggerName": "nightly at 3", "body": "{\"full\":true}" }
+```
+
+`trigger` is `startup` instead of `cron` for a [startup trigger](05-triggers.md#running-at-startup); everything else is identical.
+
+**An AI agent**, through the [MCP endpoint](13-ai-agents.md) — no HTTP request is behind the call, so nothing is invented to describe one:
+
+```json
+{ "trigger": "mcp", "body": "{}" }
+```
+
+### `body` Is Always a String
+
+Whatever the trigger, `body` is a **string**, and it carries what was sent **byte for byte**. FaaSBox never parses it for you:
+
+```typescript
+const req = JSON.parse(await Bun.stdin.text());
+const data = JSON.parse(req.body); // only when you expect JSON
+```
+
+That is one parse more than before, and it buys two things. A body the server had parsed and re-serialised would fail every **HMAC signature check** — Stripe, GitHub, Shopify and Slack all sign the exact bytes they send. And a body that is not JSON at all — plain text, XML, `application/x-www-form-urlencoded` — reaches your function intact instead of being refused on the way in.
+
+Two absences to know:
+
+- An HTTP call with **no body** gives `""`, never `"{}"`. Guard with `req.body || "{}"` if you parse unconditionally.
+- A trigger with **no payload** gives `"{}"` — that is what an empty payload has always normalised to.
+
+### The Rules for `headers` and `query`
+
+- **Header names are lowercased.** HTTP declares them case-insensitive, so read `req.headers["stripe-signature"]`, never `req.headers["Stripe-Signature"]`.
+- **A repeated name becomes one comma-joined value**, in the order received: `?tag=a&tag=b` gives `"a, b"`, and so does the same header sent twice. Both objects stay flat, string to string.
+- **`query` is `{}`** when the URL carried no query string.
+- **Four headers never reach your function**, whatever their casing: `x-api-key`, `authorization`, `cookie` and `proxy-authorization`. They are what proves who the caller is, and FaaSBox does not hand a caller's credentials to the code being called — nor write them to the [execution logs](07-execution-logs.md), which store the envelope. There is no setting for this.
+
+### A Body That Is Not Text Is Refused
+
+The envelope is JSON, and JSON carries text. A request body that is not valid **UTF-8** is refused with a `400` before anything runs, rather than being silently mangled on the way in. Genuinely binary payloads are not a case FaaSBox serves today.
+
+### Verifying a Signed Webhook
+
+The whole point, in one function:
+
+```typescript
+const req = JSON.parse(await Bun.stdin.text());
+
+const signature = req.headers["x-hub-signature-256"] ?? "";
+const expected =
+  "sha256=" +
+  new Bun.CryptoHasher("sha256", process.env.WEBHOOK_SECRET).update(req.body).digest("hex");
+
+if (signature !== expected) {
+  console.error("bad signature");
+  process.exit(1);
+}
+
+const event = JSON.parse(req.body);
+console.log(JSON.stringify({ ok: true, type: event.type }));
+```
+
+`req.body` goes into the hash **untouched**. Parsing it first and re-serialising it would change a space or a key order and break the comparison.
 
 ### When the Output Is Too Big
 
@@ -218,15 +303,17 @@ Renaming a function changes that URL. The Editor warns you as soon as the name f
 | Execution Timeout                  | 30 seconds                            |
 | Install Timeout                    | 60 seconds                            |
 | Max Request Body                   | 1 MB (`FAASBOX_MAX_BODY_SIZE`)        |
+| Max Envelope Stored in Logs        | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`)      |
 | Max Stdout Capture                 | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`)      |
 | Max Stderr Capture                 | 1 MB (`FAASBOX_MAX_OUTPUT_SIZE`)      |
 | Max Stdout/Stderr Stored in Logs   | 8 KB each (`FAASBOX_MAX_LOG_OUTPUT`)  |
-| Max Request Payload Stored in Logs | 4 KB (`FAASBOX_MAX_LOG_PAYLOAD`)      |
 | Max Concurrent Executions          | 4 (global, `FAASBOX_MAX_CONCURRENCY`) |
 | Max File Shown in the Files Tab    | 256 KB (`FAASBOX_MAX_FILE_VIEW`)      |
 | Log Records Kept                   | 1000 (`FAASBOX_MAX_LOG_RETENTION`)    |
 | Max `index.ts` / `package.json`    | 1,048,576 characters each             |
 | Max Secrets per Function           | ~75 KB in clear                       |
+
+The request body limit bounds **what the caller sent**, not the envelope built around it: the headers a client happens to send never eat into your payload budget.
 
 Every limit that names a variable is a **default**, not a hard ceiling: set the variable on the server and restart. See [04 - Environment Variables](04-environment-variables.md).
 

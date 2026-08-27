@@ -148,7 +148,7 @@ Seven tools, one per verb the API already publishes:
 
 Every tool goes through the same code path as its HTTP route, so what an agent may do is exactly what the key may do, refusals included.
 
-On top of that, the session receives **instructions** at connect time: the execution contract (payload on `stdin`, JSON result on `stdout`, diagnostics on `stderr`), the naming rule, the size caps, the fact that dependencies install in the background, the two kinds of trigger — a cron expression, or a startup delay — and what a write replaces. You do not have to paste any of it into your agent.
+On top of that, the session receives **instructions** at connect time: the execution contract (the [call envelope](03-writing-functions.md#the-input-envelope) on `stdin`, JSON result on `stdout`, diagnostics on `stderr`), the naming rule, the size caps, the fact that dependencies install in the background, the two kinds of trigger — a cron expression, or a startup delay — and what a write replaces. You do not have to paste any of it into your agent.
 
 ## Three Things the Agent Is Told, and You Should Know Too
 

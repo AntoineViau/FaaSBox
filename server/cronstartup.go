@@ -63,7 +63,7 @@ func scheduleStartupRuns(ctx context.Context, app core.App, functionsDir string)
 			continue
 		}
 
-		payload := triggerPayloadText(app, record)
+		in := newTriggerInput(triggerStartup, triggerName(app, record), triggerPayloadText(app, record))
 		maxQueue := int(record.GetFloat("maxQueue"))
 		delay := time.Duration(int(record.GetFloat("startupDelayMinutes"))) * startupDelayUnit
 		recordId := record.Id
@@ -79,7 +79,7 @@ func scheduleStartupRuns(ctx context.Context, app core.App, functionsDir string)
 					return
 				}
 			}
-			runFunction(ctx, app, functionsDir, functionId, payload, maxQueue, recordId, "startup")
+			runFunction(ctx, app, functionsDir, functionId, in, maxQueue, recordId)
 		}()
 	}
 }

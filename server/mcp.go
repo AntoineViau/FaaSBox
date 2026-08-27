@@ -164,12 +164,31 @@ separate subprocess. These tools write, run and inspect those functions.
 
 What you need to know before writing one:
 
-1. Execution contract. The payload arrives on stdin as JSON, the result is JSON
-   on stdout, and stderr is captured as diagnostics. A working skeleton:
+1. Execution contract. stdin carries an **envelope** describing the call, the
+   result is JSON on stdout, and stderr is captured as diagnostics. A working
+   skeleton:
 
-       const body = JSON.parse((await Bun.stdin.text()) || "{}");
+       const req = JSON.parse(await Bun.stdin.text());
+       const data = JSON.parse(req.body || "{}");
        console.error("diagnostics go to stderr");
-       console.log(JSON.stringify({ ok: true, body }));
+       console.log(JSON.stringify({ ok: true, data }));
+
+   "body" is always a **string**, carrying what was sent byte for byte — never a
+   parsed object. That is what makes a webhook signature verifiable and what
+   lets a function be handed text, XML or a form-encoded payload; parse it
+   yourself when you expect JSON, as the second line above does.
+
+   The rest of the envelope follows the trigger. An HTTP call carries
+   {"trigger":"http","method","path","query","headers","body"}, with header
+   names lowercased and a repeated header or query parameter joined by ", ".
+   A trigger carries {"trigger":"cron"|"startup","triggerName","body"}, and
+   triggerName is how a function wired on two schedules tells them apart. An
+   invocation you ask for carries {"trigger":"mcp","body"} — there is no
+   request behind it, so nothing else is there to read.
+
+   Four headers never reach a function, whatever their casing: x-api-key,
+   authorization, cookie and proxy-authorization. They authenticate the caller,
+   and a function is never told who called with what credential.
 
 2. Naming. Letters, digits and hyphens, starting and ending with a letter or a
    digit, 64 characters at most. This is refused at save time, not merely

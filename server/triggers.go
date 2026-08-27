@@ -116,15 +116,18 @@ func triggerKind(record *core.Record) string {
 // nobody is waiting on. maxQueue limits how many executions (waiting + running)
 // can exist simultaneously for this function. 0 means no limit. recordId
 // identifies the faasbox_triggers record whose lastRunAt is stamped once the
-// execution is over; an empty value skips the stamping. trigger is what the log
-// entry carries — "cron" or "startup"; each caller is a single one and knows
-// which, so it passes a constant.
+// execution is over; an empty value skips the stamping.
+//
+// in carries the envelope stdin receives — trigger, trigger name and payload —
+// and the value the log entry records, "cron" or "startup". Its two callers each
+// fire a single kind and build it with a constant; nothing is deduced here from
+// what is around.
 //
 // The function is resolved here, at fire time, and not captured when the trigger
 // was registered: the scheduler is only rebuilt when a trigger record changes, so
 // a name captured at registration would go stale the moment the function was
 // renamed. This is the same single read the secrets used to cost.
-func runFunction(ctx context.Context, app core.App, functionsDir, functionId, payload string, maxQueue int, recordId, trigger string) {
+func runFunction(ctx context.Context, app core.App, functionsDir, functionId string, in executionInput, maxQueue int, recordId string) {
 	// Check queue depth before blocking on the semaphore
 	if maxQueue > 0 {
 		val, _ := triggerQueueDepth.LoadOrStore(functionId, &atomic.Int32{})
@@ -143,10 +146,6 @@ func runFunction(ctx context.Context, app core.App, functionsDir, functionId, pa
 	sem <- struct{}{}
 	defer func() { <-sem }()
 
-	if payload == "" {
-		payload = "{}"
-	}
-
 	fn, err := app.FindRecordById(faasboxFunctionsCollection, functionId)
 	if err != nil {
 		app.Logger().Error("faasbox trigger: function no longer exists, skipping",
@@ -159,7 +158,7 @@ func runFunction(ctx context.Context, app core.App, functionsDir, functionId, pa
 	name := functionName(app, fn)
 
 	env := functionEnv(app, fn)
-	res := executeFunction(ctx, functionsDir, fn.Id, name, payload, env)
+	res := executeFunction(ctx, functionsDir, fn.Id, name, in.Envelope, env)
 
 	// Publish what the dependency safety net did, if anything. invokeHandler does
 	// the same right after its own call — the two must not diverge.
@@ -179,12 +178,12 @@ func runFunction(ctx context.Context, app core.App, functionsDir, functionId, pa
 	recordExecution(app, logEntry{
 		FunctionId:     fn.Id,
 		FunctionName:   name,
-		Trigger:        trigger,
+		Trigger:        in.Trigger,
 		Status:         status,
 		DurationMs:     res.Duration.Milliseconds(),
 		Stdout:         res.Stdout,
 		Stderr:         res.Stderr,
-		RequestPayload: payload,
+		RequestPayload: in.Envelope,
 		ExitCode:       res.ExitCode,
 	})
 

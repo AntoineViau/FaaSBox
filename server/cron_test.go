@@ -320,7 +320,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 		before := counter.Load()
 		// Call with a non-existent function — it will fail at execution but
 		// should pass the queue check.
-		runFunction(context.Background(), app, t.TempDir(), "unlimited-func", "{}", 0, "", "cron")
+		runFunction(context.Background(), app, t.TempDir(), "unlimited-func", newTriggerInput(triggerCron, "test trigger", "{}"), 0, "")
 		after := counter.Load()
 
 		if before != after {
@@ -336,7 +336,7 @@ func TestRunFunction_MaxQueue(t *testing.T) {
 
 		// With maxQueue=2 and depth already at 2, a new call should be skipped.
 		// The counter will be incremented to 3 then checked > 2, so it returns early.
-		runFunction(context.Background(), app, t.TempDir(), "limited-func", "{}", 2, "", "cron")
+		runFunction(context.Background(), app, t.TempDir(), "limited-func", newTriggerInput(triggerCron, "test trigger", "{}"), 2, "")
 
 		// Counter should be back to 2 (incremented to 3, then decremented by defer)
 		if got := counter.Load(); got != 2 {
@@ -523,7 +523,7 @@ func TestSyncAllCronJobs_SurvivesARename(t *testing.T) {
 	}
 
 	// And firing it reaches the function under its new name.
-	runFunction(context.Background(), app, functionsDir, fn.Id, "{}", 0, job.Id, "cron")
+	runFunction(context.Background(), app, functionsDir, fn.Id, newTriggerInput(triggerCron, "test trigger", "{}"), 0, job.Id)
 
 	entries, err := app.FindAllRecords(faasboxLogsCollection)
 	if err != nil {
@@ -551,7 +551,7 @@ func TestRunFunction_StampsLastRunAt(t *testing.T) {
 	fn := saveTestFunction(t, app, t.TempDir(), "missing-func", "console.log(1)", "")
 	record := createTestTrigger(t, app, "stamped-cron", "* * * * *", fn.Id, true)
 
-	runFunction(context.Background(), app, t.TempDir(), fn.Id, "{}", 0, record.Id, "cron")
+	runFunction(context.Background(), app, t.TempDir(), fn.Id, newTriggerInput(triggerCron, "test trigger", "{}"), 0, record.Id)
 
 	updated, err := app.FindRecordById(faasboxTriggersCollection, record.Id)
 	if err != nil {
@@ -578,7 +578,7 @@ func TestRunFunction_PublishesDependencyState(t *testing.T) {
 	record := saveTestFunction(t, app, functionsDir, "cron-broken-deps",
 		"console.log('hi')", `{"dependencies":{"nope":"1.0.0"}}`)
 
-	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "", "cron")
+	runFunction(context.Background(), app, functionsDir, record.Id, newTriggerInput(triggerCron, "test trigger", "{}"), 0, "")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -606,7 +606,7 @@ func TestRunFunction_SafetyNetPublishesReady(t *testing.T) {
 		"console.log('hi')", `{"dependencies":{"left-pad":"1.0.0"}}`)
 	setDepsState(app, record.Id, "cron-fresh-deps", depsStatusPending, "")
 
-	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "", "cron")
+	runFunction(context.Background(), app, functionsDir, record.Id, newTriggerInput(triggerCron, "test trigger", "{}"), 0, "")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {
@@ -633,7 +633,7 @@ func TestRunFunction_SafetyNetPersistsLockfile(t *testing.T) {
 	record := saveTestFunction(t, app, functionsDir, "cron-pins",
 		"console.log('hi')", `{"dependencies":{"dayjs":"^1.11.0"}}`)
 
-	runFunction(context.Background(), app, functionsDir, record.Id, "{}", 0, "", "cron")
+	runFunction(context.Background(), app, functionsDir, record.Id, newTriggerInput(triggerCron, "test trigger", "{}"), 0, "")
 
 	stored, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
 	if err != nil {

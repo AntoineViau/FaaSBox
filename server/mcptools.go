@@ -57,7 +57,7 @@ import (
 type mcpTrigger struct {
 	Name     string `json:"name" jsonschema:"a label for this trigger"`
 	Schedule string `json:"schedule" jsonschema:"cron expression, five fields: minute hour day-of-month month day-of-week; leave it empty on a startup trigger"`
-	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function on stdin at each firing"`
+	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function at each firing; it reaches the function as the body field of the envelope on stdin, as a string"`
 	Active   *bool  `json:"active,omitempty" jsonschema:"whether the trigger fires; defaults to true when omitted"`
 	MaxQueue int    `json:"maxQueue,omitempty" jsonschema:"how many runs of this trigger may exist at once, waiting plus running; 0 means no limit"`
 	Kind     string `json:"kind,omitempty" jsonschema:"cron for a scheduled trigger, startup to fire once when the server comes up; defaults to cron when omitted"`
@@ -74,7 +74,7 @@ type mcpFunctionArgs struct {
 // mcpCreateArgs is the body create_function builds.
 type mcpCreateArgs struct {
 	Name        string            `json:"name" jsonschema:"letters, digits and hyphens, starting and ending with a letter or digit, 64 characters at most"`
-	Script      string            `json:"script" jsonschema:"the whole index.ts: read the payload with Bun.stdin.text(), write the JSON result with console.log"`
+	Script      string            `json:"script" jsonschema:"the whole index.ts: read the envelope with Bun.stdin.text(), parse its body field yourself, write the JSON result with console.log"`
 	PackageJson string            `json:"packageJson,omitempty" jsonschema:"the whole package.json, as text; leave it out for a function with no npm dependency"`
 	PlainEnv    map[string]string `json:"plainEnv,omitempty" jsonschema:"secrets injected in the environment of the subprocess; leave it out for a function that needs none"`
 	Triggers    []mcpTrigger      `json:"triggers,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
@@ -96,7 +96,7 @@ type mcpUpdateArgs struct {
 // mcpInvokeArgs is what invoke_function runs.
 type mcpInvokeArgs struct {
 	IdOrName string `json:"idOrName" jsonschema:"the id or the name of the function to run"`
-	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function on stdin; defaults to an empty object"`
+	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function; it reaches the function as the body field of the envelope on stdin, as a string; defaults to an empty object"`
 }
 
 // mcpLogsArgs is what get_function_logs reads.
@@ -240,15 +240,13 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		Name:  "invoke_function",
 		Title: "Invoke a function",
 		Description: "Run a function now and return what it produced: the parsed result, its stderr and how long it took. " +
+			"The function reads the payload as the \"body\" field of an envelope on stdin, whose \"trigger\" is \"mcp\" — there is no request behind this call, so it carries no method, path or headers. " +
 			"The function's own code decides what this does, so treat it as an external effect. " +
 			"An invocation waits for a pending dependency install rather than failing on it.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in mcpInvokeArgs) (*mcp.CallToolResult, any, error) {
 		payload, err := mcpRawJSON(in.Payload)
 		if err != nil {
 			return nil, nil, fmt.Errorf("payload is not serialisable to JSON: %w", err)
-		}
-		if len(payload) == 0 {
-			payload = json.RawMessage("{}")
 		}
 
 		// Not routed through mcpFailure, and deliberately: invoking speaks a
@@ -257,7 +255,12 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		// all of it written for whoever called. The one fault of ours on this
 		// path is already logged and blanked at the source (errResolveFailed,
 		// invokeops.go).
-		outcome, err := invokeFunction(ctx, app, functionsDir, allowed, in.IdOrName, payload)
+		// No request is in sight on this path, so the envelope names the trigger
+		// and carries the payload, and invents nothing else. An absent payload
+		// becomes "{}" inside newMCPInput, which is the only place that
+		// normalisation lives.
+		outcome, err := invokeFunction(ctx, app, functionsDir, allowed, in.IdOrName,
+			newMCPInput(string(payload)))
 		result := mcpInvokeResult{
 			Function:   outcome.Function,
 			Result:     outcome.Result,
@@ -284,7 +287,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:  "get_function_logs",
 		Title: "Read a function's history",
-		Description: "Read the last runs of a function, most recent first: status, duration, stdout, stderr, exit code and the payload each run received. " +
+		Description: "Read the last runs of a function, most recent first: status, duration, stdout, stderr, exit code and the envelope each run received — which says how it was called, not only with what. " +
 			"This is the only way to see what a trigger did — a run nobody asked for answers no one, and its log entry is the trace it leaves.",
 		Annotations: readOnly,
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpLogsArgs) (*mcp.CallToolResult, any, error) {

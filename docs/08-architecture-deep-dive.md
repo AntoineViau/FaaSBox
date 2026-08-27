@@ -57,14 +57,14 @@ The server decrypts for the responses it serves and for its own reads; nothing i
 ### 3. The Execution Flow
 When `/invoke/{name}` is called:
 1.  **Auth**: Middleware checks the API key, and its scope if it has one.
-2.  **Read**: Reads the request body, refusing anything past the body limit.
+2.  **Read**: Reads the request body, refusing anything past the body limit — and anything that is not valid UTF-8, since the envelope built around it is JSON.
 3.  **Admit**: Takes a slot in the global concurrency semaphore, or answers `429` straight away rather than queueing.
 4.  **Resolve**: Reads the one function record the path segment designates — by id or by name. Everything the rest of the flow needs comes off that row: the **id**, which names the directory on disk, the **name**, and the **encrypted secrets**. An unknown segment stops here with a `404`, and nothing is recorded because nothing ran.
 5.  **Secrets**: Decrypts the `env` blob carried by the record just read. No second lookup.
 6.  **Lookup**: Verifies that the function's `index.ts` exists on disk.
 7.  **Dependencies**: `deps.go` checks whether `node_modules` matches the current spec. It normally does — the install already ran when the function was saved — so this is a fingerprint comparison and nothing more.
 8.  **Spawn**: Starts `bun run` on the function's `index.ts`, with the functions root as the working directory.
-9.  **Pipe**: Writes the HTTP request body to the subprocess's `stdin`.
+9.  **Pipe**: Writes the [request envelope](03-writing-functions.md#the-input-envelope) — trigger, method, path, query, headers, and the body as a string — to the subprocess's `stdin`.
 10. **Monitor**: Waits for the process to finish or hit a 30s timeout. On timeout, the entire process group is killed (not just the main process), preventing zombie subprocesses.
 11. **Record**: Saves the result, duration, and logs to `faasbox_logs`.
 12. **Respond**: Returns the JSON result to the client.

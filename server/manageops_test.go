@@ -243,16 +243,18 @@ func TestInvokeFunctionOperation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 
-	outcome, err := invokeFunction(ctx, app, dir, unrestricted, "echo", []byte(`{"n":1}`))
+	outcome, err := invokeFunction(ctx, app, dir, unrestricted, "echo", newMCPInput(`{"n":1}`))
 	if err != nil {
 		t.Fatalf("invokeFunction() failed: %v", err)
 	}
 	if outcome.Function != "echo" {
 		t.Errorf("outcome.Function = %q, want %q", outcome.Function, "echo")
 	}
+	// What comes back is the envelope, not the payload: stdin carries the call,
+	// and the payload is its "body" field, verbatim.
 	result, ok := outcome.Result.(map[string]any)
-	if !ok || result["echo"] != `{"n":1}` {
-		t.Errorf("outcome.Result = %v, want the payload echoed back", outcome.Result)
+	if !ok || result["echo"] != `{"trigger":"mcp","body":"{\"n\":1}"}` {
+		t.Errorf("outcome.Result = %v, want the envelope echoed back", outcome.Result)
 	}
 	if outcome.Duration <= 0 {
 		t.Errorf("outcome.Duration = %v, want the time the run took", outcome.Duration)
@@ -265,7 +267,7 @@ func TestInvokeFunctionOperation(t *testing.T) {
 	}
 
 	var notFound *errNotFound
-	if _, err := invokeFunction(ctx, app, dir, unrestricted, "nope", nil); !errors.As(err, &notFound) {
+	if _, err := invokeFunction(ctx, app, dir, unrestricted, "nope", newMCPInput("")); !errors.As(err, &notFound) {
 		t.Errorf("invokeFunction() on an unknown function = %v, want errNotFound", err)
 	}
 }
@@ -303,7 +305,7 @@ func TestOperationsRefuseAFunctionOutOfScope(t *testing.T) {
 			return err
 		}},
 		{"invokeFunction", func() error {
-			_, err := invokeFunction(ctx, app, dir, elsewhere, "echo", nil)
+			_, err := invokeFunction(ctx, app, dir, elsewhere, "echo", newMCPInput(""))
 			return err
 		}},
 	}
@@ -362,6 +364,6 @@ func TestOperationsNeverSeeARequest(t *testing.T) {
 		_ func(core.App, string, []string) ([]functionSummary, error)               = listFunctions
 		_ func(core.App, []string, string, int) ([]logContract, error)              = functionLogs
 
-		_ func(context.Context, core.App, string, []string, string, []byte) (invokeOutcome, error) = invokeFunction
+		_ func(context.Context, core.App, string, []string, string, executionInput) (invokeOutcome, error) = invokeFunction
 	)
 }

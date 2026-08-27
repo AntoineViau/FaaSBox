@@ -89,7 +89,7 @@ func ensureLogsCollection(app core.App) error {
 				CollectionId:  functions.Id,
 			},
 			&core.TextField{Name: "functionName", Required: true},
-			&core.SelectField{Name: "trigger", Required: true, Values: []string{"http", "cron", "startup"}},
+			&core.SelectField{Name: "trigger", Required: true, Values: []string{triggerHTTP, triggerCron, triggerStartup, triggerMCP}},
 			&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
 			&core.NumberField{Name: "duration"},
 			&core.TextField{Name: "stdout", Max: wantedOutputMax},

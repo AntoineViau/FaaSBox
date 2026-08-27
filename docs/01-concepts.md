@@ -6,13 +6,19 @@ To effectively use FaaSBox, it's important to understand the core concepts and h
 
 FaaSBox uses a **Stdin/Stdout** execution model. This is a classic Unix philosophy applied to serverless:
 
-1.  **Trigger**: An HTTP request, a cron schedule, or the server coming up triggers a function.
-2.  **Input**: The request body (JSON) is passed to the function's **stdin**.
+1.  **Trigger**: An HTTP request, a cron schedule, the server coming up, or an AI agent triggers a function.
+2.  **Input**: An **envelope** describing the call is passed to the function's **stdin**, as JSON. The body sent by the caller is one of its fields.
 3.  **Execution**: The Bun runtime executes the function (`index.ts`).
 4.  **Output**: Anything the function writes to **stdout** is captured as the result.
 5.  **Logs**: Anything written to **stderr** is captured as debug logs.
 
-This model makes functions extremely easy to test locally: `echo '{"name": "Alice"}' | bun index.ts`.
+The envelope is what tells a function *how* it was called, not just what it was sent — the method and path of an HTTP request, the headers it carried, or the name of the trigger that fired it. See [The Input Envelope](03-writing-functions.md#the-input-envelope) for its exact shape.
+
+This model makes functions extremely easy to test locally, by piping an envelope in:
+
+```bash
+echo '{"trigger":"http","method":"POST","path":"/invoke/hello","query":{},"headers":{},"body":"{\"name\":\"Alice\"}"}' | bun index.ts
+```
 
 ## What a Function Is
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"unicode/utf8"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -34,10 +35,15 @@ var validName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$`)
 // invocation over, and turns what comes back into a response — the deciding is
 // in invokeops.go, where a caller that is not a request can reach it.
 func invokeHandler(e *core.RequestEvent, functionsDir string) error {
-	// Read request body (payload passed to the function via stdin). One extra
-	// byte beyond the limit, to detect oversized payloads: without it,
-	// LimitReader silently truncates the body and the function receives broken
-	// JSON, producing a confusing parsing error.
+	// Read the request body, which becomes the "body" field of the envelope
+	// handed to the function. One extra byte beyond the limit, to detect
+	// oversized payloads: without it, LimitReader silently truncates the body
+	// and the function receives half a document, producing a confusing parsing
+	// error.
+	//
+	// The bound is on **what the caller sent**, and stays there: the envelope
+	// built around it is ours, and the headers it carries are already bounded by
+	// the HTTP server itself.
 	body, err := io.ReadAll(io.LimitReader(e.Request.Body, int64(maxBodySize)+1))
 	if err != nil {
 		return e.JSON(http.StatusBadRequest, map[string]string{
@@ -49,6 +55,17 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 			"error": fmt.Sprintf("request body exceeds %d bytes", maxBodySize),
 		})
 	}
+	// The body travels inside a JSON envelope, and JSON carries text. Arbitrary
+	// bytes cannot go through it: encoding/json would swap every invalid
+	// sequence for U+FFFD and the function would receive a body that is not the
+	// one that was sent — silently, which is the worst way to lose a signature.
+	// The refusal is explicit instead, and a genuinely binary body is a use case
+	// this server does not claim to serve.
+	if !utf8.Valid(body) {
+		return e.JSON(http.StatusBadRequest, map[string]string{
+			"error": "request body must be valid UTF-8",
+		})
+	}
 
 	allowed, err := requestKeyScope(e)
 	if err != nil {
@@ -56,8 +73,11 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 		return e.JSON(http.StatusForbidden, map[string]string{"error": errScopeUnreadable.Error()})
 	}
 
+	// The envelope is built here, where the request is: the operation must not
+	// know what a *http.Request is, and the transport is the only place that
+	// does (cf. the cut between invoke.go and invokeops.go).
 	outcome, err := invokeFunction(e.Request.Context(), e.App, functionsDir, allowed,
-		e.Request.PathValue("name"), body)
+		e.Request.PathValue("name"), newHTTPInput(e.Request, body))
 	if err != nil {
 		return answerInvokeFailure(e, outcome, err)
 	}

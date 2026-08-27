@@ -19,7 +19,26 @@ Every endpoint under `/api/` — the management routes below, the key creation r
 Executes the function the path segment designates.
 
 - **Path Parameter**: `{idOrName}` - The **id** or the **name** of the function. Both work; see [Which one the segment designates](#which-one-the-segment-designates) below.
-- **Request Body**: Any valid JSON (max 1 MB by default, `FAASBOX_MAX_BODY_SIZE`).
+- **Request Body**: anything that is valid **UTF-8** text — JSON, plain text, XML, form-encoded (max 1 MB by default, `FAASBOX_MAX_BODY_SIZE`). It is never parsed on the way in.
+- **What the function receives**: not the body alone, but an [envelope](03-writing-functions.md#the-input-envelope) describing the call, on `stdin`:
+
+    ```json
+    {
+      "trigger": "http",
+      "method": "POST",
+      "path": "/invoke/stripe-webhook",
+      "query": { "dry": "1" },
+      "headers": { "stripe-signature": "t=1756290000,v1=8f3a…", "content-type": "application/json" },
+      "body": "{\"id\":\"evt_1\",\"type\":\"invoice.paid\"}"
+    }
+    ```
+
+    Four rules govern it, and they are the input contract of this endpoint:
+
+    1. `body` is **always a string**, carrying what you sent byte for byte. An empty body gives `""`. Nothing is parsed for the function, so an HMAC computed over `body` matches the signature you sent.
+    2. **Header names are lowercased**, and a header or query parameter given twice becomes one value joined by `", "`, in the order received. `query` is `{}` when there is no query string.
+    3. **`x-api-key`, `authorization`, `cookie` and `proxy-authorization` are removed**, whatever their casing. They authenticate you, and FaaSBox does not forward a caller's credentials to the code being called — nor to the [execution logs](07-execution-logs.md), which store the envelope.
+    4. `FAASBOX_MAX_BODY_SIZE` bounds **the body you sent**, not the envelope built around it. Large headers do not eat into your payload budget.
 - **Response**:
     ```json
     {
@@ -32,7 +51,7 @@ Executes the function the path segment designates.
     ```
     `function` is always the **name**, whichever spelling reached it.
 - **Error Codes**:
-    - `400`: The path segment is not a usable identifier.
+    - `400`: The path segment is not a usable identifier, or the request body is not valid UTF-8. A JSON envelope carries text, so arbitrary bytes are refused before anything runs rather than silently mangled — binary payloads are not supported.
     - `401`: Missing or invalid API key.
     - `403`: Key disabled, expired, not authorized for this function, or carrying a scope that cannot be read (see [06 - API Keys & Security](06-api-keys-and-security.md)). A key with a restricted scope also gets `403` — never `404` — for a segment designating nothing, so it cannot use the two codes to map the instance.
     - `404`: Function not found.
@@ -132,7 +151,7 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
 ```json
 {
   "name": "echo",
-  "script": "const payload = await Bun.stdin.text(); console.log(JSON.stringify({ok: true}));",
+  "script": "const req = JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({ok: true, body: req.body}));",
   "packageJson": "{\"dependencies\":{}}",
   "plainEnv": { "STRIPE_KEY": "sk_test_..." },
   "triggers": [
@@ -282,7 +301,7 @@ This is the endpoint to reach for when the trigger is a cron. A scheduled run an
 - A function that never ran returns `{"logs": [], "count": 0}` with a `200`. Nothing there is not an error.
 - **No `function` field**: the endpoint is already per function, and the identity is in the path. `functionName` stays because it says something else — the name the function carried **when it ran**, deliberately not refreshed (see [07 - Execution Logs](07-execution-logs.md)). A rename therefore does not split the history: the entries written under the old name keep coming back, still spelling it.
 - `created` is RFC3339 UTC, the same format as `modified` in the file endpoints below — not PocketBase's own layout.
-- `requestPayload` is relayed as stored, and is `null` for an entry that carries none. **Expect two shapes**: a payload cut at the 4 KB storage cap is no longer valid JSON, so it comes back as an escaped **string** instead of an object. Code reading this endpoint has to handle both.
+- `requestPayload` is the [envelope](03-writing-functions.md#the-input-envelope) the run received, relayed as stored, and is `null` for an entry that carries none. **Expect two shapes**: an envelope cut at the 4 KB storage cap is no longer valid JSON, so it comes back as an escaped **string** instead of an object. Code reading this endpoint has to handle both.
 - **Error Codes**:
     - `400`: the segment is not a usable identifier, or `limit` cannot be read.
     - `401`: missing or invalid `X-API-Key`.
@@ -338,7 +357,8 @@ The endpoint is **stateless**: every request carries its own authorization, and 
 
     `update_function` is the one that is not a plain relay. `PUT` replaces the function whole, so the tool **reads it first and merges** what the caller sent onto what is stored: a call carrying only `script` keeps the `packageJson`, the triggers and the secrets. The explicit empty values still mean what they mean everywhere else — `plainEnv` as `{}` deletes every secret, `triggers` as `[]` deletes every trigger, and `packageJson` as `""` clears the dependencies.
 
-- **Instructions**: the session receives the contract for writing a FaaSBox function at initialization — the `stdin`/`stdout` contract, the naming rule, the size caps, the background install, the cron format, and what a write replaces. Nothing has to be pasted into the agent.
+- **Instructions**: the session receives the contract for writing a FaaSBox function at initialization — the input envelope and the `stdout` contract, the naming rule, the size caps, the background install, the cron format, and what a write replaces. Nothing has to be pasted into the agent.
+- **Invoking**: a function an agent runs through `invoke_function` receives `{"trigger": "mcp", "body": …}` on `stdin`. There is no HTTP request behind the call, so the envelope carries no method, path or headers, and the run is recorded in the [logs](07-execution-logs.md) with `trigger` set to `mcp`.
 - **Error Codes**:
     - `400`: the body is not a valid MCP message, or `Accept` does not carry both `application/json` and `text/event-stream`.
     - `401`: no credential, an invalid `X-API-Key`, or a token that does not pass — unknown, expired, revoked, or issued for another resource. The refusal never says which, and carries the `WWW-Authenticate` above.
@@ -508,7 +528,7 @@ Two modes on one endpoint, chosen by `download`.
     {
       "path": "index.ts",
       "size": 412,
-      "content": "const payload = await Bun.stdin.text();\n…"
+      "content": "const req = JSON.parse(await Bun.stdin.text());\n…"
     }
     ```
 - **415** if the file is binary, with `{"error": "binary"}`. The verdict is a NUL byte in the first 8 KB, never the extension — `node_modules` is full of files without one.

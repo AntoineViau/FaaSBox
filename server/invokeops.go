@@ -70,7 +70,12 @@ type invokeOutcome struct {
 // produced. It is the other half of the pair runFunction forms: same engine,
 // same publication of the dependency state, same log entry, and the two must not
 // diverge (cf. the parity rule between the immediate and the scheduled path).
-func invokeFunction(ctx context.Context, app core.App, functionsDir string, allowed []string, idOrName string, payload []byte) (invokeOutcome, error) {
+//
+// in carries the envelope stdin receives and the trigger the log entry records.
+// Both are built by the caller — invoke.go from the request it holds, mcptools.go
+// from an agent's arguments — because only the caller knows what shape the call
+// had. This file stays what it was: the verb, with no request in sight.
+func invokeFunction(ctx context.Context, app core.App, functionsDir string, allowed []string, idOrName string, in executionInput) (invokeOutcome, error) {
 	// Validated before anything is reserved: a segment that never had a chance
 	// of designating a function must not cost a slot.
 	if !validName.MatchString(idOrName) || len(idOrName) > 64 {
@@ -104,7 +109,7 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 	name := functionName(app, fn)
 
 	env := functionEnv(app, fn)
-	res := executeFunction(ctx, functionsDir, fn.Id, name, string(payload), env)
+	res := executeFunction(ctx, functionsDir, fn.Id, name, in.Envelope, env)
 
 	// Publish what the dependency safety net did, if anything. The cron path does
 	// the same right after its own call — the two must not diverge.
@@ -133,12 +138,12 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 		recordExecution(app, logEntry{
 			FunctionId:     fn.Id,
 			FunctionName:   name,
-			Trigger:        "http",
+			Trigger:        in.Trigger,
 			Status:         status,
 			DurationMs:     res.Duration.Milliseconds(),
 			Stdout:         res.Stdout,
 			Stderr:         res.Stderr,
-			RequestPayload: string(payload),
+			RequestPayload: in.Envelope,
 			ExitCode:       res.ExitCode,
 		})
 

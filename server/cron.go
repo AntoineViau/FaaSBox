@@ -126,8 +126,13 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 
 		jobId := cronJobPrefix + record.Id
 		recordId := record.Id
+		// The envelope is built at registration, like the schedule and the
+		// payload beside it: renaming a trigger rewrites its record, and a
+		// rewritten record rebuilds the whole job list. Nothing here can go
+		// stale that the resync does not already refresh.
+		in := newTriggerInput(triggerCron, triggerName(app, record), payload)
 		err = app.Cron().Add(jobId, schedule, func() {
-			runFunction(ctx, app, functionsDir, functionId, payload, maxQueue, recordId, "cron")
+			runFunction(ctx, app, functionsDir, functionId, in, maxQueue, recordId)
 		})
 		if err != nil {
 			app.Logger().Error("faasbox: failed to register cron",

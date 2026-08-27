@@ -21,6 +21,23 @@ The easiest way to manage triggers is directly from the FaaSBox Editor:
 
 You can toggle triggers on/off, edit their schedule, payload and max queue, or delete them — all from this panel. Once saved, the scheduler picks the changes up in real time, no restart needed.
 
+### The Function Knows Which Trigger Fired
+
+A scheduled run hands the function an envelope naming the trigger that woke it:
+
+```json
+{ "trigger": "cron", "triggerName": "nightly at 3", "body": "{\"full\":true}" }
+```
+
+`triggerName` is the trigger's own **Name** field, as stored. It is what lets one function serve two schedules and behave differently on each — a full pass at three in the morning and a quick one every hour, say — without giving them deliberately different payloads to tell them apart:
+
+```typescript
+const req = JSON.parse(await Bun.stdin.text());
+if (req.triggerName === "nightly at 3") { /* the full pass */ }
+```
+
+`trigger` reads `startup` instead of `cron` on a [startup trigger](#running-at-startup), and `body` is the payload as a **string** — `"{}"` when the trigger carries none. See [The Input Envelope](03-writing-functions.md#the-input-envelope) for the whole contract.
+
 ### A Trigger Follows Its Function
 
 A trigger points at the function itself, not at its name. Two consequences, both of them things you no longer have to think about:
@@ -64,7 +81,7 @@ You never need this — the Triggers tab covers everything below. It is here for
     - **Name**: A descriptive name (e.g., "Daily Cleanup").
     - **Schedule**: A standard cron expression (see below).
     - **Function**: the function to execute, picked from the `faasbox_functions` collection. It is a relation and it is required — a trigger with nothing to fire has no reason to exist.
-    - **Payload**: A JSON string to be passed as input to the function.
+    - **Payload**: A JSON string. It reaches the function as the `body` field of the envelope, as a string.
     - **Active**: Toggle this to `true` to enable the task.
     - **MaxQueue** *(optional)*: Maximum number of simultaneous executions (waiting + running) allowed for this trigger. Same setting as **Max queue** in the Editor, described above. Set to `0` or leave empty for no limit (default).
 
@@ -115,7 +132,7 @@ Three things to know:
 - **It fires again at every restart**, including every redeployment. That is the point, and it is also the trap: a startup function that brings the box down will run again the moment it comes back up, and again after that. Nothing on the server side breaks that loop — write the function so a failure is survivable, and test it before ticking the box.
 - **Several startup triggers at `0h00` all queue at once** on the shared concurrency slots. That is the normal behaviour for a trigger nobody is waiting on — the run waits its turn rather than being refused — but **Max queue** applies here too, and staggering the delays is usually simpler.
 
-A startup run is a run like any other: it writes an entry to `faasbox_logs` with `trigger` set to `startup`, and it stamps `lastRunAt` on the trigger record.
+A startup run is a run like any other: it writes an entry to `faasbox_logs` with `trigger` set to `startup`, it stamps `lastRunAt` on the trigger record, and the envelope it hands the function carries `"trigger": "startup"` next to the same `triggerName`.
 
 ## Monitoring Triggers
 Every time a trigger fires, it creates an entry in the **faasbox_logs** collection with the `trigger` set to `cron` or `startup`. You can see the success/failure status and the output of the run there.

@@ -47,7 +47,8 @@ async function create(collection, body, label) {
 const FUNCTIONS = [
   {
     name: 'summarise-events',
-    script: `const { events } = await Bun.stdin.json();
+    script: `const req = JSON.parse(await Bun.stdin.text());
+const { events } = JSON.parse(req.body || '{}');
 
 const byDay = {};
 
@@ -74,7 +75,8 @@ console.log(JSON.stringify({ days: Object.keys(summary).length, summary }));
     name: 'daily-report',
     script: `import { Resend } from 'resend';
 
-const { team, since } = await Bun.stdin.json();
+const req = JSON.parse(await Bun.stdin.text());
+const { team, since } = JSON.parse(req.body || '{}');
 
 const res = await fetch(\`\${process.env.API_BASE}/teams/\${team}/activity?since=\${since}\`, {
   headers: { authorization: \`Bearer \${process.env.API_TOKEN}\` },
@@ -126,7 +128,8 @@ console.log(JSON.stringify({ count: fresh.length, items: fresh }));
   },
   {
     name: 'rotate-keys',
-    script: `const { dryRun = false } = await Bun.stdin.json();
+    script: `const req = JSON.parse(await Bun.stdin.text());
+const { dryRun = false } = JSON.parse(req.body || '{}');
 
 const res = await fetch(\`\${process.env.VAULT_URL}/keys?age_gt=90d\`, {
   headers: { 'x-vault-token': process.env.VAULT_TOKEN },
@@ -152,7 +155,8 @@ console.log(JSON.stringify({ rotated, dryRun }));
   },
   {
     name: 'stripe-webhook',
-    script: `const event = await Bun.stdin.json();
+    script: `const req = JSON.parse(await Bun.stdin.text());
+const event = JSON.parse(req.body || '{}');
 
 if (event.type !== 'invoice.payment_failed') {
   console.log(JSON.stringify({ ignored: event.type }));
@@ -176,7 +180,8 @@ console.log(JSON.stringify({ notified: customer_email }));
   },
   {
     name: 'prune-uploads',
-    script: `const { keepDays = 30 } = await Bun.stdin.json();
+    script: `const req = JSON.parse(await Bun.stdin.text());
+const { keepDays = 30 } = JSON.parse(req.body || '{}');
 
 const cutoff = Date.now() - keepDays * 864e5;
 const res = await fetch(\`\${process.env.STORAGE_API}/objects?prefix=tmp/\`);
@@ -223,19 +228,33 @@ for (const cron of CRONS) {
    "just now" — harmless here, and the only way around it is raw SQL. */
 const SUMMARY = '{"days":2,"summary":{"2026-08-01":{"deploys":2,"rollbacks":1,"actors":2},"2026-08-02":{"deploys":1,"rollbacks":0,"actors":1}}}';
 
+/* requestPayload stores the envelope a run received — how it was called, not
+   only with what — so the demo rows carry one too. `body` is a string there,
+   exactly as it is in a real entry. */
+const httpCall = (name, body) => JSON.stringify({
+  trigger: 'http',
+  method: 'POST',
+  path: `/invoke/${name}`,
+  query: {},
+  headers: { 'content-type': 'application/json', 'user-agent': 'curl/8.5.0' },
+  body,
+});
+
+const cronCall = (triggerName, body) => JSON.stringify({ trigger: 'cron', triggerName, body });
+
 const LOGS = [
-  ['summarise-events', 'http', 'success', 34, SUMMARY, '', '{"events":[…4 items]}', 0],
-  ['summarise-events', 'cron', 'success', 41, '{"days":7,"summary":{…}}', '', '{"events":[…31 items]}', 0],
-  ['summarise-events', 'http', 'success', 29, SUMMARY, '', '{"events":[…4 items]}', 0],
-  ['summarise-events', 'cron', 'success', 38, '{"days":7,"summary":{…}}', '', '{"events":[…28 items]}', 0],
-  ['summarise-events', 'http', 'error', 22, '', 'SyntaxError: Unexpected end of JSON input', '{"events":', 1],
-  ['summarise-events', 'cron', 'success', 44, '{"days":7,"summary":{…}}', '', '{"events":[…35 items]}', 0],
-  ['morning-digest', 'cron', 'success', 412, '{"count":18,"items":[…]}', '', '{}', 0],
-  ['daily-report', 'cron', 'success', 1840, '{"sent":14,"team":"platform"}', '', '{"team":"platform","since":"24h"}', 0],
-  ['stripe-webhook', 'http', 'success', 236, '{"notified":"acme@example.com"}', '', '{"type":"invoice.payment_failed"}', 0],
-  ['prune-uploads', 'cron', 'success', 6120, '{"deleted":248,"keepDays":30}', '', '{"keepDays":30}', 0],
-  ['rotate-keys', 'cron', 'timeout', 30000, '', 'execution exceeded 30s', '{"dryRun":false}', -1],
-  ['prune-uploads', 'cron', 'missed', 0, '', '', '{"keepDays":30}', 0],
+  ['summarise-events', 'http', 'success', 34, SUMMARY, '', httpCall('summarise-events', '{"events":[…4 items]}'), 0],
+  ['summarise-events', 'cron', 'success', 41, '{"days":7,"summary":{…}}', '', cronCall('Weekly rollup', '{"events":[…31 items]}'), 0],
+  ['summarise-events', 'http', 'success', 29, SUMMARY, '', httpCall('summarise-events', '{"events":[…4 items]}'), 0],
+  ['summarise-events', 'cron', 'success', 38, '{"days":7,"summary":{…}}', '', cronCall('Weekly rollup', '{"events":[…28 items]}'), 0],
+  ['summarise-events', 'http', 'error', 22, '', 'SyntaxError: Unexpected end of JSON input', httpCall('summarise-events', '{"events":'), 1],
+  ['summarise-events', 'cron', 'success', 44, '{"days":7,"summary":{…}}', '', cronCall('Weekly rollup', '{"events":[…35 items]}'), 0],
+  ['morning-digest', 'cron', 'success', 412, '{"count":18,"items":[…]}', '', cronCall('Morning digest', '{}'), 0],
+  ['daily-report', 'cron', 'success', 1840, '{"sent":14,"team":"platform"}', '', cronCall('Daily platform report', '{"team":"platform","since":"24h"}'), 0],
+  ['stripe-webhook', 'http', 'success', 236, '{"notified":"acme@example.com"}', '', httpCall('stripe-webhook', '{"type":"invoice.payment_failed"}'), 0],
+  ['prune-uploads', 'cron', 'success', 6120, '{"deleted":248,"keepDays":30}', '', cronCall('Prune temporary uploads', '{"keepDays":30}'), 0],
+  ['rotate-keys', 'cron', 'timeout', 30000, '', 'execution exceeded 30s', cronCall('Rotate stale keys', '{"dryRun":false}'), -1],
+  ['prune-uploads', 'cron', 'missed', 0, '', '', cronCall('Prune temporary uploads', '{"keepDays":30}'), 0],
 ];
 
 let logged = 0;

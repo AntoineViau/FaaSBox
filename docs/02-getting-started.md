@@ -114,9 +114,9 @@ One thing it cannot do: **creating an API key record by hand gives you no usable
 4.  In the **Script** tab, write the following:
 
 ```typescript
-// Read payload from stdin
-const payload = await Bun.stdin.text();
-const data = JSON.parse(payload || "{}");
+// Read the envelope from stdin, then the body it carries — always a string
+const req = JSON.parse(await Bun.stdin.text());
+const data = JSON.parse(req.body || "{}");
 
 // Perform logic
 const name = data.name || "World";
@@ -129,6 +129,8 @@ console.log(
   }),
 );
 ```
+
+`stdin` carries an **envelope** describing the call — how the function was reached, not just what it was sent — and `req.body` is the payload inside it, as a string you parse yourself. See [The Input Envelope](03-writing-functions.md#the-input-envelope).
 
 ## 5. Invoke Your Function
 

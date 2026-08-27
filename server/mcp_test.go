@@ -158,6 +158,9 @@ func TestMCPServerAdvertises(t *testing.T) {
 		// caught rather than merely reformatted.
 		for _, marker := range []string{
 			"stdin", "stdout", "stderr", // execution contract
+			"envelope",     // what stdin actually carries
+			"triggerName",  // and what tells two schedules apart
+			"x-api-key",    // the headers a function never sees
 			"hyphens",      // naming rule
 			"1048576",      // size caps
 			"background",   // installs do not finish with the write
