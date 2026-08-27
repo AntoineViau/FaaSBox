@@ -33,6 +33,22 @@ const faasboxFunctionsCollection = "faasbox_functions"
 // cease to exist.
 const maxSourceSize = 1 << 20 // 1,048,576 characters
 
+// maxSampleSize bounds the two columns carrying the call the Runner replays:
+// the sample body and the serialised sample headers.
+//
+// It is deliberately far below maxSourceSize, and the list endpoint is the
+// reason. The editor enumerates the fields it wants precisely so that a
+// reconnection of the realtime channel does not re-download what nobody looks
+// at, and a generous cap here would let back in through the door what bunLock
+// was shown out of the window. A sample is an example of a call, not an
+// archive of one.
+//
+// Same rule as the source columns: what a TextField measures is the sealed
+// value, hence cipherMax. There is no product limit announced on the plaintext
+// here, so no hook holds one — the column is the only bound, and it is meant to
+// be.
+const maxSampleSize = 16 << 10 // 16,384 characters
+
 // maxEnvSize bounds the encrypted environment of a function.
 //
 // It measures the *stored* value — base64 of nonce, ciphertext and tag — not the
@@ -42,8 +58,8 @@ const maxSourceSize = 1 << 20 // 1,048,576 characters
 const maxEnvSize = 100 << 10 // 102,400 characters
 
 // ensureFunctionsCollection creates the faasbox_functions collection if it doesn't exist,
-// or migrates it by adding missing fields (script, packageJson, depsStatus, depsError,
-// bunLock).
+// or migrates it by adding missing fields (script, packageJson, sampleBody,
+// sampleHeaders, depsStatus, depsError, bunLock).
 func ensureFunctionsCollection(app core.App) error {
 	col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
 	if err != nil {
@@ -56,6 +72,8 @@ func ensureFunctionsCollection(app core.App) error {
 			&core.JSONField{Name: "plainEnv"},
 			&core.TextField{Name: "script", Max: cipherMax(maxSourceSize)},
 			&core.TextField{Name: "packageJson", Max: cipherMax(maxSourceSize)},
+			newSampleBodyField(),
+			newSampleHeadersField(),
 			newDepsStatusField(),
 			newDepsErrorField(),
 			newBunLockField(),
@@ -92,6 +110,14 @@ func ensureFunctionsCollection(app core.App) error {
 		col.Fields.Add(&core.TextField{Name: "packageJson", Max: cipherMax(maxSourceSize)})
 		needsSave = true
 	}
+	if col.Fields.GetByName("sampleBody") == nil {
+		col.Fields.Add(newSampleBodyField())
+		needsSave = true
+	}
+	if col.Fields.GetByName("sampleHeaders") == nil {
+		col.Fields.Add(newSampleHeadersField())
+		needsSave = true
+	}
 	if col.Fields.GetByName("depsStatus") == nil {
 		col.Fields.Add(newDepsStatusField())
 		needsSave = true
@@ -113,7 +139,7 @@ func ensureFunctionsCollection(app core.App) error {
 
 	// Realign the declared size of every capped field of this collection.
 	//
-	// A TextField measures the value it *stores*, and four of these now store a
+	// A TextField measures the value it *stores*, and six of these now store a
 	// ciphertext — about a third larger than the plaintext, and more when it is
 	// not ASCII. A collection created by an earlier version carries the plaintext
 	// cap and would refuse exactly what the encryption is meant to write through.
@@ -131,6 +157,8 @@ func ensureFunctionsCollection(app core.App) error {
 	}{
 		{"script", cipherMax(maxSourceSize)},
 		{"packageJson", cipherMax(maxSourceSize)},
+		{"sampleBody", cipherMax(maxSampleSize)},
+		{"sampleHeaders", cipherMax(maxSampleSize)},
 		{"bunLock", cipherMax(maxLockfileSize)},
 		{"depsError", cipherMax(maxDepsError + logMarkerSlack)},
 		{"env", maxEnvSize},
@@ -157,6 +185,33 @@ func ensureFunctionsCollection(app core.App) error {
 // record before the hook that fills it ever ran.
 func newNameHashField() *core.TextField {
 	return &core.TextField{Name: "nameHash"}
+}
+
+// newSampleBodyField and newSampleHeadersField declare the call the editor's
+// Runner replays for this function: the body typed on the right of the panel,
+// and the key/value rows typed on its left.
+//
+// They belong to the record for the reason the script does: switching function
+// in the editor is a load, and what is not on the record has nothing to load.
+// An empty value is not a value — it reads back as the starting sample, which
+// is what covers a function that was never customised without a migration
+// branch anywhere.
+//
+// **The headers are JSON serialised into a text column, never a JSONField.**
+// The encryption at rest covers text columns; a JSON column would keep its
+// own shape and this one would travel in the clear.
+//
+// Sealed at rest and legible all the same: OnRecordEnrich opens them on every
+// read of the collections API, so anyone who can read this instance reads the
+// sample. That is the point — it is how the panel shows the header a function
+// actually expects — and it is why the documentation says not to put a real
+// secret there.
+func newSampleBodyField() *core.TextField {
+	return &core.TextField{Name: "sampleBody", Max: cipherMax(maxSampleSize)}
+}
+
+func newSampleHeadersField() *core.TextField {
+	return &core.TextField{Name: "sampleHeaders", Max: cipherMax(maxSampleSize)}
 }
 
 // decryptFunctionEnv decrypts the environment variables of a function record.
@@ -390,7 +445,12 @@ func encryptPlainEnvHook(e *core.RecordEvent) error {
 // syncRecordToDisk writes a single faasbox_functions record to disk. It creates
 // the function directory and mirrors the three artefacts the record carries:
 // index.ts, package.json and bun.lock. A field that is empty removes its file
-// rather than leaving the previous one in place. The directory itself stays: it
+// rather than leaving the previous one in place.
+//
+// **The sample call the record also carries is not one of them.** sampleBody and
+// sampleHeaders are how the editor invokes the function, not source bun
+// compiles: nothing on disk reads them, and writing them there would put a
+// request payload in the directory the subprocess runs in. The directory itself stays: it
 // may still hold a valid package.json and its node_modules, which clearing a
 // script has nothing to do with — removing it is what deleting the function does.
 //

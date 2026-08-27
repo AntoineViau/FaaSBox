@@ -267,7 +267,7 @@ The FaaSBox Editor includes a built-in **Runner** panel that lets you test your 
 3. Set the **headers** on the left, and type the **body** on the right (it defaults to `{}`).
 4. Click **Run**, or **Save and run** if you changed something.
 
-The result appears in the row underneath, with:
+The result appears in the row underneath, and it belongs to that run alone: switch function and it clears rather than following you. What you see under a function is always that function's own output, or nothing at all. It carries:
 
 - **Status** (success or error) and execution time.
 - **Result**: the parsed stdout output.
@@ -279,13 +279,19 @@ The body is **free text**, sent exactly as typed. Nothing parses it on the way o
 
 The headers are yours to set, one name and one value per row, which is what makes a **signed webhook testable from the Editor**: paste the signature header your provider sends and verify it for real. Two rows are filled in for you and delete like any other: `Content-Type: application/json` — without it, a body sent as text announces `text/plain` — and the `X-Header-Name` header the example script of a new function reads.
 
+**The body and the headers are saved with the function.** They are fields of it, like your script: switch to another function and you see that function's sample, come back and yours is where you left it. A rename carries it along, deleting the function takes it with it. Until you customise it, a function shows the starting sample described above — which is also what a function created through the management API starts on.
+
+Because they belong to the function, they are written by the same **Save** as the rest: change the body alone and the Save button appears next to the name field, exactly as it does for the script. Without saving, the sample is not lost — the call still goes out with what is on screen — it is simply not there the next time you open the function.
+
+One thing to be clear about: an encrypted-at-rest field is not a vault. Anyone who can read this function reads its sample, and the Editor shows it to them. Paste the *shape* of the signed request you need to test, not a live secret — a production webhook secret, a real bearer token, a customer's payload. If you need a real value to run a test, put it in the [Environment](04-environment-variables.md) tab and have your function read it from there.
+
 The Runner calls `POST /invoke/{name}`, the same route as any outside caller, so what your function receives is the ordinary envelope built by the server. Two consequences worth knowing. Your browser adds headers of its own — `user-agent`, `accept` and a few more — exactly as any HTTP client would. And the [four headers that never reach a function](#the-rules-for-headers-and-query) do not reach it from here either: type `Authorization` or `X-API-Key` and the Runner tells you, on the spot, that it will not arrive.
 
 ### Run and Save and run
 
 **Run** is always there. It executes what the server holds: the Runner calls the same `/invoke/{name}` endpoint as any other caller, and that endpoint runs the file on disk. Nothing is saved, so what you get is your last saved version.
 
-**Save and run** only appears while what is on your screen differs from what is saved, and it disappears as soon as the save goes through. It writes the name, the script and the `package.json`, then invokes. That is the button to use to test what you just typed — without saving, `/invoke` would never see it. If your `package.json` changed, saving starts the dependency install and the run waits for it to finish rather than executing against stale dependencies.
+**Save and run** only appears while what is on your screen differs from what is saved, and it disappears as soon as the save goes through. It writes the name, the script, the `package.json` and the sample call, then invokes. That is the button to use to test what you just typed — without saving, `/invoke` would never see it. If your `package.json` changed, saving starts the dependency install and the run waits for it to finish rather than executing against stale dependencies.
 
 The rule of thumb: if **Save and run** is on screen, **Run** is about to test something other than what you are looking at.
 

@@ -376,6 +376,51 @@ echo 'reading https://registry.internal/?token=s3cr3t' >&2`)
 	}
 }
 
+// TestSealedFunction_SampleIsSealedAtRest covers the two columns carrying the
+// call the Runner replays. A sample body is exactly what one does not want
+// travelling in the clear to the S3 replica: it is where a webhook event and the
+// signature header that goes with it get pasted.
+//
+// Sealed is not secret, and the second half of the test says so: the enrichment
+// opens both columns for anyone who can read the instance. That is the whole
+// point of storing them — the panel has to show them back — and it is why the
+// documentation tells the user not to put a real secret there.
+func TestSealedFunction_SampleIsSealedAtRest(t *testing.T) {
+	app := sealedApp(t)
+	const body = `{"id":"evt_1","secret":"whsec_s3cr3t"}`
+	const headers = `[{"name":"Stripe-Signature","value":"t=1,v1=s3cr3t"}]`
+
+	record := saveSealedFunction(t, app, "sampler", "console.log('hi')", "")
+	record.Set("sampleBody", body)
+	record.Set("sampleHeaders", headers)
+	if err := app.Save(record); err != nil {
+		t.Fatalf("failed to save the sample: %v", err)
+	}
+
+	for column, plaintext := range map[string]string{"sampleBody": body, "sampleHeaders": headers} {
+		stored := storedColumn(t, app, faasboxFunctionsCollection, column, record.Id)
+		if strings.Contains(stored, "s3cr3t") || stored == plaintext {
+			t.Errorf("%s = %q, want it unreadable in the database", column, stored)
+		}
+		if !strings.HasPrefix(stored, cipherPrefix) {
+			t.Errorf("%s = %q, want a sealed value", column, stored)
+		}
+	}
+
+	// And it reads back: a sample that seals but never opens would show the
+	// panel an empty body under a function that has one.
+	fresh, err := app.FindRecordById(faasboxFunctionsCollection, record.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := decryptedText(app, fresh, "sampleBody"); got != body {
+		t.Errorf("sampleBody reads back as %q, want %q", got, body)
+	}
+	if got := decryptedText(app, fresh, "sampleHeaders"); got != headers {
+		t.Errorf("sampleHeaders reads back as %q, want %q", got, headers)
+	}
+}
+
 // TestSealedFunction_CollectionAPIRendersThePlaintext is what holds the editor
 // up: it reads the collections API directly, so the enrichment is the only thing
 // between a sealed column and an unusable screen.

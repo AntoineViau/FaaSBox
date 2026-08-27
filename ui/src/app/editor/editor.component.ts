@@ -38,6 +38,12 @@ import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { TriggersEditorComponent } from '@/editor/triggers-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
 import {
+  type HeaderRow,
+  readSampleBody,
+  readSampleHeaders,
+  serializeHeaders,
+} from '@/editor/request-headers';
+import {
   DEFAULT_EDITOR_TAB,
   EDITOR_TABS,
   EDITOR_TAB_SLUGS,
@@ -156,7 +162,7 @@ import { ZardInputDirective } from '@shared/components/input';
               <!-- Shown while there is something to save, and on a showcase,
                    where nothing can become dirty: the button is part of what
                    the instance is there to display. -->
-              @if (nameOrScriptDirty() || demoMode()) {
+              @if (nameScriptOrSampleDirty() || demoMode()) {
                 <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
                   <button
                     z-button
@@ -305,7 +311,10 @@ import { ZardInputDirective } from '@shared/components/input';
             @if (showRunner()) {
               <div class="h-96 shrink-0 border-t border-border">
                 <app-runner
+                  [functionId]="fn.id"
                   [functionName]="fn.name"
+                  [(body)]="localSampleBody"
+                  [(headers)]="localSampleHeaders"
                   [busy]="running()"
                   [dirty]="isDirty()"
                   [demoMode]="demoMode()"
@@ -400,6 +409,14 @@ export class EditorComponent implements OnInit {
   protected readonly localName = signal('');
   protected readonly localScript = signal('');
   protected readonly localPackageJson = signal('');
+  /**
+   * The sample call, held here like the script and for the same reason: it is a
+   * field of the function, and switching function is a load. The Runner edits
+   * it through a two-way binding and owns none of it — which is what makes the
+   * panel follow the selection instead of trailing a function behind.
+   */
+  protected readonly localSampleBody = signal('');
+  protected readonly localSampleHeaders = signal<HeaderRow[]>([]);
   protected readonly showRunner = signal(true);
   protected readonly showLogs = signal(true);
   protected readonly running = signal(false);
@@ -438,18 +455,44 @@ export class EditorComponent implements OnInit {
   });
 
   /**
-   * What the Save next to the name field answers for. It writes all three
-   * fields, but it only shows up for these two: a package.json edited alone
+   * The sample call left what the record holds.
+   *
+   * Both sides of the body go through the same reading, and that is not
+   * cosmetic: an empty column shows the starting body, so a buffer emptied and
+   * saved would otherwise differ from itself forever and leave a Save on screen
+   * nothing could clear. The headers need no such care — the buffer is always
+   * rows, and an empty list is a sample that sends no header.
+   */
+  protected readonly sampleDirty = computed(() => {
+    const fn = this.store.selectedFunction();
+    if (!fn) return false;
+    return (
+      readSampleBody(this.localSampleBody()) !== readSampleBody(fn.sampleBody) ||
+      serializeHeaders(this.localSampleHeaders()) !==
+        serializeHeaders(readSampleHeaders(fn.sampleHeaders))
+    );
+  });
+
+  /**
+   * What the Save next to the name field answers for. It writes every field it
+   * can, but it only shows up for these three: a package.json edited alone
    * already has the banner and its button, and a second call to action on the
    * same record would just ask twice for the same click.
+   *
+   * The sample is in here rather than off on its own, and it is a trade taken
+   * knowingly: typing a test body now makes `Save and run` appear where `Run`
+   * used to be enough. That is honest — something is unsaved — and it is the
+   * price of the sample surviving a change of function.
    */
-  protected readonly nameOrScriptDirty = computed(() => {
+  protected readonly nameScriptOrSampleDirty = computed(() => {
     const fn = this.store.selectedFunction();
-    return this.nameDirty() || (!!fn && this.localScript() !== fn.script);
+    return this.nameDirty() || (!!fn && this.localScript() !== fn.script) || this.sampleDirty();
   });
 
   /** Environment lives in its own tab, with its own Save: it is not part of this. */
-  protected readonly isDirty = computed(() => this.nameOrScriptDirty() || this.packageJsonDirty());
+  protected readonly isDirty = computed(
+    () => this.nameScriptOrSampleDirty() || this.packageJsonDirty(),
+  );
 
   constructor() {
     effect(() => {
@@ -462,6 +505,11 @@ export class EditorComponent implements OnInit {
       this.localName.set(fn?.name ?? '');
       this.localScript.set(fn?.script ?? '');
       this.localPackageJson.set(fn?.packageJson ?? '');
+      // An empty column is not an empty sample: it means this function was
+      // never customised, and it reads back as the starting one. That is what
+      // covers a brand new function and one an agent wrote, with no branch.
+      this.localSampleBody.set(readSampleBody(fn?.sampleBody ?? ''));
+      this.localSampleHeaders.set(readSampleHeaders(fn?.sampleHeaders ?? ''));
     });
 
     // URL -> state. Reading the parameters is all this effect tracks; what it
@@ -636,6 +684,8 @@ export class EditorComponent implements OnInit {
       name: this.localName(),
       script: this.localScript(),
       packageJson: this.localPackageJson(),
+      sampleBody: this.localSampleBody(),
+      sampleHeaders: serializeHeaders(this.localSampleHeaders()),
     };
 
     try {

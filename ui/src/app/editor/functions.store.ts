@@ -148,7 +148,7 @@ console.log(JSON.stringify({ message: "Hello from ${name}!", visitor, header, se
       async updateFunction(
         id: string,
         data: Partial<
-          Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> & {
+          Pick<FaasboxFunction, 'name' | 'script' | 'packageJson' | 'sampleBody' | 'sampleHeaders'> & {
             plainEnv?: Record<string, string>;
           }
         >,

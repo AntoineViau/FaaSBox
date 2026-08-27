@@ -810,3 +810,77 @@ func TestSyncDiskFromDB_RestoresLockfile(t *testing.T) {
 		t.Errorf("bun.lock = %q, want %q", data, lock)
 	}
 }
+
+// TestEnsureFunctionsCollection_SampleFields pins the two columns carrying the
+// call the Runner replays, and the cap they declare.
+//
+// The cap is the point of the test as much as the presence: a sample rides in
+// every list() the editor issues, including on every reconnection of the
+// realtime channel, so a column that silently took PocketBase's default — or
+// the source cap — would change what that endpoint costs.
+func TestEnsureFunctionsCollection_SampleFields(t *testing.T) {
+	assertFields := func(t *testing.T, app core.App) {
+		t.Helper()
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, name := range []string{"sampleBody", "sampleHeaders"} {
+			field := col.Fields.GetByName(name)
+			if field == nil {
+				t.Fatalf("the collection carries no %s field", name)
+			}
+			tf, ok := field.(*core.TextField)
+			if !ok {
+				t.Fatalf("%s is a %T, want a *core.TextField", name, field)
+			}
+			// The column stores the sealed sample, so what it declares is the
+			// cap plus what the encryption adds around it.
+			if want := cipherMax(maxSampleSize); tf.Max != want {
+				t.Errorf("%s Max = %d, want the declared cap %d", name, tf.Max, want)
+			}
+			if tf.Max >= cipherMax(maxSourceSize) {
+				t.Errorf("%s Max = %d, want a cap of its own, below the source cap", name, tf.Max)
+			}
+		}
+	}
+
+	t.Run("at creation", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		assertFields(t, app)
+	})
+
+	t.Run("on an existing collection", func(t *testing.T) {
+		app, err := tests.NewTestApp()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer app.Cleanup()
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		col, err := app.FindCollectionByNameOrId(faasboxFunctionsCollection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		col.Fields.RemoveByName("sampleBody")
+		col.Fields.RemoveByName("sampleHeaders")
+		if err := app.Save(col); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := ensureFunctionsCollection(app); err != nil {
+			t.Fatal(err)
+		}
+		assertFields(t, app)
+	})
+}

@@ -14,6 +14,13 @@ const BASE_URL = '/api/collections/faasbox_functions/records';
 /** Server-side subscription name carrying dependency installation states. */
 const DEPS_TOPIC = 'faasbox_deps';
 
+/**
+ * The sample call, as the two write paths take it. Optional on both: a function
+ * created without one starts on the default sample, which is what an empty
+ * value means.
+ */
+type FunctionSample = Partial<Pick<FaasboxFunction, 'sampleBody' | 'sampleHeaders'>>;
+
 @Injectable({ providedIn: 'root' })
 export class FunctionsService {
   private readonly http = inject(HttpClient);
@@ -26,6 +33,11 @@ export class FunctionsService {
    * connection — a payload nobody looks at. Spelling out what we want also drops
    * `env` and `plainEnv`: the Environment tab reads the secrets through its own
    * route.
+   *
+   * `sampleBody` and `sampleHeaders` are asked for because the Runner has to
+   * show them the moment a function is opened, and they are capped small
+   * server-side for this very reason: what rides in this response rides in it
+   * again on every resumed connection.
    *
    * The cost of enumerating is that a field added later stays absent here until
    * someone adds it. PocketBase offers no exclusion, and the alternative is
@@ -43,16 +55,22 @@ export class FunctionsService {
     return this.http.get<FaasboxFunctionListResponse>(BASE_URL, {
       params: {
         perPage: '200',
-        fields: 'id,name,script,packageJson,depsStatus,depsError,created,updated',
+        fields: 'id,name,script,packageJson,sampleBody,sampleHeaders,depsStatus,depsError,created,updated',
       },
     });
   }
 
-  create(data: Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> & { plainEnv?: Record<string, string> }) {
+  create(data: Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> & FunctionSample & { plainEnv?: Record<string, string> }) {
     return this.http.post<FaasboxFunction>(BASE_URL, data);
   }
 
-  update(id: string, data: Partial<Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> & { plainEnv?: Record<string, string> }>) {
+  update(
+    id: string,
+    data: Partial<
+      Pick<FaasboxFunction, 'name' | 'script' | 'packageJson'> &
+        FunctionSample & { plainEnv?: Record<string, string> }
+    >,
+  ) {
     return this.http.patch<FaasboxFunction>(`${BASE_URL}/${id}`, data);
   }
 

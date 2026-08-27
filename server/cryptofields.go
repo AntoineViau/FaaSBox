@@ -49,7 +49,7 @@ import (
 // are the two columns SQL still has to find. What buys that back is the blind
 // index declared underneath — never a weaker cipher.
 var encryptedTextFields = map[string][]string{
-	faasboxFunctionsCollection:    {"name", "script", "packageJson", "bunLock", "depsError"},
+	faasboxFunctionsCollection:    {"name", "script", "packageJson", "sampleBody", "sampleHeaders", "bunLock", "depsError"},
 	faasboxTriggersCollection:     {"name", "schedule"},
 	faasboxLogsCollection:         {"functionName", "stdout", "stderr"},
 	faasboxAPIKeysCollection:      {"name", "keyPrefix"},

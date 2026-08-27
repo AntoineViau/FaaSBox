@@ -9,6 +9,14 @@ export interface FaasboxFunction {
   name: string;
   script: string;
   packageJson: string;
+  /**
+   * The call the editor's Runner replays for this function: the body as typed,
+   * and the headers as JSON text. They belong to the record so that switching
+   * function loads them like everything else — and an empty value is not a
+   * value, it reads back as the starting sample.
+   */
+  sampleBody: string;
+  sampleHeaders: string;
   env: string;
   plainEnv: Record<string, string> | null;
   depsStatus: DepsStatus;

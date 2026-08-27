@@ -1,8 +1,10 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  effect,
   inject,
   input,
+  model,
   output,
   signal,
 } from '@angular/core';
@@ -12,7 +14,7 @@ import type { InvocationResult } from '@/models/invocation-result.model';
 import { FunctionsService } from '@/editor/functions.service';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { HeaderEditorComponent } from '@/editor/header-editor.component';
-import { defaultHeaders, headerRecord, type HeaderRow } from '@/editor/request-headers';
+import { headerRecord, type HeaderRow } from '@/editor/request-headers';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -151,6 +153,12 @@ import { ZardIconComponent } from '@shared/components/icon';
 export class RunnerComponent {
   private readonly functionsService = inject(FunctionsService);
 
+  /**
+   * The identity of the open function, and what the stale result is cleared on.
+   * The name is kept beside it for the one thing it is: the URL /invoke uses,
+   * which is the address the user recognises.
+   */
+  readonly functionId = input.required<string>();
   readonly functionName = input.required<string>();
   /** Saving and running are one action, driven by the editor: it owns the flag. */
   readonly busy = input(false);
@@ -188,12 +196,34 @@ export class RunnerComponent {
    * things to type here, and a typo shows up in the function's own answer
    * rather than in a dialog beforehand.
    *
-   * It starts on the field the template of a new function reads, so a first
-   * click on Run answers something rather than `undefined`.
+   * **It is not initialised here, and that is the whole point.** The body and
+   * the headers belong to the function, not to this panel: the editor loads
+   * them from the record when the selection changes, exactly as it loads the
+   * script, and hands them down through a two-way binding. Held in a local
+   * signal, they were filled once at construction and then carried a webhook's
+   * signature from one function to the next.
    */
-  protected readonly body = signal('{\n  "name": "world"\n}');
-  protected readonly headers = signal<HeaderRow[]>(defaultHeaders());
+  readonly body = model.required<string>();
+  readonly headers = model.required<HeaderRow[]>();
+
+  /**
+   * What the last execution answered. **It stays here**, and it is the one
+   * thing about this panel that is not stored: a result belongs to the run that
+   * produced it, never to the function. A stale body is recognised — one
+   * recognises what one just typed — where a stale result is believed.
+   */
   protected readonly lastResult = signal<InvocationResult | null>(null);
+
+  constructor() {
+    // Which is why it clears on a change of function. The panel is not
+    // destroyed when the selection moves — the editor merely hands it another
+    // function — so nothing else would ever empty it, and the output of the
+    // previous function would sit under the next one with nothing saying so.
+    effect(() => {
+      this.functionId();
+      this.lastResult.set(null);
+    });
+  }
 
   /** Called by the editor once the save went through. */
   async execute(): Promise<void> {
