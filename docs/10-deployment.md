@@ -95,7 +95,7 @@ Only one is genuinely required, and only for a feature you may not use:
 |---|---|---|
 | `FAASBOX_ENCRYPTION_KEY` | **Required, always.** 64 hex characters — `openssl rand -hex 32`. | **The server does not start.** Absent, malformed or the wrong length are all fatal, on purpose: the database is encrypted at rest, so an instance without the key can neither write nor read its own content. |
 | `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. | The step is skipped; create the account at `/_/` on first boot instead. |
-| `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
+| `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin, scheme included. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
 | `FAASBOX_DEMOMODE` (+ `_EMAIL`, `_PASSWORD`) | Optional, see below. Turns the instance into a read-only showcase. | A normal instance: everything runs and everything can be written. |
 | `LITESTREAM_*` | Optional, see below. | No replication; the database stays local. |
 | `FAASBOX_MAX_*` | Optional sizing, see below. | Defaults apply. |
@@ -119,9 +119,13 @@ proxy header or from a database setting would put whatever the proxy said — or
 
 It has to be a **bare origin**: scheme and host, an optional port, nothing else.
 A trailing slash is dropped; a path, a query, a fragment or credentials are
-refused. `http://` is accepted on `localhost`, `127.0.0.1` or `::1` only —
-anywhere else it is what a reverse proxy wired wrong looks like, and OAuth 2.1
-forbids it.
+refused.
+
+**The scheme is part of the value, not an optional prefix.** `http://` or
+`https://` has to be written out: a host on its own, `faasbox.example.com`, is
+not an absolute URL and is refused like any other malformed value. `http://` is
+accepted on `localhost`, `127.0.0.1` or `::1` only — anywhere else it is what a
+reverse proxy wired wrong looks like, and OAuth 2.1 forbids it.
 
 ```bash
 # Behind a reverse proxy on a domain
@@ -135,6 +139,9 @@ FAASBOX_PUBLIC_URL=https://app-xxxxxxxx.cleverapps.io
 
 # Local development — infra/dev/dev.sh sets this one for you
 FAASBOX_PUBLIC_URL=http://127.0.0.1:8080
+
+# Refused: no scheme, so it is not an absolute URL
+FAASBOX_PUBLIC_URL=faasbox.example.com
 ```
 
 Anything wrong with the value takes the OAuth endpoints down and leaves the rest

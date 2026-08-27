@@ -177,5 +177,5 @@ The MCP server is exactly as wide as a `canManage` key with an open scope, no wi
 | `403 API key has expired` | Exactly that. Create another. |
 | `403 API key scope cannot be read` | The `allowedFunctions` field of the key was hand-edited into something that is not a list of ids. Fix it in the PocketBase admin, or create another key. |
 | The agent connects but creating fails | The key has a restricted scope. A scoped key changes what it names and creates nothing. |
-| The agent never opens a browser | The instance has no `FAASBOX_PUBLIC_URL`, so it publishes no authorization server and its `401` carries no signpost. Use a key, or set the variable. |
+| The agent never opens a browser | The instance has no usable `FAASBOX_PUBLIC_URL` — unset, or set to something refused, a value with no `http://` or `https://` in front being the usual one — so it publishes no authorization server and its `401` carries no signpost. Use a key, or fix the variable; the startup log names the reason. |
 | The agent worked yesterday and now gets `401` | Its authorization was revoked — from the **AI MCP** page, or by the server itself after a token was replayed. Authenticate again.  |

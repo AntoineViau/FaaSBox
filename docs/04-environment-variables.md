@@ -91,7 +91,7 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `SUPERUSER_EMAIL` | Admin superuser email | *(required)* |
 | `SUPERUSER_PASSWORD` | Admin superuser password | *(required)* |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
-| `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin | *(OAuth disabled)* |
+| `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin, `http://` or `https://` included | *(OAuth disabled)* |
 | `FAASBOX_DEMOMODE` | Turns the instance into a read-only showcase | `false` |
 | `FAASBOX_DEMOMODE_EMAIL` | Email the sign-in form of a demo instance shows prefilled | *(empty)* |
 | `FAASBOX_DEMOMODE_PASSWORD` | Password the sign-in form of a demo instance shows prefilled | *(empty)* |
@@ -111,7 +111,7 @@ Every numeric setting behaves the same way: an absent variable uses the default 
 
 Its two companions command nothing and are read as they stand: they fill the two fields of the sign-in form on a demo instance, and they create no account — the one they name must already exist as a superuser. See [10 - Deployment](10-deployment.md#serving-a-demo-instance) for what the mode stops and what it publishes.
 
-`FAASBOX_PUBLIC_URL` is the exception to the "has a default" rule, because no guessed address would be right: it is what the OAuth authorization server publishes as its own identity. Absent or malformed, the OAuth endpoints are not mounted and a startup line says why; an agent then connects with an API key, as it does today. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints and [10 - Deployment](10-deployment.md#telling-the-instance-its-own-address) for what to put in it.
+`FAASBOX_PUBLIC_URL` is the exception to the "has a default" rule, because no guessed address would be right: it is what the OAuth authorization server publishes as its own identity. It must carry its scheme — `https://faasbox.example.com`, never `faasbox.example.com` — because an issuer without one is not an absolute URL. Absent or malformed, the OAuth endpoints are not mounted and a startup line says why; an agent then connects with an API key, as it does today. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints and [10 - Deployment](10-deployment.md#telling-the-instance-its-own-address) for what to put in it.
 
 ### Notes on the size limits
 
