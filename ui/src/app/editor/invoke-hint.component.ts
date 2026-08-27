@@ -7,6 +7,10 @@ import { ZardIconComponent } from '@shared/components/icon';
 /**
  * How to call the open function from outside the editor.
  *
+ * The dialog carries the command **and** what the function makes of it: a curl
+ * line alone shows what is sent and leaves the reader to guess what arrives,
+ * which is exactly the step the envelope changed.
+ *
  * The route was only written in docs/, so learning to invoke what one had just
  * written meant leaving the product. The banner names the route in place, and
  * the dialog carries the whole call, ready to paste.
@@ -49,6 +53,13 @@ import { ZardIconComponent } from '@shared/components/icon';
             class="mt-3 overflow-x-auto rounded-md border border-border bg-muted/50 p-3 font-mono text-xs"
             >{{ curlExample() }}</pre
           >
+          <p class="mt-3 text-xs text-muted-foreground">
+            The function receives this call as an envelope on stdin:
+            <code class="font-mono">req.body</code> carries the payload as a string, and
+            <code class="font-mono">req.headers</code> the headers, lowercased —
+            <code class="font-mono">X-API-Key</code> excepted, since what authenticates the caller
+            is never forwarded.
+          </p>
           <p class="mt-3 text-xs text-muted-foreground">
             <code class="font-mono">fbx_your_key_here</code> is a placeholder: the value of a key is
             only ever shown once, when it is created. Create one on the

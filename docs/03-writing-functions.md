@@ -51,7 +51,9 @@ console.log(JSON.stringify(result));
 
 Two parses, not one, and that is deliberate — see [The Input Envelope](#the-input-envelope) below.
 
-You do not have to type that skeleton from memory: in the **Script** tab, type `faasbox` and the completion popup offers it as `faasbox-handler`. The individual steps are there too — `faasbox-input` to read the payload, `faasbox-output` to return a JSON result, `faasbox-log` to write to stderr, and `faasbox-env` to read a secret.
+**A new function does not start empty.** Creating one from the Editor fills the **Script** tab with a working example that reads all four sources — the body, a header, a secret and the trigger — one variable each, gathered into the answer on the last line. It runs on the first click, because the Editor is set up around it: the Runner starts on a body and an `X-Header-Name` header the example reads, and the function is created holding the `SECRET` variable it reads, on a stand-in value. Delete the lines you do not need; the variable deletes from the **Environment** tab like any other.
+
+You do not have to type that skeleton from memory either: in the **Script** tab, type `faasbox` and the completion popup offers it as `faasbox-handler`. The individual steps are there too — `faasbox-input` to read the envelope and its body, `faasbox-output` to return a JSON result, `faasbox-log` to write to stderr, and `faasbox-env` to read a secret.
 
 > **Clearing the script un-serves the function.** `index.ts` is written from what you save, so saving an empty **Script** tab removes the file. The function stops being listed and `POST /invoke` answers `404` until you save a script over it again. Nothing else is lost: the record, its secrets, its triggers, its folder and its installed dependencies all stay where they are.
 
@@ -262,14 +264,22 @@ The FaaSBox Editor includes a built-in **Runner** panel that lets you test your 
 
 1. Open your function in the Editor.
 2. Open the **Runner** panel from the header.
-3. Enter a JSON payload in the left pane (defaults to `{}`).
+3. Set the **headers** on the left, and type the **body** on the right (it defaults to `{}`).
 4. Click **Run**, or **Save and run** if you changed something.
 
-The result appears in the right pane with:
+The result appears in the row underneath, with:
 
 - **Status** (success or error) and execution time.
 - **Result**: the parsed stdout output.
 - **stdout / stderr**: raw output streams, displayed separately.
+
+### The Body and the Headers
+
+The body is **free text**, sent exactly as typed. Nothing parses it on the way out, so a JSON object, a form, a plain sentence or a signed XML document are all things you can put there — and your function receives them in `req.body` byte for byte. A typo in JSON is no longer refused before the call: it surfaces where it belongs, in what your function answers.
+
+The headers are yours to set, one name and one value per row, which is what makes a **signed webhook testable from the Editor**: paste the signature header your provider sends and verify it for real. Two rows are filled in for you and delete like any other: `Content-Type: application/json` — without it, a body sent as text announces `text/plain` — and the `X-Header-Name` header the example script of a new function reads.
+
+The Runner calls `POST /invoke/{name}`, the same route as any outside caller, so what your function receives is the ordinary envelope built by the server. Two consequences worth knowing. Your browser adds headers of its own — `user-agent`, `accept` and a few more — exactly as any HTTP client would. And the [four headers that never reach a function](#the-rules-for-headers-and-query) do not reach it from here either: type `Authorization` or `X-API-Key` and the Runner tells you, on the spot, that it will not arrive.
 
 ### Run and Save and run
 

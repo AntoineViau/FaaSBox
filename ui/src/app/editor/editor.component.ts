@@ -299,9 +299,11 @@ import { ZardInputDirective } from '@shared/components/input';
               </div>
             </div>
 
-            <!-- Runner panel -->
+            <!-- Runner panel. Taller than the logs below it: it stacks the
+                 request over the result, and 16rem would leave each of the two
+                 rows a couple of lines. -->
             @if (showRunner()) {
-              <div class="h-64 shrink-0 border-t border-border">
+              <div class="h-96 shrink-0 border-t border-border">
                 <app-runner
                   [functionName]="fn.name"
                   [busy]="running()"

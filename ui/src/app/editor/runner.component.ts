@@ -11,6 +11,8 @@ import { firstValueFrom } from 'rxjs';
 import type { InvocationResult } from '@/models/invocation-result.model';
 import { FunctionsService } from '@/editor/functions.service';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
+import { HeaderEditorComponent } from '@/editor/header-editor.component';
+import { defaultHeaders, headerRecord, type HeaderRow } from '@/editor/request-headers';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -18,7 +20,7 @@ import { ZardIconComponent } from '@shared/components/icon';
 @Component({
   selector: 'app-runner',
   standalone: true,
-  imports: [ZardButtonComponent, ZardIconComponent, CodeEditorComponent],
+  imports: [ZardButtonComponent, ZardIconComponent, CodeEditorComponent, HeaderEditorComponent],
   template: `
     <div class="flex h-full flex-col">
       <!-- Toolbar -->
@@ -61,23 +63,33 @@ import { ZardIconComponent } from '@shared/components/icon';
         }
       </div>
 
-      <!-- Content: payload + result side by side -->
-      <div class="flex flex-1 overflow-hidden">
-        <!-- Payload -->
-        <div class="flex w-1/3 flex-col border-r border-border">
-          <div class="px-3 py-1 text-xs text-muted-foreground">Payload (JSON)</div>
-          <div class="flex-1 overflow-auto">
-            <app-code-editor
-              [content]="payload()"
-              language="json"
-              [readOnly]="demoMode()"
-              (contentChange)="payload.set($event)"
-            />
+      <!-- Two rows: the request on top, split in half, and what came back
+           under it. The request is two panes because headers and body are
+           edited together — one is useless without the other — and the result
+           is full width because that is where the long output lands. -->
+      <div class="flex min-h-0 flex-1 flex-col">
+        <!-- Request: headers on the left, body on the right -->
+        <div class="flex min-h-0 flex-1 border-b border-border">
+          <div class="w-1/2 overflow-auto border-r border-border">
+            <app-header-editor [(headers)]="headers" [readOnly]="demoMode()" />
+          </div>
+          <!-- min-h-0 on the wrapper, or the code editor sizes itself on its
+               content and pushes the pane into a scroll of its own. -->
+          <div class="flex w-1/2 flex-col overflow-hidden">
+            <div class="px-3 py-1 text-xs text-muted-foreground">Body</div>
+            <div class="min-h-0 flex-1 overflow-auto">
+              <app-code-editor
+                [content]="body()"
+                language="text"
+                [readOnly]="demoMode()"
+                (contentChange)="body.set($event)"
+              />
+            </div>
           </div>
         </div>
 
         <!-- Result -->
-        <div class="flex flex-1 flex-col overflow-auto">
+        <div class="min-h-0 flex-1 overflow-auto">
           @if (lastResult(); as r) {
             <div class="flex flex-col gap-2 p-3 text-sm">
               <!-- Status line -->
@@ -126,7 +138,7 @@ import { ZardIconComponent } from '@shared/components/icon';
               }
             </div>
           } @else {
-            <div class="flex flex-1 items-center justify-center text-xs text-muted-foreground">
+            <div class="flex h-full items-center justify-center text-xs text-muted-foreground">
               Click "Run" to execute the function.
             </div>
           }
@@ -168,7 +180,19 @@ export class RunnerComponent {
 
   protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 
-  protected readonly payload = signal('{}');
+  /**
+   * The body, as text and nothing else. It used to be parsed before leaving and
+   * a payload that was not JSON was refused on the spot — a fair guard back
+   * when JSON was all a function could receive. The envelope carries the body
+   * as a string now, so plain text, a form or a signed document are legitimate
+   * things to type here, and a typo shows up in the function's own answer
+   * rather than in a dialog beforehand.
+   *
+   * It starts on the field the template of a new function reads, so a first
+   * click on Run answers something rather than `undefined`.
+   */
+  protected readonly body = signal('{\n  "name": "world"\n}');
+  protected readonly headers = signal<HeaderRow[]>(defaultHeaders());
   protected readonly lastResult = signal<InvocationResult | null>(null);
 
   /** Called by the editor once the save went through. */
@@ -177,18 +201,12 @@ export class RunnerComponent {
     const name = this.functionName();
     if (!name) return;
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(this.payload());
-    } catch {
-      alert('Invalid JSON payload.');
-      return;
-    }
-
     this.lastResult.set(null);
 
     try {
-      const result = await firstValueFrom(this.functionsService.invoke(name, parsed));
+      const result = await firstValueFrom(
+        this.functionsService.invoke(name, this.body(), headerRecord(this.headers())),
+      );
       this.lastResult.set(result);
     } catch (e: any) {
       if (e.error && typeof e.error === 'object') {

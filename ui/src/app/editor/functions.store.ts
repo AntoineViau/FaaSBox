@@ -112,9 +112,32 @@ export const FunctionsStore = signalStore(
       },
 
       async createFunction(name: string): Promise<FaasboxFunction> {
-        const defaultScript = `const payload = await Bun.stdin.json();\n\nconst result = { message: "Hello from ${name}!" };\n\nconsole.log(JSON.stringify(result));\n`;
+        // The template is the first thing anyone reads about the contract, so it
+        // shows the whole of it at once: the body, a header, a secret and the
+        // trigger, one variable each, gathered into the answer on the last line.
+        // It runs as it stands — the Runner starts on a body and a header that
+        // feed it, and the function is created with the variable it reads.
+        const defaultScript = `// The whole call arrives on stdin, in a single envelope.
+const req = JSON.parse(await Bun.stdin.text());
+const body = JSON.parse(req.body || "{}");
+
+const visitor = body.name;
+const header = req.headers?.["x-header-name"]; // header names are lowercased
+const secret = process.env.SECRET; // see Environment tab
+const trigger = req.trigger; // "http", "cron", "startup" or "mcp"
+
+console.log(JSON.stringify({ message: "Hello from ${name}!", visitor, header, secret, trigger }));
+`;
         const created = await firstValueFrom(
-          functionsService.create({ name, script: defaultScript, packageJson: '' }),
+          // The demo variable ships with the function so the template runs on the
+          // first click rather than reading undefined. Its value is a stand-in,
+          // and it deletes like any other, from the Environment tab.
+          functionsService.create({
+            name,
+            script: defaultScript,
+            packageJson: '',
+            plainEnv: { SECRET: 'a-secret-value' },
+          }),
         );
         // The selection is not touched here: it belongs to the URL, and the
         // editor navigates to the new function so the address bar follows.

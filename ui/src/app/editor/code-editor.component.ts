@@ -41,7 +41,7 @@ import { ThemeService } from '@/theme/theme.service';
 })
 export class CodeEditorComponent implements OnDestroy {
   readonly content = input('');
-  readonly language = input<'typescript' | 'json'>('typescript');
+  readonly language = input<'typescript' | 'json' | 'text'>('typescript');
   /**
    * Shows the document without offering to change it. It is what a read-only
    * instance binds; the component itself knows nothing of the mode.
@@ -109,12 +109,22 @@ export class CodeEditorComponent implements OnDestroy {
    *
    * The JSON linter lives here rather than in the static extensions because it
    * has to come and go with the language. The completion source likewise: the
-   * package.json tab must never see the `faasbox-*` entries.
+   * package.json tab must never see the `faasbox-*` entries — and neither must
+   * a request body, which is not a program.
    */
-  private languageExtension(lang: 'typescript' | 'json'): Extension {
-    return lang === 'json'
-      ? [json(), linter(jsonParseLinter())]
-      : [javascript({ typescript: true }), faasboxCompletions];
+  private languageExtension(lang: 'typescript' | 'json' | 'text'): Extension {
+    switch (lang) {
+      case 'json':
+        return [json(), linter(jsonParseLinter())];
+      // Nothing at all, and the linter least of all: `text` is what the
+      // Runner's body binds, and that body is whatever a caller sends — JSON,
+      // a form, a signed XML document. Underlining a non-JSON body in red
+      // would refuse on screen what the envelope exists to carry.
+      case 'text':
+        return [];
+      default:
+        return [javascript({ typescript: true }), faasboxCompletions];
+    }
   }
 
   private initEditor(): void {

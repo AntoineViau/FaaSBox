@@ -60,8 +60,18 @@ export class FunctionsService {
     return this.http.delete<void>(`${BASE_URL}/${id}`);
   }
 
-  invoke(name: string, payload: unknown) {
-    return this.http.post<InvocationResult>(`/invoke/${name}`, payload);
+  /**
+   * Invokes through the very route an outside caller uses, carrying the body
+   * and the headers it was given.
+   *
+   * The body is a **string** and travels as one: handing an object over would
+   * have HttpClient serialise it, and what the function received would be a
+   * document nobody wrote — which no signature computed over the original
+   * bytes would survive. The server builds the envelope around it, exactly as
+   * it does for a webhook arriving from outside.
+   */
+  invoke(name: string, body: string, headers: Record<string, string>) {
+    return this.http.post<InvocationResult>(`/invoke/${name}`, body, { headers });
   }
 
   /**

@@ -34,9 +34,10 @@ const dontComplete = [
 /**
  * The FaaSBox function contract, as completion entries.
  *
- * They restate what `docs/03-writing-functions.md` documents — read the JSON
- * payload from stdin, write a JSON result to stdout, log to stderr, read a
- * secret. They are not a second dialect: if one of the two moves, both move.
+ * They restate what `docs/03-writing-functions.md` documents — read the envelope
+ * from stdin, take the body out of it, write a JSON result to stdout, log to
+ * stderr, read a secret. They are not a second dialect: if one of the two moves,
+ * both move.
  *
  * The `faasbox-` prefix is the mechanism, not a decoration. Nothing surfaces
  * until it has been typed, so these entries never mix with the identifiers of
@@ -45,14 +46,13 @@ const dontComplete = [
  */
 const snippets = [
   snippetCompletion(
-    'const payload = await Bun.stdin.text();\nconst body = JSON.parse(payload || "{}");\n\n${}\n\nconsole.log(JSON.stringify({ ok: true }));',
+    'const req = JSON.parse(await Bun.stdin.text());\nconst body = JSON.parse(req.body || "{}");\n\n${}\n\nconsole.log(JSON.stringify({ ok: true }));',
     { label: 'faasbox-handler', detail: 'function skeleton', type: 'text' },
   ),
-  snippetCompletion('const body = JSON.parse((await Bun.stdin.text()) || "{}");', {
-    label: 'faasbox-input',
-    detail: 'read the JSON payload',
-    type: 'text',
-  }),
+  snippetCompletion(
+    'const req = JSON.parse(await Bun.stdin.text());\nconst body = JSON.parse(req.body || "{}");',
+    { label: 'faasbox-input', detail: 'read the envelope and its body', type: 'text' },
+  ),
   snippetCompletion('console.log(JSON.stringify(${result}));', {
     label: 'faasbox-output',
     detail: 'return a JSON result',
