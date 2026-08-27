@@ -193,9 +193,11 @@ func newNameHashField() *core.TextField {
 //
 // They belong to the record for the reason the script does: switching function
 // in the editor is a load, and what is not on the record has nothing to load.
-// An empty value is not a value — it reads back as the starting sample, which
-// is what covers a function that was never customised without a migration
-// branch anywhere.
+// The editor writes the starting sample when it creates a function, exactly as
+// it writes the example script, so an empty column is an empty sample and
+// nothing else — which is what lets a body be deliberately emptied and stay
+// that way. A function created through the management API carries none, for the
+// reason it carries no example script: its author brought their own.
 //
 // **The headers are JSON serialised into a text column, never a JSONField.**
 // The encryption at rest covers text columns; a JSON column would keep its

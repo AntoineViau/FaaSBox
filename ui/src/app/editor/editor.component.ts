@@ -37,12 +37,7 @@ import { FunctionsStore } from '@/editor/functions.store';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
 import { TriggersEditorComponent } from '@/editor/triggers-editor.component';
 import { DepsStatusComponent } from '@/editor/deps-status.component';
-import {
-  type HeaderRow,
-  readSampleBody,
-  readSampleHeaders,
-  serializeHeaders,
-} from '@/editor/request-headers';
+import { type HeaderRow, readSampleHeaders, serializeHeaders } from '@/editor/request-headers';
 import {
   DEFAULT_EDITOR_TAB,
   EDITOR_TABS,
@@ -457,17 +452,16 @@ export class EditorComponent implements OnInit {
   /**
    * The sample call left what the record holds.
    *
-   * Both sides of the body go through the same reading, and that is not
-   * cosmetic: an empty column shows the starting body, so a buffer emptied and
-   * saved would otherwise differ from itself forever and leave a Save on screen
-   * nothing could clear. The headers need no such care — the buffer is always
-   * rows, and an empty list is a sample that sends no header.
+   * A plain comparison, both sides read the same way, because the column says
+   * exactly what the panel shows — no starting value is substituted for an
+   * empty one. That is what makes an emptied body saveable: it differs from
+   * what is stored, so Save appears, and once written it matches again.
    */
   protected readonly sampleDirty = computed(() => {
     const fn = this.store.selectedFunction();
     if (!fn) return false;
     return (
-      readSampleBody(this.localSampleBody()) !== readSampleBody(fn.sampleBody) ||
+      this.localSampleBody() !== fn.sampleBody ||
       serializeHeaders(this.localSampleHeaders()) !==
         serializeHeaders(readSampleHeaders(fn.sampleHeaders))
     );
@@ -505,10 +499,10 @@ export class EditorComponent implements OnInit {
       this.localName.set(fn?.name ?? '');
       this.localScript.set(fn?.script ?? '');
       this.localPackageJson.set(fn?.packageJson ?? '');
-      // An empty column is not an empty sample: it means this function was
-      // never customised, and it reads back as the starting one. That is what
-      // covers a brand new function and one an agent wrote, with no branch.
-      this.localSampleBody.set(readSampleBody(fn?.sampleBody ?? ''));
+      // Straight off the record, like everything above it: the starting sample
+      // was written there when the function was created, so there is nothing to
+      // substitute and an empty sample is an empty sample.
+      this.localSampleBody.set(fn?.sampleBody ?? '');
       this.localSampleHeaders.set(readSampleHeaders(fn?.sampleHeaders ?? ''));
     });
 

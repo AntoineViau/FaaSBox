@@ -11,6 +11,8 @@
  * named for the latter, and deliberately: those two and the template a new
  * function is created with form one thing, and moving a name on one side
  * without the other breaks the example without breaking anything visible.
+ * Both are **written to the record when the function is created**, exactly as
+ * the example script is, and nothing falls back on them afterwards.
  *
  * The storage format lives here too. The sample is a field of the function, so
  * the rows have to become text and come back — and both halves of that
@@ -21,7 +23,7 @@
 export type HeaderRow = { name: string; value: string };
 
 /**
- * The headers a function whose sample was never customised starts on.
+ * The headers a function is created with.
  *
  * A body sent as a string makes `HttpClient` announce `text/plain;charset=UTF-8`,
  * and that — not the JSON everyone assumes — is what the function would read in
@@ -46,7 +48,7 @@ export function defaultHeaders(): HeaderRow[] {
 }
 
 /**
- * The body a function whose sample was never customised starts on.
+ * The body a function is created with.
  *
  * It is the field the template of a new function reads, so a first click on Run
  * answers something rather than `undefined`. It moves with that template and
@@ -57,37 +59,31 @@ export function defaultBody(): string {
 }
 
 /**
- * The body a stored sample shows. An empty column is not an empty body: it
- * means nobody ever customised this function's sample, which is what covers
- * every function written before the field existed and every one an agent
- * writes through the management API.
- */
-export function readSampleBody(stored: string): string {
-  return stored || defaultBody();
-}
-
-/**
  * The rows a stored sample shows, and the counterpart of `serializeHeaders`.
  *
- * Anything that will not read back as rows falls to `defaultHeaders()`: the
- * column is editable from the PocketBase admin, so what comes out of it is
- * whatever someone typed, and a panel that threw on it would be a panel one
- * bad character can take off the screen. An entry that is not a well-formed row
- * is dropped rather than repaired — the shape is trivial, and guessing at half
- * of one would put a header on the wire nobody wrote.
+ * **An empty column is an empty sample, and nothing else.** The starting values
+ * are written to the record when the function is created, so there is no state
+ * left for a fallback to guess at — which is what lets a body or a header list
+ * be deliberately emptied and stay that way. A function created through the
+ * management API carries no sample for the same reason it carries no example
+ * script: its author brought their own.
  *
- * An empty array is left alone, and is not the same thing as an empty column: a
- * function whose sample sends no header at all is a legitimate thing to save.
+ * Anything that will not read back as rows yields no row at all: the column is
+ * editable from the PocketBase admin, so what comes out of it is whatever
+ * someone typed, and a panel that threw on it would be a panel one bad
+ * character can take off the screen. An entry that is not a well-formed row is
+ * dropped rather than repaired — the shape is trivial, and guessing at half of
+ * one would put a header on the wire nobody wrote.
  */
 export function readSampleHeaders(stored: string): HeaderRow[] {
-  if (!stored) return defaultHeaders();
+  if (!stored) return [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(stored);
   } catch {
-    return defaultHeaders();
+    return [];
   }
-  if (!Array.isArray(parsed)) return defaultHeaders();
+  if (!Array.isArray(parsed)) return [];
   return parsed
     .filter(
       (row): row is HeaderRow =>

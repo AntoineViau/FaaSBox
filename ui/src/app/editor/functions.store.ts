@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import type { DepsStateMessage, FaasboxFunction } from '@/models/faasbox-function.model';
 import { FunctionsService } from '@/editor/functions.service';
+import { defaultBody, defaultHeaders, serializeHeaders } from '@/editor/request-headers';
 
 type FunctionsState = {
   functions: FaasboxFunction[];
@@ -136,6 +137,13 @@ console.log(JSON.stringify({ message: "Hello from ${name}!", visitor, header, se
             name,
             script: defaultScript,
             packageJson: '',
+            // The sample call is written here, like the script, and for the
+            // same reason: what the panel shows has to be what the record
+            // holds. Left to a fallback on an empty column, an emptied body
+            // would be indistinguishable from one nobody ever typed, and could
+            // never be saved empty.
+            sampleBody: defaultBody(),
+            sampleHeaders: serializeHeaders(defaultHeaders()),
             plainEnv: { SECRET: 'a-secret-value' },
           }),
         );

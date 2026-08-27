@@ -12,8 +12,8 @@ export interface FaasboxFunction {
   /**
    * The call the editor's Runner replays for this function: the body as typed,
    * and the headers as JSON text. They belong to the record so that switching
-   * function loads them like everything else — and an empty value is not a
-   * value, it reads back as the starting sample.
+   * function loads them like everything else — the editor writes the starting
+   * sample at creation, so an empty value here means an empty sample.
    */
   sampleBody: string;
   sampleHeaders: string;

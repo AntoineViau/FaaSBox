@@ -15,9 +15,9 @@ const BASE_URL = '/api/collections/faasbox_functions/records';
 const DEPS_TOPIC = 'faasbox_deps';
 
 /**
- * The sample call, as the two write paths take it. Optional on both: a function
- * created without one starts on the default sample, which is what an empty
- * value means.
+ * The sample call, as the two write paths take it. Optional on both: nothing
+ * substitutes a starting value for an absent one, so a function created without
+ * a sample simply has none.
  */
 type FunctionSample = Partial<Pick<FaasboxFunction, 'sampleBody' | 'sampleHeaders'>>;
 
