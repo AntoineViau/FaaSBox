@@ -92,13 +92,26 @@ export class CodeEditorComponent implements OnDestroy {
       }
     });
 
+    // A document arriving whole is another document, not an edit: the editor
+    // refills its buffers only when the selected function changes, so what
+    // lands here is a different function's file. It opens at the top, cursor on
+    // its first character. Keeping the previous scroll offset showed the middle
+    // of a file nobody had looked at yet, and kept the caret at a position that
+    // meant something in the file before.
+    //
+    // Both scrollers are reset because which one scrolls is decided by the CSS
+    // around this component: with no height on .cm-editor the host div is the
+    // scrolling box, and .cm-scroller becomes it the day one is set.
     effect(() => {
       const value = this.content();
       if (this.view && this.view.state.doc.toString() !== value) {
         this.suppressNextUpdate = true;
         this.view.dispatch({
           changes: { from: 0, to: this.view.state.doc.length, insert: value },
+          selection: { anchor: 0 },
         });
+        this.view.scrollDOM.scrollTop = 0;
+        this.editorHost().nativeElement.scrollTop = 0;
       }
     });
   }

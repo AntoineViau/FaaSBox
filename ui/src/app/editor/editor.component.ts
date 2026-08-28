@@ -732,11 +732,20 @@ export class EditorComponent implements OnInit {
 
   /**
    * The sidebar navigates instead of selecting; the effect on the route
-   * parameters does the rest, confirmation included. The open tab is carried
-   * over - switching function is not a reason to change what one is looking at.
+   * parameters does the rest, confirmation included.
+   *
+   * It lands on the Script tab rather than carrying the open one over. The five
+   * tabs are not five views of one thing, they are five parts of a function,
+   * and the one that says what a function *is* is its script: arriving on
+   * another function's Files listing, or on triggers belonging to something one
+   * has not read yet, is arriving nowhere.
+   *
+   * A saved link keeps naming its tab - applyRoute reads it off the URL, and
+   * this rule lives at the click site precisely so that it does not reach
+   * there.
    */
   protected onSelectFunction(id: string): void {
-    void this.router.navigate(this.tabLink(id, this.activeTab()));
+    void this.router.navigate(this.tabLink(id, DEFAULT_EDITOR_TAB));
   }
 
   protected async onCreateFunction(): Promise<void> {
@@ -746,9 +755,11 @@ export class EditorComponent implements OnInit {
 
     try {
       // The store does not select what it creates: opening it is a navigation
-      // like any other, so the URL follows and stays the only source of truth.
+      // like any other, so the URL follows and stays the only source of truth —
+      // on the script, like every other opening, which is also where the
+      // example the function is created with can be read.
       const created = await this.store.createFunction(name.trim());
-      void this.router.navigate(this.tabLink(created.id, this.activeTab()));
+      void this.router.navigate(this.tabLink(created.id, DEFAULT_EDITOR_TAB));
     } catch (e) {
       alert(`Failed to create function: ${errorText(e)}`);
     }
