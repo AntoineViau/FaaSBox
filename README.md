@@ -150,6 +150,7 @@ Found a vulnerability? **Do not open a public issue.** Report it privately — s
 - [**12 - Lost Password**](docs/12-lost-password.md)
 - [**13 - AI Agents**](docs/13-ai-agents.md)
 - [**14 - Litestream Replication**](docs/14-litestream-replication.md)
+- [**15 - Demo Mode**](docs/15-demo-mode.md)
 
 ---
 

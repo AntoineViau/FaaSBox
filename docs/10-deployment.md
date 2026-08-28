@@ -96,7 +96,7 @@ Only one is genuinely required, and only for a feature you may not use:
 | `FAASBOX_ENCRYPTION_KEY` | **Required, always.** 64 hex characters — `openssl rand -hex 32`. | **The server does not start.** Absent, malformed or the wrong length are all fatal, on purpose: the database is encrypted at rest, so an instance without the key can neither write nor read its own content. |
 | `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. | The step is skipped; create the account at `/_/` on first boot instead. |
 | `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin, scheme included. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
-| `FAASBOX_DEMOMODE` (+ `_EMAIL`, `_PASSWORD`) | Optional, see below. Turns the instance into a read-only showcase. | A normal instance: everything runs and everything can be written. |
+| `FAASBOX_DEMOMODE` (+ `_EMAIL`, `_PASSWORD`) | Optional, see [15 - Demo Mode](15-demo-mode.md). Turns the instance into a read-only showcase. | A normal instance: everything runs and everything can be written. |
 | `LITESTREAM_*` | Optional, see [14 - Litestream Replication](14-litestream-replication.md). | No replication; the database stays local. |
 | `FAASBOX_MAX_*` | Optional sizing, see below. | Defaults apply. |
 
@@ -151,66 +151,17 @@ startup log names the reason.
 #### Serving a demo instance
 
 `FAASBOX_DEMOMODE=true` turns an instance into a **showcase**: a FaaSBox anyone
-can visit, look around, and change nothing in. It is what you deploy to show
-the product, not to run anything with it.
+can visit, look around, and change nothing in. Its two companions,
+`FAASBOX_DEMOMODE_EMAIL` and `FAASBOX_DEMOMODE_PASSWORD`, fill the two fields of
+the sign-in form and command nothing.
 
-What it shows is everything — the functions and their code, their triggers,
-their execution history, their folder on disk, the API keys, the authorized
-agents. What it stops:
+> ⛔ Those two credentials are **published by a public, unauthenticated route**,
+> which is how the form fills itself in. The account they name is therefore open
+> to the world, and so is everything the instance holds.
 
-- **invocations**, by HTTP and from the editor's **Run** button alike;
-- **cron triggers**: the scheduler is never armed, and nothing is filed as
-  missed either;
-- **startup triggers**: they are not armed either, so nothing fires when the
-  instance comes up or is redeployed;
-- the **dependency install** that normally runs at startup;
-- the **hourly prune** of the execution logs — the history on display is
-  precisely what has to stay intact.
-
-And every write reaching it is refused with a `403`, whatever the route: the
-rule is the HTTP method, so anything that is not `GET`, `HEAD` or `OPTIONS`
-falls, three exceptions aside — signing in, refreshing the session, and placing
-the editor's realtime subscriptions. One `GET` is refused as well,
-`/oauth/authorize`, because it records an authorization request rather than
-reading one. The PocketBase admin at `/_/` is covered by the same rule: a
-visitor with the published credentials gets in and reads, and nothing more.
-Nothing there says "demo", though — `/_/` is not our application, so it carries
-no banner and no prefilled field.
-
-An **AI agent cannot connect** to a demo instance, neither by API key nor by
-OAuth: every MCP message is a `POST`. The **AI MCP** page still displays the
-endpoint, the configuration snippets and the agents authorized before the
-freeze — the showcase shows the feature, it does not serve it.
-
-```bash
-docker run -d -p 8080:8080 \
-  -e SUPERUSER_EMAIL=demo@example.com \
-  -e SUPERUSER_PASSWORD=a-long-random-password \
-  -e FAASBOX_ENCRYPTION_KEY=$(openssl rand -hex 32) \
-  -e FAASBOX_DEMOMODE=true \
-  -e FAASBOX_DEMOMODE_EMAIL=demo@example.com \
-  -e FAASBOX_DEMOMODE_PASSWORD=a-long-random-password \
-  ghcr.io/antoineviau/faasbox:latest
-```
-
-The two credential variables **create no account**. The one they name has to
-exist already and be a superuser — in practice the `SUPERUSER_EMAIL` of the same
-instance, copied. Leave them out and the mode still works; the sign-in form is
-simply empty and the visitor has to be told what to type.
-
-> ⛔ **Those credentials are published by a public, unauthenticated route.**
-> `GET /api/faasbox/instance` hands them to anyone who asks — that is how the
-> sign-in form fills itself in. So the account they name is open to the world,
-> and so is everything the instance holds: code, secrets, history, files. Seed a
-> demo instance with throwaway content and throwaway secrets, and never set this
-> flag on an instance that carries anything you would not publish.
->
-> A typo is caught — `FAASBOX_DEMOMODE=treu` stops the server outright, naming
-> the variable and the value. A wrong decision is not.
-
-Seed the instance before you freeze it: start it normally, write the functions,
-triggers and secrets you want on display, run them a few times so the history
-has something in it, then restart with the flag on.
+It has a page of its own: see [15 - Demo Mode](15-demo-mode.md) for what the
+mode shows and stops, how the read-only rule works, why the credentials are a
+separate pair, and how to seed an instance before freezing it.
 
 #### Sizing an instance
 
