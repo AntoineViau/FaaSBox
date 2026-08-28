@@ -179,8 +179,8 @@
         "doc": "03-writing-functions.md"
       },
       {
-        "text": "Scheduling",
-        "doc": "05-scheduling-cron.md"
+        "text": "Triggers",
+        "doc": "05-triggers.md"
       },
       {
         "text": "AI agents",

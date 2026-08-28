@@ -625,7 +625,7 @@ whatever the endpoint:
 ```
 
 That covers `POST /invoke/{idOrName}`, the whole of [Manage Functions](#3-manage-functions),
-[Create an API key](#2-create-an-api-key), `/mcp`, and PocketBase's own
+[Create an API key](#7-create-api-key), `/mcp`, and PocketBase's own
 collections API — the admin at `/_/` reads normally and writes nothing.
 
 Three exceptions let a visitor in and keep the editor alive, and they are named

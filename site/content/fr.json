@@ -179,8 +179,8 @@
         "doc": "03-writing-functions.md"
       },
       {
-        "text": "Planification",
-        "doc": "05-scheduling-cron.md"
+        "text": "Déclencheurs",
+        "doc": "05-triggers.md"
       },
       {
         "text": "Agents IA",
