@@ -139,8 +139,8 @@ Seven tools, one per verb the API already publishes:
 | Tool | What it does |
 |---|---|
 | `list_functions` | Lists the functions the key may reach, with their id and invocation path. |
-| `get_function` | Reads one: script, `package.json`, triggers, install state. |
-| `create_function` | Creates one, with its triggers and its secrets. |
+| `get_function` | Reads one: script, `package.json`, sample call, triggers, install state. |
+| `create_function` | Creates one, with its sample call, its triggers and its secrets. |
 | `update_function` | Updates one in place, merging onto what is stored. |
 | `delete_function` | Deletes one, its triggers and its history. |
 | `invoke_function` | Runs one now and returns the result, `stderr` and the duration. |
@@ -150,13 +150,20 @@ Every tool goes through the same code path as its HTTP route, so what an agent m
 
 On top of that, the session receives **instructions** at connect time: the execution contract (the [call envelope](03-writing-functions.md#the-input-envelope) on `stdin`, JSON result on `stdout`, diagnostics on `stderr`), the naming rule, the size caps, the fact that dependencies install in the background, the two kinds of trigger — a cron expression, or a startup delay — and what a write replaces. You do not have to paste any of it into your agent.
 
-## Three Things the Agent Is Told, and You Should Know Too
+## The Agent Can Write the Call, Not Just the Function
+
+An agent that has just written a function knows the call it expects: it wrote the line reading `req.headers["stripe-signature"]`. It can save that call with the function — the body and the headers of the [sample the Editor's Runner replays](03-writing-functions.md#the-body-and-the-headers) — so the next person to open it can click **Run** instead of reconstructing the request by reading the script. It is documentation that runs, and its natural author is whoever wrote the code.
+
+One rule comes with it, and the tool descriptions state it so the agent reads it too: **no real secret in a sample.** Everyone who can read the function reads its sample, and on a public demo instance that is everyone. What belongs there is the *shape* of the call — a signature header with a plausible value, a payload with the right fields. A real token goes in `plainEnv`, which is written and never read back.
+
+## Four Things the Agent Is Told, and You Should Know Too
 
 These are the traps of the underlying contract. The tool descriptions state them, which is what keeps an agent from walking into them — but they are worth knowing when you read what it did.
 
 1. **`update_function` merges, it does not replace.** The underlying `PUT` replaces the whole function: a body carrying only `script` clears `packageJson`, and the dependencies with it. The tool reads the function first and re-sends what you did not mention, so an agent fixing three lines does not destroy your dependencies. Sending an **empty string** for `packageJson` still clears it — that is an explicit instruction, not an omission.
 2. **`plainEnv` sent as `{}` deletes every secret** of the function, with no confirmation and no way back. Leaving it out preserves them, and that is what the tool does unless the agent explicitly sends secrets.
 3. **`delete_function` destroys the execution history** along with the function and its triggers. There is no undo. Its description says so; ask before letting an agent "tidy up".
+4. **A sample is read by everyone who can read the function.** It is encrypted at rest, which is not the same as private. Never a live secret.
 
 ## What It Cannot Do
 

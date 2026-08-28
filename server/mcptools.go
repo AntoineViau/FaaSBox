@@ -73,24 +73,30 @@ type mcpFunctionArgs struct {
 
 // mcpCreateArgs is the body create_function builds.
 type mcpCreateArgs struct {
-	Name        string            `json:"name" jsonschema:"letters, digits and hyphens, starting and ending with a letter or digit, 64 characters at most"`
-	Script      string            `json:"script" jsonschema:"the whole index.ts: read the envelope with Bun.stdin.text(), parse its body field yourself, write the JSON result with console.log"`
-	PackageJson string            `json:"packageJson,omitempty" jsonschema:"the whole package.json, as text; leave it out for a function with no npm dependency"`
-	PlainEnv    map[string]string `json:"plainEnv,omitempty" jsonschema:"secrets injected in the environment of the subprocess; leave it out for a function that needs none"`
-	Triggers    []mcpTrigger      `json:"triggers,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
+	Name          string            `json:"name" jsonschema:"letters, digits and hyphens, starting and ending with a letter or digit, 64 characters at most"`
+	Script        string            `json:"script" jsonschema:"the whole index.ts: read the envelope with Bun.stdin.text(), parse its body field yourself, write the JSON result with console.log"`
+	PackageJson   string            `json:"packageJson,omitempty" jsonschema:"the whole package.json, as text; leave it out for a function with no npm dependency"`
+	SampleBody    string            `json:"sampleBody,omitempty" jsonschema:"the body of the sample call saved with the function, sent as written; leave it out for a function that needs no example call"`
+	SampleHeaders []sampleHeader    `json:"sampleHeaders,omitempty" jsonschema:"the headers of that sample call, in the order they should be read; leave it out for a call that needs none"`
+	PlainEnv      map[string]string `json:"plainEnv,omitempty" jsonschema:"secrets injected in the environment of the subprocess; leave it out for a function that needs none"`
+	Triggers      []mcpTrigger      `json:"triggers,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
 }
 
 // mcpUpdateArgs is what update_function merges onto the stored function.
 //
-// The two source fields are pointers and the two collections are nil-able, and
-// that is the whole guardrail: absent has to be distinguishable from empty, or
-// an agent sending only a script would clear everything it did not mention.
+// The scalar fields are pointers and the collections are nil-able, and that is
+// the whole guardrail: absent has to be distinguishable from empty, or an agent
+// sending only a script would clear everything it did not mention. A list needs
+// no pointer to say it — nil is absent, and an empty list is the explicit
+// erasure.
 type mcpUpdateArgs struct {
-	IdOrName    string            `json:"idOrName" jsonschema:"the id or the name of the function to update"`
-	Script      *string           `json:"script,omitempty" jsonschema:"the whole new index.ts; leave it out to keep the stored one"`
-	PackageJson *string           `json:"packageJson,omitempty" jsonschema:"the whole new package.json; leave it out to keep the stored one, send an empty string to drop the dependencies"`
-	PlainEnv    map[string]string `json:"plainEnv,omitempty" jsonschema:"replaces every secret of the function; leave it out to keep them, send an empty object to delete them all"`
-	Triggers    []mcpTrigger      `json:"triggers,omitempty" jsonschema:"replaces every trigger of the function; leave it out to keep them, send an empty list to delete them all"`
+	IdOrName      string            `json:"idOrName" jsonschema:"the id or the name of the function to update"`
+	Script        *string           `json:"script,omitempty" jsonschema:"the whole new index.ts; leave it out to keep the stored one"`
+	PackageJson   *string           `json:"packageJson,omitempty" jsonschema:"the whole new package.json; leave it out to keep the stored one, send an empty string to drop the dependencies"`
+	SampleBody    *string           `json:"sampleBody,omitempty" jsonschema:"the new body of the sample call; leave it out to keep the stored one, send an empty string to clear it"`
+	SampleHeaders []sampleHeader    `json:"sampleHeaders,omitempty" jsonschema:"replaces the headers of the sample call; leave it out to keep them, send an empty list to clear them"`
+	PlainEnv      map[string]string `json:"plainEnv,omitempty" jsonschema:"replaces every secret of the function; leave it out to keep them, send an empty object to delete them all"`
+	Triggers      []mcpTrigger      `json:"triggers,omitempty" jsonschema:"replaces every trigger of the function; leave it out to keep them, send an empty list to delete them all"`
 }
 
 // mcpInvokeArgs is what invoke_function runs.
@@ -143,7 +149,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_function",
 		Title:       "Read a function",
-		Description: "Read one function: its script, its package.json, its triggers and where its dependency install stands. Secrets are never returned — they can be written, not read back.",
+		Description: "Read one function: its script, its package.json, the sample call saved with it, its triggers and where its dependency install stands. Secrets are never returned — they can be written, not read back.",
 		Annotations: readOnly,
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpFunctionArgs) (*mcp.CallToolResult, any, error) {
 		contract, err := getFunction(app, allowed, in.IdOrName)
@@ -156,7 +162,9 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:  "create_function",
 		Title: "Create a function",
-		Description: "Create a function, with its triggers and its secrets. " +
+		Description: "Create a function, with its triggers, its secrets and the sample call saved with it. " +
+			"The sample call is the request the editor's Runner replays: write the call the function expects — the body it parses, the headers it reads — and whoever opens it can run it without composing one. " +
+			"It is documentation, not a vault: everyone who can read the function reads its sample, so put the shape of a signed request there and never a live secret. Real values belong in plainEnv. " +
 			"The dependencies declared in packageJson install in the background: the depsStatus returned is not the end of the install. " +
 			"Fails with a conflict if another function already carries the name, and a key whose scope names precise functions cannot create at all.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpCreateArgs) (*mcp.CallToolResult, any, error) {
@@ -168,11 +176,13 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 			return nil, nil, err
 		}
 		contract, err := createFunction(app, allowed, manageRequest{
-			Name:        in.Name,
-			Script:      in.Script,
-			PackageJson: in.PackageJson,
-			PlainEnv:    mcpPlainEnv(in.PlainEnv),
-			Triggers:    triggers,
+			Name:          in.Name,
+			Script:        in.Script,
+			PackageJson:   in.PackageJson,
+			SampleBody:    in.SampleBody,
+			SampleHeaders: in.SampleHeaders,
+			PlainEnv:      mcpPlainEnv(in.PlainEnv),
+			Triggers:      triggers,
 		})
 		if err != nil {
 			return nil, nil, mcpFailure(app, err, "Failed to save the function")
@@ -183,8 +193,9 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 	mcp.AddTool(s, &mcp.Tool{
 		Name:  "update_function",
 		Title: "Update a function",
-		Description: "Update a function in place. The tool reads it first and merges what you send onto what is stored, so anything you leave out is preserved: sending only a script keeps the package.json, the triggers and the secrets. " +
+		Description: "Update a function in place. The tool reads it first and merges what you send onto what is stored, so anything you leave out is preserved: sending only a script keeps the package.json, the sample call, the triggers and the secrets. " +
 			"Sending plainEnv as an empty object deletes every secret of the function, and sending triggers as an empty list deletes every trigger — both are what an explicit empty value means here. " +
+			"The sample call — sampleBody and sampleHeaders — is the request the editor's Runner replays; keep it in step with a script whose expected call you changed. It is readable by everyone who can read the function, so it carries the shape of a request, never a live secret. " +
 			"This never renames: the function keeps the name it has.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in mcpUpdateArgs) (*mcp.CallToolResult, any, error) {
@@ -196,8 +207,10 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		}
 
 		req := manageRequest{
-			Script:      current.Script,
-			PackageJson: current.PackageJson,
+			Script:        current.Script,
+			PackageJson:   current.PackageJson,
+			SampleBody:    current.SampleBody,
+			SampleHeaders: current.SampleHeaders,
 			// Absent stays absent, which is what preserves the secrets.
 			PlainEnv: mcpPlainEnv(in.PlainEnv),
 		}
@@ -206,6 +219,13 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		}
 		if in.PackageJson != nil {
 			req.PackageJson = *in.PackageJson
+		}
+		if in.SampleBody != nil {
+			req.SampleBody = *in.SampleBody
+		}
+		// A nil list leaves the sample headers alone; an empty one clears them.
+		if in.SampleHeaders != nil {
+			req.SampleHeaders = in.SampleHeaders
 		}
 		// A nil list leaves the triggers alone; an empty one removes them all.
 		if in.Triggers != nil {

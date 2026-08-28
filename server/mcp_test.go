@@ -135,6 +135,13 @@ func TestMCPServerAdvertises(t *testing.T) {
 			t.Errorf("update_function description does not name the plainEnv trap: %q", d)
 		}
 
+		// The sample is documentation an agent publishes to every reader of the
+		// instance. What keeps a live token out of it is this sentence, since
+		// the tool description is the only place the agent reads.
+		if d := got["create_function"].Description; !strings.Contains(d, "sample call") || !strings.Contains(d, "never a live secret") {
+			t.Errorf("create_function description does not say what the sample is, nor what not to put in it: %q", d)
+		}
+
 		// A trigger field an agent cannot see in the schema is a trigger it will
 		// never propose. Read off the marshalled schema rather than the struct:
 		// what is under test is what reaches the other end.
@@ -142,7 +149,7 @@ func TestMCPServerAdvertises(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, marker := range []string{"kind", "startupDelayMinutes", "1439"} {
+		for _, marker := range []string{"kind", "startupDelayMinutes", "1439", "sampleBody", "sampleHeaders"} {
 			if !strings.Contains(string(schema), marker) {
 				t.Errorf("the create_function schema does not carry %q", marker)
 			}
@@ -873,4 +880,104 @@ console.log(JSON.stringify({echo: payload}));`,
 		"someotherfunction": "",
 	})
 	return app, functionsDir, functions["echo"]
+}
+
+// TestMCPFunctionSample covers the sample call on the agent surface: an agent
+// that writes a function knows the call it expects, and consigning it is what
+// spares a human from rediscovering it by reading the script.
+func TestMCPFunctionSample(t *testing.T) {
+	t.Run("create writes both fields and get reads them back", func(t *testing.T) {
+		app, functionsDir, _ := manageApp(t)
+		session := mcpSession(t, app, functionsDir, unrestricted)
+
+		var created functionContract
+		callToolOK(t, session, "create_function", map[string]any{
+			"name":       "webhook",
+			"script":     "console.log('{}')",
+			"sampleBody": `{"id":"evt_1"}`,
+			"sampleHeaders": []any{
+				map[string]any{"name": "Stripe-Signature", "value": "t=1,v1=abc"},
+			},
+		}, &created)
+
+		if created.SampleBody != `{"id":"evt_1"}` {
+			t.Errorf("sampleBody = %q, want the one just written", created.SampleBody)
+		}
+		if len(created.SampleHeaders) != 1 || created.SampleHeaders[0].Name != "Stripe-Signature" {
+			t.Errorf("sampleHeaders = %+v, want the signature header", created.SampleHeaders)
+		}
+
+		var read functionContract
+		callToolOK(t, session, "get_function", map[string]any{"idOrName": "webhook"}, &read)
+		if read.SampleBody != created.SampleBody || len(read.SampleHeaders) != 1 {
+			t.Errorf("get_function = %+v, want the sample it was created with", read)
+		}
+	})
+
+	t.Run("a script alone leaves the sample intact", func(t *testing.T) {
+		app, functionsDir, fn := manageApp(t)
+		session := mcpSession(t, app, functionsDir, unrestricted)
+		fn.Set("sampleBody", `{"n":1}`)
+		fn.Set("sampleHeaders", `[{"name":"X-Token","value":"abc"}]`)
+		if err := app.Save(fn); err != nil {
+			t.Fatalf("failed to prepare the sample: %v", err)
+		}
+
+		var contract functionContract
+		callToolOK(t, session, "update_function", map[string]any{
+			"idOrName": "echo",
+			"script":   "console.log('{\"v\":2}')",
+		}, &contract)
+
+		if contract.SampleBody != `{"n":1}` {
+			t.Errorf("sampleBody = %q, want it preserved", contract.SampleBody)
+		}
+		if len(contract.SampleHeaders) != 1 || contract.SampleHeaders[0].Value != "abc" {
+			t.Errorf("sampleHeaders = %+v, want them preserved", contract.SampleHeaders)
+		}
+	})
+
+	t.Run("an explicit empty value clears what it names", func(t *testing.T) {
+		app, functionsDir, fn := manageApp(t)
+		session := mcpSession(t, app, functionsDir, unrestricted)
+		fn.Set("sampleBody", `{"n":1}`)
+		fn.Set("sampleHeaders", `[{"name":"X-Token","value":"abc"}]`)
+		if err := app.Save(fn); err != nil {
+			t.Fatalf("failed to prepare the sample: %v", err)
+		}
+
+		// The body alone: the headers are not named, so they stay.
+		var contract functionContract
+		callToolOK(t, session, "update_function", map[string]any{
+			"idOrName":   "echo",
+			"sampleBody": "",
+		}, &contract)
+		if contract.SampleBody != "" {
+			t.Errorf("sampleBody = %q, want it cleared", contract.SampleBody)
+		}
+		if len(contract.SampleHeaders) != 1 {
+			t.Errorf("sampleHeaders = %+v, want them left alone", contract.SampleHeaders)
+		}
+
+		callToolOK(t, session, "update_function", map[string]any{
+			"idOrName":      "echo",
+			"sampleHeaders": []any{},
+		}, &contract)
+		if len(contract.SampleHeaders) != 0 {
+			t.Errorf("sampleHeaders = %+v, want them cleared", contract.SampleHeaders)
+		}
+	})
+
+	t.Run("the cap is relayed to the agent as it stands", func(t *testing.T) {
+		app, functionsDir, _ := manageApp(t)
+		session := mcpSession(t, app, functionsDir, unrestricted)
+
+		got := callToolErr(t, session, "update_function", map[string]any{
+			"idOrName":   "echo",
+			"sampleBody": strings.Repeat("x", maxSampleSize+1),
+		})
+		if !strings.Contains(got, "sampleBody") || !strings.Contains(got, "limited to") {
+			t.Errorf("error = %q, want the refusal naming the field", got)
+		}
+	})
 }

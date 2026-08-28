@@ -1133,7 +1133,7 @@ func TestManageContractShape(t *testing.T) {
 			if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 				t.Fatalf("failed to decode the response: %v", err)
 			}
-			want := []string{"id", "name", "script", "packageJson", "depsStatus", "depsError", "triggers"}
+			want := []string{"id", "name", "script", "packageJson", "sampleBody", "sampleHeaders", "depsStatus", "depsError", "triggers"}
 			if len(body) != len(want) {
 				t.Errorf("the contract carries %d keys (%v), want %d", len(body), body, len(want))
 			}
@@ -1145,4 +1145,213 @@ func TestManageContractShape(t *testing.T) {
 		},
 	})
 	s.Test(t)
+}
+
+// contractOf decodes a management response into the contract it publishes.
+func contractOf(t testing.TB, res *http.Response) functionContract {
+	t.Helper()
+	var contract functionContract
+	if err := json.NewDecoder(res.Body).Decode(&contract); err != nil {
+		t.Fatalf("failed to decode the response: %v", err)
+	}
+	return contract
+}
+
+// functionByName finds a stored function through its fingerprint, the column
+// holding a ciphertext no search on the name would ever match.
+func functionByName(t testing.TB, app core.App, name string) *core.Record {
+	t.Helper()
+	record, err := app.FindFirstRecordByData(faasboxFunctionsCollection, "nameHash", blindIndex(name))
+	if err != nil {
+		t.Fatalf("the function %q was not persisted: %v", name, err)
+	}
+	return record
+}
+
+// TestManageFunctionSample covers the sample call on the management contract.
+//
+// The sample used to be an object of the editor, which left an instance seeded
+// through this API showing an empty Runner panel — precisely where the call the
+// function expects is what a reader needs to see.
+func TestManageFunctionSample(t *testing.T) {
+	t.Run("writes both fields and reads them back in order", func(t *testing.T) {
+		app, dir, _ := manageApp(t)
+
+		create := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "create with a sample",
+			Method: http.MethodPost,
+			URL:    "/api/faasbox/functions",
+			Body: strings.NewReader(`{"name":"signed","script":"console.log('{}')",
+				"sampleBody":"{\"n\":1}",
+				"sampleHeaders":[{"name":"Stripe-Signature","value":"t=1,v1=abc"},{"name":"Content-Type","value":"application/json"}]}`),
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  201,
+			ExpectedContent: []string{`"name":"signed"`, `"Stripe-Signature"`},
+		})
+		create.Test(t)
+
+		read := manageScenario(app, dir, tests.ApiScenario{
+			Name:            "read the sample back",
+			Method:          http.MethodGet,
+			URL:             "/api/faasbox/functions/signed",
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"sampleBody"`, `"sampleHeaders"`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				contract := contractOf(t, res)
+				if contract.SampleBody != `{"n":1}` {
+					t.Errorf("sampleBody = %q, want the one just written", contract.SampleBody)
+				}
+				// The order is the author's, and it is the only thing that says
+				// which header the function is meant to read first.
+				want := []sampleHeader{
+					{Name: "Stripe-Signature", Value: "t=1,v1=abc"},
+					{Name: "Content-Type", Value: "application/json"},
+				}
+				if len(contract.SampleHeaders) != len(want) {
+					t.Fatalf("sampleHeaders = %+v, want %d rows", contract.SampleHeaders, len(want))
+				}
+				for i, row := range want {
+					if contract.SampleHeaders[i] != row {
+						t.Errorf("sampleHeaders[%d] = %+v, want %+v", i, contract.SampleHeaders[i], row)
+					}
+				}
+			},
+		})
+		read.Test(t)
+	})
+
+	t.Run("a replacement that does not carry the sample clears it", func(t *testing.T) {
+		app, dir, fn := manageApp(t)
+		fn.Set("sampleBody", `{"n":1}`)
+		fn.Set("sampleHeaders", `[{"name":"X-Token","value":"abc"}]`)
+		if err := app.Save(fn); err != nil {
+			t.Fatalf("failed to prepare the sample: %v", err)
+		}
+
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:            "replace without the sample",
+			Method:          http.MethodPut,
+			URL:             "/api/faasbox/functions/echo",
+			Body:            strings.NewReader(`{"script":"console.log('{}')"}`),
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"sampleBody":""`, `"sampleHeaders":[]`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				contract := contractOf(t, res)
+				if contract.SampleBody != "" || len(contract.SampleHeaders) != 0 {
+					t.Errorf("the sample survived a replacement that did not carry it: %+v", contract)
+				}
+			},
+		})
+		s.Test(t)
+	})
+
+	t.Run("a function without a sample answers an empty body and an empty list", func(t *testing.T) {
+		app, dir, _ := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:           "no sample",
+			Method:         http.MethodGet,
+			URL:            "/api/faasbox/functions/echo",
+			Headers:        manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus: 200,
+			// A list, never null: an agent reads one shape rather than two.
+			ExpectedContent: []string{`"sampleBody":""`, `"sampleHeaders":[]`},
+		})
+		s.Test(t)
+	})
+
+	t.Run("the stored string is the one the editor writes", func(t *testing.T) {
+		app, dir, _ := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "html-escapable values",
+			Method: http.MethodPost,
+			URL:    "/api/faasbox/functions",
+			Body: strings.NewReader(`{"name":"escaped","script":"console.log('{}')",
+				"sampleHeaders":[{"name":"X-Sig","value":"a&b<c>d"}]}`),
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  201,
+			ExpectedContent: []string{`"name":"escaped"`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				// What serializeHeaders (ui/src/app/editor/request-headers.ts)
+				// writes for the same row. encoding/json with its HTML escaping
+				// left on would store the three characters as unicode escapes,
+				// and the same list would then have two stored forms.
+				const want = `[{"name":"X-Sig","value":"a&b<c>d"}]`
+				got := functionSampleHeaders(app, functionByName(t, app, "escaped"))
+				if got != want {
+					t.Errorf("stored sampleHeaders = %q, want %q", got, want)
+				}
+			},
+		})
+		s.Test(t)
+	})
+
+	t.Run("refuses a sample over the cap", func(t *testing.T) {
+		oversized := []struct {
+			label string
+			field string
+			body  string
+		}{
+			{"body", "sampleBody", `{"sampleBody":"` + strings.Repeat("x", maxSampleSize+1) + `"}`},
+			{"headers", "sampleHeaders", `{"sampleHeaders":[{"name":"X-Big","value":"` + strings.Repeat("x", maxSampleSize) + `"}]}`},
+		}
+		for _, tc := range oversized {
+			t.Run(tc.label, func(t *testing.T) {
+				app, dir, _ := manageApp(t)
+				s := manageScenario(app, dir, tests.ApiScenario{
+					Name:            "oversized " + tc.field,
+					Method:          http.MethodPut,
+					URL:             "/api/faasbox/functions/echo",
+					Body:            strings.NewReader(tc.body),
+					Headers:         manageKeyHeader(t, app, "manager", nil),
+					ExpectedStatus:  400,
+					ExpectedContent: []string{tc.field, "limited to"},
+				})
+				s.Test(t)
+			})
+		}
+	})
+
+	t.Run("stores what only the editor warns about", func(t *testing.T) {
+		app, dir, _ := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "denied name and empty name",
+			Method: http.MethodPut,
+			URL:    "/api/faasbox/functions/echo",
+			// A denied header shows a call that will not arrive as written, and
+			// saying so is the editor's job — the server drops it from the
+			// envelope whatever the sample says. An empty row is what the editor
+			// itself stores for a line someone added and has not filled.
+			Body: strings.NewReader(`{"script":"console.log('{}')",
+				"sampleHeaders":[{"name":"Authorization","value":"Bearer x"},{"name":"","value":""}]}`),
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  200,
+			ExpectedContent: []string{`"Authorization"`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				contract := contractOf(t, res)
+				if len(contract.SampleHeaders) != 2 {
+					t.Fatalf("sampleHeaders = %+v, want both rows stored", contract.SampleHeaders)
+				}
+				if contract.SampleHeaders[0].Name != "Authorization" {
+					t.Errorf("the denied header was not stored: %+v", contract.SampleHeaders)
+				}
+			},
+		})
+		s.Test(t)
+	})
+
+	t.Run("refuses a header entry that is not two strings", func(t *testing.T) {
+		app, dir, _ := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:            "numeric header name",
+			Method:          http.MethodPut,
+			URL:             "/api/faasbox/functions/echo",
+			Body:            strings.NewReader(`{"script":"console.log('{}')","sampleHeaders":[{"name":5,"value":"x"}]}`),
+			Headers:         manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus:  400,
+			ExpectedContent: []string{"Invalid JSON body"},
+		})
+		s.Test(t)
+	})
 }

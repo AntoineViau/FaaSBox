@@ -43,10 +43,11 @@ const maxSourceSize = 1 << 20 // 1,048,576 characters
 // was shown out of the window. A sample is an example of a call, not an
 // archive of one.
 //
-// Same rule as the source columns: what a TextField measures is the sealed
-// value, hence cipherMax. There is no product limit announced on the plaintext
-// here, so no hook holds one — the column is the only bound, and it is meant to
-// be.
+// Same rule as the source columns, and the same division of labour: what a
+// TextField measures is the sealed value, hence cipherMax, and the cap on the
+// plaintext is held by validateFunctionSizeHook. The column alone would let
+// roughly four times this through — it is calibrated so as never to be the
+// binding constraint, which means it cannot be the announced one either.
 const maxSampleSize = 16 << 10 // 16,384 characters
 
 // maxEnvSize bounds the encrypted environment of a function.
@@ -355,6 +356,16 @@ func functionPackageJson(app core.App, record *core.Record) string {
 	return decryptedText(app, record, "packageJson")
 }
 
+func functionSampleBody(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "sampleBody")
+}
+
+// functionSampleHeaders answers with the serialised form the column holds.
+// parseSampleHeaders turns it into the rows the contract publishes.
+func functionSampleHeaders(app core.App, record *core.Record) string {
+	return decryptedText(app, record, "sampleHeaders")
+}
+
 func functionBunLock(app core.App, record *core.Record) string {
 	return decryptedText(app, record, "bunLock")
 }
@@ -363,15 +374,36 @@ func functionDepsError(app core.App, record *core.Record) string {
 	return decryptedText(app, record, "depsError")
 }
 
-// validateFunctionSizeHook holds the product's source limit where the column no
+// functionSizeCaps pairs each bounded text column with the limit the product
+// announces for it. Two limits, four columns: the source pair and the sample
+// pair, which is far smaller because a sample travels in every list() the
+// editor makes.
+var functionSizeCaps = []struct {
+	field string
+	max   int
+}{
+	{"script", maxSourceSize},
+	{"packageJson", maxSourceSize},
+	{"sampleBody", maxSampleSize},
+	{"sampleHeaders", maxSampleSize},
+}
+
+// validateFunctionSizeHook holds the product's limits where the columns no
 // longer can.
 //
-// script and packageJson are encrypted at rest, so their declared size measures
-// the ciphertext and is deliberately wider than what the product announces.
-// Without this check the cap of maxSourceSize characters would simply cease to
-// exist — the field would take whatever it was handed.
+// These columns are encrypted at rest, so their declared size measures the
+// ciphertext and is deliberately wider than what the product announces. Without
+// this check the announced caps would simply cease to exist — the fields would
+// take whatever they were handed.
 //
-// It counts runes, which is the unit the limit was always expressed in and the
+// **It is bound on the record hooks, so it holds on every path that writes.**
+// The editor saves through the collections API, the management routes and the
+// MCP tools save through manageops.go, and one check placed in either of those
+// would leave the other free. That is also what lets the refusal be published
+// without a second rendering: classifyManageFailure relays an ApiError as it
+// stands, and mcpFailure repeats it to the agent.
+//
+// It counts runes, which is the unit the limits were always expressed in and the
 // one PocketBase itself used. It runs before the encryption hook and reads the
 // submitted value directly, which at that point is still the plaintext.
 //
@@ -379,22 +411,22 @@ func functionDepsError(app core.App, record *core.Record) string {
 // record endpoints keep only an argument that already is one, and an ordinary
 // error reaches the client as a 400 whose body says nothing.
 func validateFunctionSizeHook(e *core.RecordEvent) error {
-	for _, field := range []string{"script", "packageJson"} {
-		value := functionSourceInput(e.Record, field)
-		if utf8.RuneCountInString(value) <= maxSourceSize {
+	for _, bound := range functionSizeCaps {
+		value := functionTextInput(e.Record, bound.field)
+		if utf8.RuneCountInString(value) <= bound.max {
 			continue
 		}
 		return apis.NewBadRequestError(fmt.Sprintf(
-			"The %s of a function is limited to %d characters.", field, maxSourceSize), nil)
+			"The %s of a function is limited to %d characters.", bound.field, bound.max), nil)
 	}
 	return e.Next()
 }
 
-// functionSourceInput reads one of the two source columns as the request left
-// it. A partial update carries the value loaded from the database, which is
-// already sealed and is not what this check is about — the caller did not submit
-// it, and it passed the check on the save that wrote it.
-func functionSourceInput(record *core.Record, field string) string {
+// functionTextInput reads one of the bounded columns as the request left it. A
+// partial update carries the value loaded from the database, which is already
+// sealed and is not what this check is about — the caller did not submit it, and
+// it passed the check on the save that wrote it.
+func functionTextInput(record *core.Record, field string) string {
 	value := record.GetString(field)
 	if strings.HasPrefix(value, cipherPrefix) {
 		return ""

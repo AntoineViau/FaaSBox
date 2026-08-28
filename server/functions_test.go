@@ -884,3 +884,76 @@ func TestEnsureFunctionsCollection_SampleFields(t *testing.T) {
 		assertFields(t, app)
 	})
 }
+
+// TestValidateFunctionSizeHook covers the four caps the hook holds, on the path
+// the editor writes through.
+//
+// The record hooks are where an announced limit has to live: the columns measure
+// the sealed value and are calibrated never to bind, so a check placed in the
+// management operations alone would leave the editor free to store four times
+// what the product announces.
+func TestValidateFunctionSizeHook(t *testing.T) {
+	capped := []struct {
+		field string
+		max   int
+	}{
+		{"script", maxSourceSize},
+		{"packageJson", maxSourceSize},
+		{"sampleBody", maxSampleSize},
+		{"sampleHeaders", maxSampleSize},
+	}
+
+	for _, tc := range capped {
+		t.Run("refuses an oversized "+tc.field, func(t *testing.T) {
+			app := newFunctionApp(t, true)
+			bindFunctionSizeHook(app)
+
+			record := newFunctionRecord(t, app, "oversized")
+			record.Set(tc.field, strings.Repeat("x", tc.max+1))
+
+			err := app.Save(record)
+			if err == nil {
+				t.Fatal("the oversized value was accepted")
+			}
+			// An ordinary error reaches the client as a 400 whose body says
+			// nothing, which is the whole reason the hook builds an ApiError.
+			var apiErr *router.ApiError
+			if !errors.As(err, &apiErr) {
+				t.Fatalf("refusal is a %T, want a *router.ApiError", err)
+			}
+			if apiErr.Status != http.StatusBadRequest {
+				t.Errorf("refusal status = %d, want 400", apiErr.Status)
+			}
+			if !strings.Contains(apiErr.Message, tc.field) {
+				t.Errorf("refusal message = %q, it does not name the field", apiErr.Message)
+			}
+		})
+	}
+
+	t.Run("accepts a sample exactly at the cap", func(t *testing.T) {
+		app := newFunctionApp(t, true)
+		bindFunctionSizeHook(app)
+
+		record := newFunctionRecord(t, app, "at-the-cap")
+		record.Set("sampleBody", strings.Repeat("x", maxSampleSize))
+
+		if err := app.Save(record); err != nil {
+			t.Fatalf("a sample of exactly %d characters was refused: %v", maxSampleSize, err)
+		}
+	})
+
+	t.Run("ignores a sealed value it did not receive", func(t *testing.T) {
+		app := newFunctionApp(t, true)
+		bindFunctionSizeHook(app)
+
+		// What a partial update carries is the value read back from the
+		// database. It is longer than the cap because it is a ciphertext, and it
+		// passed the check the day it was written.
+		record := newFunctionRecord(t, app, "sealed")
+		record.Set("sampleBody", cipherPrefix+strings.Repeat("x", maxSampleSize+1))
+
+		if err := app.Save(record); err != nil {
+			t.Fatalf("a sealed value was measured as if it were the plaintext: %v", err)
+		}
+	})
+}

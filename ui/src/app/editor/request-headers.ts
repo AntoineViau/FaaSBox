@@ -64,9 +64,10 @@ export function defaultBody(): string {
  * **An empty column is an empty sample, and nothing else.** The starting values
  * are written to the record when the function is created, so there is no state
  * left for a fallback to guess at — which is what lets a body or a header list
- * be deliberately emptied and stay that way. A function created through the
- * management API carries no sample for the same reason it carries no example
- * script: its author brought their own.
+ * be deliberately emptied and stay that way. A function written through the
+ * management API or by an agent carries the sample its author sent, and none
+ * when they sent none — for the same reason it carries no example script:
+ * nothing is substituted for what nobody wrote.
  *
  * Anything that will not read back as rows yields no row at all: the column is
  * editable from the PocketBase admin, so what comes out of it is whatever

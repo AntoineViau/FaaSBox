@@ -107,6 +107,8 @@ func createFunction(app core.App, allowed []string, req manageRequest) (function
 	record.Set("name", req.Name)
 	record.Set("script", req.Script)
 	record.Set("packageJson", req.PackageJson)
+	record.Set("sampleBody", req.SampleBody)
+	record.Set("sampleHeaders", serializeSampleHeaders(req.SampleHeaders))
 	if err := applyPlainEnv(record, req.PlainEnv); err != nil {
 		return functionContract{}, err
 	}
@@ -146,6 +148,8 @@ func replaceFunction(app core.App, allowed []string, idOrName string, req manage
 
 	record.Set("script", req.Script)
 	record.Set("packageJson", req.PackageJson)
+	record.Set("sampleBody", req.SampleBody)
+	record.Set("sampleHeaders", serializeSampleHeaders(req.SampleHeaders))
 	if err := applyPlainEnv(record, req.PlainEnv); err != nil {
 		return functionContract{}, err
 	}
@@ -318,13 +322,15 @@ func functionContractOf(app core.App, record *core.Record) (functionContract, er
 	}
 
 	return functionContract{
-		Id:          record.Id,
-		Name:        functionName(app, record),
-		Script:      functionScript(app, record),
-		PackageJson: functionPackageJson(app, record),
-		DepsStatus:  record.GetString("depsStatus"),
-		DepsError:   functionDepsError(app, record),
-		Triggers:    triggers,
+		Id:            record.Id,
+		Name:          functionName(app, record),
+		Script:        functionScript(app, record),
+		PackageJson:   functionPackageJson(app, record),
+		SampleBody:    functionSampleBody(app, record),
+		SampleHeaders: parseSampleHeaders(functionSampleHeaders(app, record)),
+		DepsStatus:    record.GetString("depsStatus"),
+		DepsError:     functionDepsError(app, record),
+		Triggers:      triggers,
 	}, nil
 }
 

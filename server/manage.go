@@ -44,27 +44,34 @@ import (
 //   - PlainEnv nil means untouched, `{}` means erase every secret;
 //   - Triggers nil means the triggers stay, `[]` means remove them all.
 //
-// Script and PackageJson do not: PUT replaces the function, so what the body
-// does not carry is what the function no longer has.
+// The script, the package.json and the sample call do not: PUT replaces the
+// function, so what the body does not carry is what the function no longer has.
 type manageRequest struct {
-	Name        string          `json:"name"`
-	Script      string          `json:"script"`
-	PackageJson string          `json:"packageJson"`
-	PlainEnv    json.RawMessage `json:"plainEnv"`
-	Triggers    []manageTrigger `json:"triggers"`
+	Name          string          `json:"name"`
+	Script        string          `json:"script"`
+	PackageJson   string          `json:"packageJson"`
+	SampleBody    string          `json:"sampleBody"`
+	SampleHeaders []sampleHeader  `json:"sampleHeaders"`
+	PlainEnv      json.RawMessage `json:"plainEnv"`
+	Triggers      []manageTrigger `json:"triggers"`
 }
 
 // functionContract is what the three reading routes answer with. The id is here
 // because the id is the identity: it is what survives a rename, what a key scope
 // lists, and what an integration should be wired on.
+//
+// SampleHeaders is a list here and one serialised string in the column. The
+// conversion between the two is in sample.go, and it is there only once.
 type functionContract struct {
-	Id          string            `json:"id"`
-	Name        string            `json:"name"`
-	Script      string            `json:"script"`
-	PackageJson string            `json:"packageJson"`
-	DepsStatus  string            `json:"depsStatus"`
-	DepsError   string            `json:"depsError"`
-	Triggers    []triggerContract `json:"triggers"`
+	Id            string            `json:"id"`
+	Name          string            `json:"name"`
+	Script        string            `json:"script"`
+	PackageJson   string            `json:"packageJson"`
+	SampleBody    string            `json:"sampleBody"`
+	SampleHeaders []sampleHeader    `json:"sampleHeaders"`
+	DepsStatus    string            `json:"depsStatus"`
+	DepsError     string            `json:"depsError"`
+	Triggers      []triggerContract `json:"triggers"`
 }
 
 // createFunctionHandler answers POST /api/faasbox/functions.

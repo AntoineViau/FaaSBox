@@ -153,6 +153,11 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
   "name": "echo",
   "script": "const req = JSON.parse(await Bun.stdin.text()); console.log(JSON.stringify({ok: true, body: req.body}));",
   "packageJson": "{\"dependencies\":{}}",
+  "sampleBody": "{\"id\":\"evt_1\"}",
+  "sampleHeaders": [
+    { "name": "Stripe-Signature", "value": "t=1,v1=abc" },
+    { "name": "Content-Type", "value": "application/json" }
+  ],
   "plainEnv": { "STRIPE_KEY": "sk_test_..." },
   "triggers": [
     { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 },
@@ -162,7 +167,8 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
 ```
 
 - `name` is read by `POST` only. On `PUT` the **path** identifies the function; a `name` in the body may repeat that identity — either the current name or the id, so a `GET` response can be edited and sent straight back — but a different one is a `400`. **This route never renames.** A silent rename would break every URL wired on the old name with nothing in the exchange saying so; rename from the editor instead.
-- `script` and `packageJson` are **replaced whole**. `PUT` replaces the function: a field the body does not carry becomes empty. Sending only `script` therefore clears `packageJson`, and with it the dependencies. Send the full pair every time.
+- `script`, `packageJson`, `sampleBody` and `sampleHeaders` are **replaced whole**. `PUT` replaces the function: a field the body does not carry becomes empty. Sending only `script` therefore clears `packageJson`, and with it the dependencies — and clears the sample call along the way. Send the full set every time.
+- `sampleBody` and `sampleHeaders` are the **sample call** saved with the function: the request the Editor's Runner replays, and what someone opening the function sees without having to compose a call of their own. The body is sent as written — JSON, XML, a form, a signed payload — and the headers are a list of `{ "name", "value" }` whose **order is kept**. Write the call the function expects and it is documentation that runs. It is not a vault: everyone who can read the function reads its sample, so put the *shape* of a signed request there and never a live secret — those belong in `plainEnv`. Four header names are dropped from the envelope on the way in (see [The Rules for Headers and Query](03-writing-functions.md#the-rules-for-headers-and-query)); a sample may carry one and it is stored as sent, but it will not reach the function.
 - `triggers`, when present, is the complete set of triggers, not a patch. `active` defaults to `true` when omitted, `maxQueue` to `0` (no limit).
 - `kind` says which deadline fires a trigger: `"cron"` for a schedule, `"startup"` to fire once when the server comes up. **Omitted, it reads as `"cron"`** — a body written before startup triggers existed still describes what it described. The rules are exclusive: a `cron` trigger must carry a `schedule` that parses, a `startup` trigger must carry **no** `schedule` at all, and either violation is a `400`.
 - `startupDelayMinutes` is how long after the server comes up a `startup` trigger fires. A whole number of minutes, `0` to `1439` (23h59); anything else is a `400`. It is ignored on a cron trigger.
@@ -201,6 +207,8 @@ Reading secrets back is *not* part of this contract: `GET` never returns them. O
   "name": "echo",
   "script": "...",
   "packageJson": "...",
+  "sampleBody": "{\"id\":\"evt_1\"}",
+  "sampleHeaders": [{ "name": "Stripe-Signature", "value": "t=1,v1=abc" }],
   "depsStatus": "installing",
   "depsError": "",
   "triggers": [
@@ -234,6 +242,8 @@ Reading secrets back is *not* part of this contract: `GET` never returns them. O
     ```
     That covers a `cron` trigger with a blank or unparsable `schedule`, a `startup` trigger carrying a `schedule`, and a `startupDelayMinutes` outside `0`–`1439`. A client reading `fields.schedule` to detect a blank schedule has to read the message instead.
     `script` and `packageJson` are capped at **1,048,576 characters each** — the editor uses the same ceiling. It is counted in characters, not bytes, so a non-ASCII file gets more than a megabyte of room.
+
+    `sampleBody` and `sampleHeaders` have a far smaller ceiling of their own, **16,384 characters each**, and the Editor obeys it too. `sampleHeaders` is measured on its stored form, the serialised list, not on any single value. The refusal names the field: `The sampleBody of a function is limited to 16384 characters.` A sample is an example of a call, not an archive of one.
 
     `plainEnv` has its own ceiling, about **75 KB of secrets in clear**. It applies to the encrypted form actually stored, and encryption plus its encoding cost a third on top, which is where the figure comes from.
 - `401`: missing or invalid `X-API-Key`.
@@ -355,7 +365,7 @@ The endpoint is **stateless**: every request carries its own authorization, and 
 
     Each one calls the same code its route calls, so the refusals above are the refusals a tool reports — they arrive as a tool error the agent can read and act on, rather than as an HTTP status. A refused name, a refused field, an invalid cron expression and a scope refusal therefore reach the agent **word for word**. A failure on the server's side does not: it is written to the server log and the agent is told only that the call failed, exactly as the matching route answers `500` with a fixed wording.
 
-    `update_function` is the one that is not a plain relay. `PUT` replaces the function whole, so the tool **reads it first and merges** what the caller sent onto what is stored: a call carrying only `script` keeps the `packageJson`, the triggers and the secrets. The explicit empty values still mean what they mean everywhere else — `plainEnv` as `{}` deletes every secret, `triggers` as `[]` deletes every trigger, and `packageJson` as `""` clears the dependencies.
+    `update_function` is the one that is not a plain relay. `PUT` replaces the function whole, so the tool **reads it first and merges** what the caller sent onto what is stored: a call carrying only `script` keeps the `packageJson`, the sample call, the triggers and the secrets. The explicit empty values still mean what they mean everywhere else — `plainEnv` as `{}` deletes every secret, `triggers` as `[]` deletes every trigger, `packageJson` as `""` clears the dependencies, and `sampleHeaders` as `[]` clears the sample headers.
 
 - **Instructions**: the session receives the contract for writing a FaaSBox function at initialization — the input envelope and the `stdout` contract, the naming rule, the size caps, the background install, the cron format, and what a write replaces. Nothing has to be pasted into the agent.
 - **Invoking**: a function an agent runs through `invoke_function` receives `{"trigger": "mcp", "body": …}` on `stdin`. There is no HTTP request behind the call, so the envelope carries no method, path or headers, and the run is recorded in the [logs](07-execution-logs.md) with `trigger` set to `mcp`.
