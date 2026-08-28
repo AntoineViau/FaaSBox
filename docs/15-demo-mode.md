@@ -23,6 +23,12 @@ value, rather than starting an instance that believes it is not a showcase. A
 wrong decision is not caught: `false` on something you meant to publish is a
 perfectly valid setting.
 
+Turning the mode on takes a restart, since the three variables are read once at
+startup. The switch is immediate for visitors all the same: the editor reads the
+mode at every load, and the answer is never cached — someone who saw the
+instance before the switch gets the showcase on their next visit, without having
+to clear anything.
+
 ## What it shows, and what it stops
 
 What it shows is everything — the functions and their code, their triggers,

@@ -109,7 +109,7 @@ func registerClientHandler(e *core.RequestEvent) error {
 	// endpoint authenticates nobody. No client_secret is issued, and the field is
 	// omitted rather than sent empty.
 	metadata.TokenEndpointAuthMethod = "none"
-	oauthNoStore(e)
+	noStore(e)
 	return e.JSON(http.StatusCreated, &oauthex.ClientRegistrationResponse{
 		ClientRegistrationMetadata: metadata,
 		ClientID:                   clientId,

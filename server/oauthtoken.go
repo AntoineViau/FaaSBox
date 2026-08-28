@@ -36,7 +36,7 @@ var (
 
 // tokenHandler answers POST /oauth/token.
 func tokenHandler(e *core.RequestEvent) error {
-	oauthNoStore(e)
+	noStore(e)
 
 	if err := e.Request.ParseForm(); err != nil {
 		return oauthFailure(e, http.StatusBadRequest, "invalid_request",

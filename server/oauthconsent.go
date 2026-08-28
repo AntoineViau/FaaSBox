@@ -106,7 +106,7 @@ func consentDecisionHandler(e *core.RequestEvent, cfg oauthConfig) error {
 		})
 	}
 
-	oauthNoStore(e)
+	noStore(e)
 	return e.JSON(http.StatusOK, map[string]string{
 		"redirectUrl": appendQuery(redirectURI, url.Values{
 			"code":  {code},

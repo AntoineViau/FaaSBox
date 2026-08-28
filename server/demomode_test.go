@@ -194,6 +194,9 @@ func TestInstancePublishesTheModeInDemoMode(t *testing.T) {
 			`"password":"demo"`,
 		},
 		ExpectedEvents: map[string]int{"*": 0},
+		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			assertNoStore(t, res)
+		},
 	})
 	s.Test(t)
 }
@@ -211,6 +214,9 @@ func TestInstanceHidesTheCredentialsOutsideDemoMode(t *testing.T) {
 		ExpectedContent:    []string{`"demoMode":false`},
 		NotExpectedContent: []string{`"email"`, `"password"`, "demo@faasbox.net"},
 		ExpectedEvents:     map[string]int{"*": 0},
+		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			assertNoStore(t, res)
+		},
 	})
 	s.Test(t)
 }

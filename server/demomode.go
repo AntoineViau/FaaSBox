@@ -113,8 +113,16 @@ func refuseDemoWrite(e *core.RequestEvent) error {
 //
 // It is not folded into /health, which answers "am I alive" to an orchestrator
 // and whose contract is documented for one.
+//
+// The answer is never stored. Turning demo mode on takes a restart, so a
+// browser that visited the instance before the switch would otherwise be free
+// to keep the answer it got then, and open an editor whose controls promise
+// what the server now refuses. noStore says why the rule is not this route's
+// alone.
 func instanceHandler(demo demoSettings) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
+		noStore(e)
+
 		if !demo.Enabled {
 			return e.JSON(http.StatusOK, map[string]any{"demoMode": false})
 		}

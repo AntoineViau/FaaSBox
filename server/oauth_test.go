@@ -189,6 +189,8 @@ func TestRegisterClientNeedsNoAuthentication(t *testing.T) {
 		// empty.
 		NotExpectedContent: []string{`"client_secret"`},
 		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			assertNoStore(t, res)
+
 			records, err := app.FindAllRecords(faasboxOAuthClientsCollection)
 			if err != nil || len(records) != 1 {
 				t.Fatalf("got %d client records (err %v), want 1", len(records), err)

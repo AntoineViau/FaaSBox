@@ -25,6 +25,10 @@ interface InstanceResponse {
  * method, and these signals are what closes the affordances that would ask for
  * one. The two credentials are only published by a demo instance, and they fill
  * the sign-in form so a visitor can open the ordinary session the editor needs.
+ *
+ * **Reading it once is enough because the answer cannot be stale.** The response
+ * forbids being stored, so this call always reaches the server: the freshness is
+ * the response's own doing, and nothing here has to ask for it.
  */
 @Injectable({ providedIn: 'root' })
 export class InstanceService {

@@ -332,6 +332,8 @@ func TestConsentApprovalIssuesAHashedCode(t *testing.T) {
 		ExpectedStatus:  200,
 		ExpectedContent: []string{`"redirectUrl":"`},
 		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			assertNoStore(t, res)
+
 			query := decisionRedirect(t, res).Query()
 			code := query.Get("code")
 			if code == "" {

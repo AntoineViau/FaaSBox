@@ -298,13 +298,6 @@ func appendQuery(raw string, extra url.Values) string {
 	return u.String()
 }
 
-// oauthNoStore marks a response that must never be cached. Tokens and codes ride
-// these bodies.
-func oauthNoStore(e *core.RequestEvent) {
-	e.Response.Header().Set("Cache-Control", "no-store")
-	e.Response.Header().Set("Pragma", "no-cache")
-}
-
 // allowPublicMetadataOrigin opens a document to cross-origin reads. Discovery
 // documents are public configuration by design (RFC 9728 §3.1), and a browser
 // based client has to be able to fetch them.

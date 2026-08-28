@@ -429,3 +429,17 @@ func createTestTrigger(t testing.TB, app core.App, name, schedule, functionId st
 	}
 	return record
 }
+
+// assertNoStore holds the four responses that must never be written down: the
+// three OAuth ones that carry a code or a token, and the instance mode, whose
+// stale copy would let an editor promise what the server refuses. noStore
+// carries the rule; this is what keeps a route from silently losing it.
+func assertNoStore(t testing.TB, res *http.Response) {
+	t.Helper()
+	if got := res.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want %q", got, "no-store")
+	}
+	if got := res.Header.Get("Pragma"); got != "no-cache" {
+		t.Fatalf("Pragma = %q, want %q", got, "no-cache")
+	}
+}

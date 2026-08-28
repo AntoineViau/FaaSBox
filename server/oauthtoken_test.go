@@ -73,6 +73,8 @@ func TestTokenExchangesTheCode(t *testing.T) {
 			`"scope":"faasbox"`,
 		},
 		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			assertNoStore(t, res)
+
 			access, refresh := tokenResponse(t, res)
 			stored := reloadGrant(t, app, grant.Id)
 			if stored.GetString("status") != grantActive {

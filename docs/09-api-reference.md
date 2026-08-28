@@ -606,6 +606,11 @@ The two credential fields exist only in demo mode, and they are exactly what
 when those are not set. A normal instance never returns them, even if both
 variables are set on it.
 
+Both answers carry `Cache-Control: no-store` and `Pragma: no-cache`, so no
+browser or proxy keeps a copy. Demo mode is switched on at startup, and a client holding yesterday's
+answer would open an editor whose controls promise what the instance now
+refuses.
+
 > ⚠️ This endpoint is public and unauthenticated, so **the credentials of a demo
 > instance are published to anyone who asks**. That is the point — the sign-in
 > form shows them — but it means the account they name is open to the world,
