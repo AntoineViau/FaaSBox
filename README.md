@@ -149,6 +149,7 @@ Found a vulnerability? **Do not open a public issue.** Report it privately — s
 - [**11 - Development Guide**](docs/11-development-guide.md)
 - [**12 - Lost Password**](docs/12-lost-password.md)
 - [**13 - AI Agents**](docs/13-ai-agents.md)
+- [**14 - Litestream Replication**](docs/14-litestream-replication.md)
 
 ---
 
