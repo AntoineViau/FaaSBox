@@ -44,6 +44,7 @@ import { ZardAlertComponent } from '@shared/components/alert';
                 [(ngModel)]="email"
                 name="email"
                 required
+                [readonly]="demoMode()"
                 [disabled]="loading()"
               />
             </z-form-control>
@@ -59,13 +60,20 @@ import { ZardAlertComponent } from '@shared/components/alert';
                 [(ngModel)]="password"
                 name="password"
                 required
+                [readonly]="demoMode()"
                 [disabled]="loading()"
               />
             </z-form-control>
           </z-form-field>
 
-          <button z-button type="submit" [zLoading]="loading()" [zDisabled]="!email || !password || loading()">
-            Sign in
+          <button
+            z-button
+            type="submit"
+            [class]="demoMode() ? DEMO_BUTTON_CLASSES : ''"
+            [zLoading]="loading()"
+            [zDisabled]="!email || !password || loading()"
+          >
+            {{ demoMode() ? 'Click here to sign in to the demo' : 'Sign in' }}
           </button>
         </form>
       </z-card>
@@ -90,6 +98,27 @@ export class LoginComponent {
    */
   email = this.instance.demoMode() ? this.instance.demoEmail() : '';
   password = this.instance.demoMode() ? this.instance.demoPassword() : '';
+
+  /**
+   * The button says what the filled-in fields already imply: on a showcase, the
+   * click is the whole sign-in, and nothing has to be typed first. The two
+   * fields are `readonly` for the same reason — the credentials are the ones the
+   * showcase publishes, and any other pair would only fail.
+   *
+   * `readonly` and not `disabled`: a disabled field is skipped by the tab order
+   * and greyed out, which would read as broken, and its value would no longer be
+   * submitted. A read-only field is still focusable, selectable and copyable.
+   */
+  protected readonly demoMode = this.instance.demoMode;
+
+  /**
+   * The submit button wears the banner's yellow in demo mode: the two are the
+   * only things on the page that belong to the showcase rather than to FaaSBox,
+   * and sharing a colour is what says so. The fill is fixed in both themes, like
+   * the banner's, so the pair cannot drift apart.
+   */
+  protected readonly DEMO_BUTTON_CLASSES =
+    'bg-yellow-400 text-yellow-950 hover:bg-yellow-300 dark:bg-yellow-500 dark:hover:bg-yellow-400';
   loading = signal(false);
   errorMessage = signal('');
 
