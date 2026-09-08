@@ -48,10 +48,17 @@ func manageApp(t testing.TB) (*tests.TestApp, string, *core.Record) {
 
 // manageScenario wires a scenario onto an already prepared app.
 func manageScenario(app *tests.TestApp, functionsDir string, s tests.ApiScenario) tests.ApiScenario {
+	return manageScenarioNamed(app, functionsDir, "", s)
+}
+
+// manageScenarioNamed is manageScenario on an instance that carries a name, so
+// what the MCP server announces can be pinned over the wire and not only on the
+// function that composes it.
+func manageScenarioNamed(app *tests.TestApp, functionsDir, instanceName string, s tests.ApiScenario) tests.ApiScenario {
 	s.TestAppFactory = func(t testing.TB) *tests.TestApp { return app }
 	s.DisableTestAppCleanup = true
 	s.BeforeTestFunc = func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
-		registerFaaSRoutes(app, e, functionsDir)
+		registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly, instanceName)
 	}
 	return s
 }

@@ -26,6 +26,8 @@ The editor has an **AI MCP** page, in the sidebar under **API keys**. It opens o
 
 On an instance with no `FAASBOX_PUBLIC_URL` the first panel is absent and the second is already open, since there is no choice left to make.
 
+The snippets below name the server `faasbox`, which is what an unnamed instance is called. Set [`FAASBOX_NAME`](04-environment-variables.md#server-configuration-variables) and the page hands you `faasbox-<name>` instead — that is how you plug two boxes into the same agent without the second overwriting the first. The page always shows the right one; these examples are the unnamed case.
+
 The transport is **Streamable HTTP**. There is no stdio variant: it would mean publishing an artifact and asking you to run a second runtime next to the one you already deployed.
 
 ### Signing in from the agent

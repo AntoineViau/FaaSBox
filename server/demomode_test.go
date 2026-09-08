@@ -32,13 +32,20 @@ func demoApp(t testing.TB) *tests.TestApp {
 // registered before this hook ran. That is the whole point of the placement,
 // and every scenario aimed at /api/collections/... below is the proof of it.
 func demoScenario(app *tests.TestApp, demo demoSettings, s tests.ApiScenario) tests.ApiScenario {
+	return namedInstanceScenario(app, demo, "", s)
+}
+
+// namedInstanceScenario is demoScenario with a name posed on the instance. It
+// carries the body of both, so the wiring order the comment above describes is
+// written once.
+func namedInstanceScenario(app *tests.TestApp, demo demoSettings, instanceName string, s tests.ApiScenario) tests.ApiScenario {
 	s.TestAppFactory = func(t testing.TB) *tests.TestApp { return app }
 	s.DisableTestAppCleanup = true
 	s.BeforeTestFunc = func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
 		if demo.Enabled {
 			e.Router.BindFunc(refuseWrites)
 		}
-		e.Router.GET("/api/faasbox/instance", instanceHandler(demo))
+		e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName))
 		registerFaaSRoutes(app, e, t.TempDir())
 	}
 	return s
@@ -176,47 +183,6 @@ func TestWithoutDemoModeNothingIsRefused(t *testing.T) {
 		// the two refusals apart, and it is not ours.
 		ExpectedStatus:     403,
 		NotExpectedContent: []string{refusalBody},
-	})
-	s.Test(t)
-}
-
-// TestInstancePublishesTheModeInDemoMode covers what the sign-in form reads.
-func TestInstancePublishesTheModeInDemoMode(t *testing.T) {
-	app := demoApp(t)
-	s := demoScenario(app, demoOn, tests.ApiScenario{
-		Name:           "the instance route in demo mode",
-		Method:         http.MethodGet,
-		URL:            "/api/faasbox/instance",
-		ExpectedStatus: 200,
-		ExpectedContent: []string{
-			`"demoMode":true`,
-			`"email":"demo@faasbox.net"`,
-			`"password":"demo"`,
-		},
-		ExpectedEvents: map[string]int{"*": 0},
-		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-			assertNoStore(t, res)
-		},
-	})
-	s.Test(t)
-}
-
-// TestInstanceHidesTheCredentialsOutsideDemoMode is the guard that matters: the
-// two variables may be set on an instance where the flag is not, and the route
-// must not publish them there.
-func TestInstanceHidesTheCredentialsOutsideDemoMode(t *testing.T) {
-	app := demoApp(t)
-	s := demoScenario(app, demoSettings{Email: "demo@faasbox.net", Password: "demo"}, tests.ApiScenario{
-		Name:               "the instance route on a normal instance",
-		Method:             http.MethodGet,
-		URL:                "/api/faasbox/instance",
-		ExpectedStatus:     200,
-		ExpectedContent:    []string{`"demoMode":false`},
-		NotExpectedContent: []string{`"email"`, `"password"`, "demo@faasbox.net"},
-		ExpectedEvents:     map[string]int{"*": 0},
-		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
-			assertNoStore(t, res)
-		},
 	})
 	s.Test(t)
 }

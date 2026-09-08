@@ -588,23 +588,31 @@ Used for container health checks or load balancer heartbeat. Verifies that the S
 
 **No Authentication Required.**
 
-Says whether this instance is a read-only demo. The editor reads it before its
-first render, to close the controls a showcase does not offer.
+Says what this instance is: whether it is a read-only demo, and what it is
+called. The editor reads it before its first render, to close the controls a
+showcase does not offer and to label its own header.
 
 - **Response on a normal instance**: `200 OK`
     ```json
     {
-      "demoMode": false
+      "demoMode": false,
+      "name": "toto"
     }
     ```
 - **Response on a demo instance**: `200 OK`
     ```json
     {
       "demoMode": true,
+      "name": "toto",
       "email": "demo@example.com",
       "password": "demo"
     }
     ```
+
+`name` is what [`FAASBOX_NAME`](04-environment-variables.md#server-configuration-variables)
+holds, and it is **always** present — an empty string on an instance that sets
+no name, or one whose value was refused. It does not follow the rule the two
+credentials follow: a label is not a secret.
 
 The two credential fields exist only in demo mode, and they are exactly what
 `FAASBOX_DEMOMODE_EMAIL` and `FAASBOX_DEMOMODE_PASSWORD` hold — empty strings

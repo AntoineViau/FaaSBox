@@ -208,6 +208,13 @@ export class AgentsComponent implements OnInit {
    */
   protected readonly demoMode = this.instance.demoMode;
 
+  /**
+   * The name of this box, which is what the snippets below call the server. It
+   * comes from the same service as the mode, read before the first render, so
+   * no snippet is ever shown under a key it is about to lose.
+   */
+  protected readonly instanceName = this.instance.name;
+
   protected readonly placeholder = KEY_PLACEHOLDER;
 
   /**
@@ -230,8 +237,12 @@ export class AgentsComponent implements OnInit {
    */
   protected readonly oauthAvailable = signal<boolean | null>(null);
 
-  protected readonly oauthClients = computed(() => agentSnippets(this.endpoint(), false));
-  protected readonly keyClients = computed(() => agentSnippets(this.endpoint(), true));
+  protected readonly oauthClients = computed(() =>
+    agentSnippets(this.endpoint(), false, this.instanceName()),
+  );
+  protected readonly keyClients = computed(() =>
+    agentSnippets(this.endpoint(), true, this.instanceName()),
+  );
 
   protected readonly grants = signal<FaasboxOAuthGrant[]>([]);
   protected readonly isLoadingGrants = signal(false);

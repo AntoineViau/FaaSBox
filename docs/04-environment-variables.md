@@ -92,6 +92,7 @@ These environment variables configure the FaaSBox server itself (not injected in
 | `SUPERUSER_PASSWORD` | Admin superuser password | *(required)* |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
 | `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin, `http://` or `https://` included | *(OAuth disabled)* |
+| `FAASBOX_NAME` | A name for this instance, shown in the interface and used to name its MCP server | *(unnamed)* |
 | `FAASBOX_DEMOMODE` | Turns the instance into a read-only showcase | `false` |
 | `FAASBOX_DEMOMODE_EMAIL` | Email the sign-in form of a demo instance shows prefilled | *(empty)* |
 | `FAASBOX_DEMOMODE_PASSWORD` | Password the sign-in form of a demo instance shows prefilled | *(empty)* |
@@ -110,6 +111,10 @@ Every numeric setting behaves the same way: an absent variable uses the default 
 `FAASBOX_DEMOMODE` is the **second** variable of the table — after `FAASBOX_ENCRYPTION_KEY` — whose unreadable value stops the server instead of falling back. The reason is what it commands: a bound that falls back costs a misconfigured limit, while `FAASBOX_DEMOMODE=treu` would leave every write route of something published as a showcase wide open. `true`, `1`, `false`, `0` and their casings are accepted; anything else is refused by name and by value. Absent, it is simply `false`.
 
 Its two companions command nothing and are read as they stand: they fill the two fields of the sign-in form on a demo instance, and they create no account — the one they name must already exist as a superuser. See [15 - Demo Mode](15-demo-mode.md) for what the mode stops, what it publishes, and why those two variables are not simply the superuser ones.
+
+`FAASBOX_NAME` tells your boxes apart. Set it to `toto` and both the sign-in card and the editor header read **FaaSBox toto** — you see which box you are signing in to before you sign in, not after — and the snippets on the **AI MCP** page name the server `faasbox-toto` instead of `faasbox` — which is what stops a second instance from overwriting the first in your agent's configuration when you paste both. Letters, digits, `.`, `-` and `_`, 32 characters at most; nothing else, and nothing is trimmed, so ` toto ` is refused rather than tidied. A refused value leaves the instance unnamed with a line in the server log, exactly like a bad numeric setting — a label is not worth refusing to start over.
+
+> ⚠️ The name is published by a **public, unauthenticated** route, the same one the sign-in form reads. Anyone who can reach the instance can read it. It is a label, not a secret: do not put a client name or an internal environment in it.
 
 `FAASBOX_PUBLIC_URL` is the exception to the "has a default" rule, because no guessed address would be right: it is what the OAuth authorization server publishes as its own identity. It must carry its scheme — `https://faasbox.example.com`, never `faasbox.example.com` — because an issuer without one is not an absolute URL. Absent or malformed, the OAuth endpoints are not mounted and a startup line says why; an agent then connects with an API key, as it does today. See [09 - API Reference](09-api-reference.md#6-oauth-authorization) for the endpoints and [10 - Deployment](10-deployment.md#telling-the-instance-its-own-address) for what to put in it.
 

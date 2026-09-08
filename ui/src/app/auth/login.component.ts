@@ -27,8 +27,23 @@ import { ZardAlertComponent } from '@shared/components/alert';
     ZardAlertComponent,
   ],
   template: `
+    <!-- The title carries the name of the instance the way the editor header
+         does, so the box you are signing in to is named before you sign in and
+         not after. It is a template rather than a string because the name is
+         set apart in muted grey, and z-card takes either. -->
+    <ng-template #cardTitle>
+      FaaSBox
+      @if (instanceName()) {
+        <span class="font-normal text-muted-foreground">{{ instanceName() }}</span>
+      }
+    </ng-template>
+
     <div class="flex min-h-full items-center justify-center p-4">
-      <z-card zTitle="FaaSBox" zDescription="Sign in with your superuser account" class="w-full max-w-sm">
+      <z-card
+        [zTitle]="cardTitle"
+        zDescription="Sign in with your superuser account"
+        class="w-full max-w-sm"
+      >
         <form (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           @if (errorMessage()) {
             <z-alert zType="destructive" zTitle="Error" [zDescription]="errorMessage()" />
@@ -110,6 +125,13 @@ export class LoginComponent {
    * submitted. A read-only field is still focusable, selectable and copyable.
    */
   protected readonly demoMode = this.instance.demoMode;
+
+  /**
+   * What this box is called, empty on an instance that sets no name. Same
+   * source and same timing as the editor header: read before the first render,
+   * so the card never shows one wording and then another.
+   */
+  protected readonly instanceName = this.instance.name;
 
   /**
    * The submit button wears the banner's yellow in demo mode: the two are the

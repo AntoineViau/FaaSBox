@@ -27,7 +27,7 @@ func mcpSession(t testing.TB, app core.App, functionsDir string, allowed []strin
 	t.Helper()
 	ctx := context.Background()
 
-	server := newMCPServer(app, functionsDir, allowed, nil)
+	server := newMCPServer(app, functionsDir, allowed, nil, "")
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
@@ -664,6 +664,56 @@ func TestMCPEndpointAuth(t *testing.T) {
 		AfterTestFunc:   expectNoChallenge,
 	})
 	noChallenge.Test(t)
+}
+
+// TestMCPIdentity locks what the server calls itself. The unnamed answer is the
+// one every instance gave before FAASBOX_NAME existed, and it has to stay
+// exactly that: an agent already connected to a box would otherwise see its
+// server renamed by an upgrade.
+func TestMCPIdentity(t *testing.T) {
+	cases := []struct {
+		instanceName string
+		wantName     string
+		wantTitle    string
+	}{
+		{"", "faasbox", "FaaSBox"},
+		{"toto", "faasbox-toto", "FaaSBox toto"},
+		{"my.box", "faasbox-my.box", "FaaSBox my.box"},
+	}
+
+	for _, tt := range cases {
+		name, title := mcpIdentity(tt.instanceName)
+		if name != tt.wantName || title != tt.wantTitle {
+			t.Errorf("mcpIdentity(%q) = (%q, %q), want (%q, %q)",
+				tt.instanceName, name, title, tt.wantName, tt.wantTitle)
+		}
+	}
+}
+
+// TestMCPEndpointAnnouncesTheInstanceName proves the composed identity travels
+// all the way to the wire. The rule itself is pinned above; what this covers is
+// the wiring, which is where a name gets dropped.
+func TestMCPEndpointAnnouncesTheInstanceName(t *testing.T) {
+	app, functionsDir, _ := manageApp(t)
+
+	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{` +
+		`"protocolVersion":"2025-06-18","capabilities":{},` +
+		`"clientInfo":{"name":"test","version":"0"}}}`
+
+	s := manageScenarioNamed(app, functionsDir, "toto", tests.ApiScenario{
+		Name:   "a named instance announces itself as faasbox-toto",
+		Method: http.MethodPost,
+		URL:    "/mcp",
+		Body:   strings.NewReader(initialize),
+		Headers: map[string]string{
+			"Accept":       "application/json, text/event-stream",
+			"Content-Type": "application/json",
+			"X-API-Key":    createTestManageKey(t, app, "named-manager", nil, true),
+		},
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"name":"faasbox-toto"`, `"title":"FaaSBox toto"`},
+	})
+	s.Test(t)
 }
 
 // TestMCPEndpointOAuth pins the endpoint on the other footing: the signpost that

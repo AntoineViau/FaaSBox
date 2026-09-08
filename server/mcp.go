@@ -111,7 +111,7 @@ func keyScopeFromContext(ctx context.Context) ([]string, error) {
 // The schema cache is what makes that affordable: without it every request would
 // pay the reflection pass that infers the seven input schemas. The SDK ships it
 // for this exact deployment shape.
-func mcpHandler(app core.App, functionsDir string) http.Handler {
+func mcpHandler(app core.App, functionsDir, instanceName string) http.Handler {
 	cache := &mcp.SchemaCache{}
 
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
@@ -124,17 +124,36 @@ func mcpHandler(app core.App, functionsDir string) http.Handler {
 				"error", err)
 			return nil
 		}
-		return newMCPServer(app, functionsDir, allowed, cache)
+		return newMCPServer(app, functionsDir, allowed, cache, instanceName)
 	}, &mcp.StreamableHTTPOptions{Stateless: true})
+}
+
+// mcpIdentity is what the server calls itself, given the name of the instance.
+//
+// An unnamed instance is "faasbox", which is what every instance announced
+// before FAASBOX_NAME existed. A named one carries it, so an agent plugged into
+// two boxes does not see the same server twice — which is the whole reason the
+// variable exists.
+//
+// The same composition is spelled once more in the frontend, which builds the
+// integration snippets of the AI MCP page (agent-snippets.ts). Two languages,
+// one rule, as deniedHeaders already is: the page has to show the name a client
+// would use, and it has nothing but the instance route to build it from.
+func mcpIdentity(instanceName string) (name, title string) {
+	if instanceName == "" {
+		return "faasbox", "FaaSBox"
+	}
+	return "faasbox-" + instanceName, "FaaSBox " + instanceName
 }
 
 // newMCPServer builds the server one request works with, carrying that request's
 // authorization.
-func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mcp.SchemaCache) *mcp.Server {
+func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mcp.SchemaCache, instanceName string) *mcp.Server {
+	name, title := mcpIdentity(instanceName)
 	server := mcp.NewServer(
 		&mcp.Implementation{
-			Name:    "faasbox",
-			Title:   "FaaSBox",
+			Name:    name,
+			Title:   title,
 			Version: faasboxVersion,
 		},
 		&mcp.ServerOptions{

@@ -26,6 +26,13 @@ func main() {
 		log.Fatalf("faasbox: %v", demoErr)
 	}
 
+	// What this instance is called, read once here and handed to its two
+	// consumers below: the route the editor reads before its first render, and
+	// the MCP server, which announces the name to every agent that connects.
+	// A value outside the character set leaves it empty and says so in the log
+	// — a label is not worth refusing to start over.
+	instanceName := instanceNameFromEnv()
+
 	app := pocketbase.New()
 
 	var functionsDir string
@@ -140,9 +147,10 @@ func main() {
 				return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
 			})
 
-			// What mode this instance runs in (public, both modes). The sign-in
-			// form reads it to fill itself in on a showcase.
-			e.Router.GET("/api/faasbox/instance", instanceHandler(demo))
+			// What this instance is (public, both modes): the mode the sign-in
+			// form reads to fill itself in on a showcase, and the name the
+			// editor header shows beside the wordmark.
+			e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName))
 
 			// What this instance is called from outside, read once: it says
 			// whether the OAuth authorization server goes up at all, and it is
@@ -197,7 +205,7 @@ func main() {
 			mcpRoutes.Bind(requireAPIKey(e.App, oauth))
 			mcpRoutes.Bind(requireManageKey())
 			mcpRoutes.Bind(exposeKeyScope())
-			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir))
+			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir, instanceName))
 			mcpRoutes.POST("", mcpServe)
 			mcpRoutes.GET("", mcpServe)
 

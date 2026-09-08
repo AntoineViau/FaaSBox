@@ -82,7 +82,16 @@ import { ZardInputDirective } from '@shared/components/input';
            below start exactly where the editor area does. -->
       <header class="flex items-center border-b border-border py-2">
         <div class="w-56 shrink-0 px-4">
-          <h1 class="text-lg font-semibold">FaaSBox</h1>
+          <!-- The name of the instance sits beside the wordmark rather than
+               inside it: the product is still FaaSBox, this box is one of
+               several, and whoever runs two of them reads the tab by the
+               second half. Absent, the header is exactly what it always was. -->
+          <h1 class="truncate text-lg font-semibold">
+            FaaSBox
+            @if (instanceName()) {
+              <span class="font-normal text-muted-foreground">{{ instanceName() }}</span>
+            }
+          </h1>
         </div>
         <div class="flex flex-1 items-center gap-2 px-4">
           <!-- Panels of the open function, so they only exist when there is one.
@@ -375,6 +384,13 @@ export class EditorComponent implements OnInit {
    */
   protected readonly demoMode = this.instance.demoMode;
   protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
+
+  /**
+   * What this box is called, empty on an instance that sets no name. Read from
+   * the same service and for the same reason: the answer is in before the first
+   * render, so the header never paints one wording and then another.
+   */
+  protected readonly instanceName = this.instance.name;
 
   /**
    * The address bar is the source of truth: these two are the only inputs of

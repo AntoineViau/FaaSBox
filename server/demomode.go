@@ -102,34 +102,3 @@ func refuseDemoWrite(e *core.RequestEvent) error {
 		"error": "this instance is a read-only demo",
 	})
 }
-
-// instanceHandler publishes what mode this instance runs in, without
-// authentication, in both modes.
-//
-// The two credential fields are only rendered in demo mode, and their absence
-// outside it is not decorative: the two variables may well be set on an
-// instance where the flag is not, and the route would then publish them
-// without anyone having meant it.
-//
-// It is not folded into /health, which answers "am I alive" to an orchestrator
-// and whose contract is documented for one.
-//
-// The answer is never stored. Turning demo mode on takes a restart, so a
-// browser that visited the instance before the switch would otherwise be free
-// to keep the answer it got then, and open an editor whose controls promise
-// what the server now refuses. noStore says why the rule is not this route's
-// alone.
-func instanceHandler(demo demoSettings) func(*core.RequestEvent) error {
-	return func(e *core.RequestEvent) error {
-		noStore(e)
-
-		if !demo.Enabled {
-			return e.JSON(http.StatusOK, map[string]any{"demoMode": false})
-		}
-		return e.JSON(http.StatusOK, map[string]any{
-			"demoMode": true,
-			"email":    demo.Email,
-			"password": demo.Password,
-		})
-	}
-}

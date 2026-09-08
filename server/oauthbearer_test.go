@@ -44,7 +44,7 @@ func bearerScenario(app *tests.TestApp, functionsDir string, s tests.ApiScenario
 	s.TestAppFactory = func(t testing.TB) *tests.TestApp { return app }
 	s.DisableTestAppCleanup = true
 	s.BeforeTestFunc = func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
-		registerFaaSRoutesFor(app, e, functionsDir, testOAuthConfig)
+		registerFaaSRoutesFor(app, e, functionsDir, testOAuthConfig, "")
 	}
 	return s
 }
@@ -216,7 +216,7 @@ func TestBearerScopeReachesTheHandler(t *testing.T) {
 	seedActiveGrant(t, app)
 
 	probe := func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
-		registerFaaSRoutesFor(app, e, functionsDir, testOAuthConfig)
+		registerFaaSRoutesFor(app, e, functionsDir, testOAuthConfig, "")
 
 		group := e.Router.Group("/mcp-bearer-probe")
 		group.Bind(requireAPIKey(e.App, testOAuthConfig))
