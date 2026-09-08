@@ -149,7 +149,7 @@ func TestMCPServerAdvertises(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, marker := range []string{"kind", "startupDelayMinutes", "1439", "sampleBody", "sampleHeaders"} {
+		for _, marker := range []string{"kind", "startupDelayMinutes", "1439", "timezone", "sampleBody", "sampleHeaders"} {
 			if !strings.Contains(string(schema), marker) {
 				t.Errorf("the create_function schema does not carry %q", marker)
 			}
@@ -174,6 +174,7 @@ func TestMCPServerAdvertises(t *testing.T) {
 			"day-of-week",  // cron expression
 			"startup",      // the second kind of trigger
 			"1439",         // and the bound on its delay
+			"Europe/Paris", // the zone an expression is read in
 			"empty object", // plainEnv erases
 			"do not patch", // a write replaces
 		} {

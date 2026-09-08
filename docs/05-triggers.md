@@ -15,7 +15,7 @@ The easiest way to manage triggers is directly from the FaaSBox Editor:
 1. Open your function in the Editor.
 2. Switch to the **Triggers** tab.
 3. Click **Add trigger**. The row appears on screen — nothing is written yet.
-4. Configure the schedule (click an example in the **Cron syntax** fold, or type your own expression), payload, and active state. To run the function when the server comes up instead, tick **Startup trigger** — the schedule field gives way to a delay.
+4. Configure the schedule (click an example in the **Cron syntax** fold, or type your own expression), the **Timezone** it is read in, the payload, and the active state. To run the function when the server comes up instead, tick **Startup trigger** — the schedule field gives way to a delay.
 5. Open the **Advanced** fold if you need to cap concurrency — see **Max queue** below.
 6. Click **Save**.
 
@@ -59,6 +59,24 @@ Because nothing is written until then, switching to another function while the p
 
 Under the schedule field, the **Cron syntax** fold — closed by default — spells out the five columns and lists ready-made expressions. Click one and it fills the field.
 
+### Timezone
+
+Under the schedule field, a **Timezone** picker says which clock those five columns are read in. `0 3 * * *` set on `Europe/Paris` fires at three in the morning in Paris — in winter and in summer alike, since the zone carries its own daylight-saving rules. Change the zone and the same expression fires at a different absolute moment; the expression itself never has to be rewritten.
+
+A new trigger starts on **your browser's timezone**, which is almost always what you meant. A trigger that carries no zone at all — one written before this field existed, or straight from the Admin UI — reads as **UTC**, which is what it has always done.
+
+The list offers the IANA zone names your browser knows. Anything the server cannot resolve is refused when you save, naming the value.
+
+Three names are refused even though the server *can* resolve them, because none of them names a place:
+
+- **`Local`** is a special value meaning "the timezone of the process", read from `TZ` or `/etc/localtime`.
+- **`localtime`** is that same file under another name — some systems put a link to it inside the zone database itself.
+- **`posixrules`** is whichever zone the operating system happened to pin there; it is absent from the zone database FaaSBox ships.
+
+The consequence is the same for all three, and it is why they are refused rather than merely discouraged: your trigger would fire on the clock of **the machine**, not on the clock of a place. The same trigger would mean three in the morning in Paris on your laptop and three in the morning UTC on the deployed instance — and it would change again the day the instance moves to another host, silently, with the trigger still reading exactly as you left it. Name the place you mean and the trigger keeps meaning it everywhere.
+
+The zone is ignored on a **startup trigger** — a delay counted from boot has no wall clock — so ticking **Startup trigger** leaves it alone rather than clearing it.
+
 ### Max queue
 
 Every trigger carries a **Max queue** setting. It sits behind the **Advanced** fold, closed by default, because most schedules never need it.
@@ -82,6 +100,7 @@ You never need this — the Triggers tab covers everything below. It is here for
     - **Schedule**: A standard cron expression (see below).
     - **Function**: the function to execute, picked from the `faasbox_functions` collection. It is a relation and it is required — a trigger with nothing to fire has no reason to exist.
     - **Payload**: A JSON string. It reaches the function as the `body` field of the envelope, as a string.
+    - **Timezone** *(optional)*: an IANA zone name, `Europe/Paris` for instance, saying which clock the schedule is read in. Same setting as **Timezone** in the Editor, described above. Leave it empty for UTC. An unknown zone is refused, and so are `Local`, `localtime` and `posixrules`: each names the clock of the machine rather than a place, so the trigger would change meaning when the instance moves — see [Timezone](#timezone).
     - **Active**: Toggle this to `true` to enable the task.
     - **MaxQueue** *(optional)*: Maximum number of simultaneous executions (waiting + running) allowed for this trigger. Same setting as **Max queue** in the Editor, described above. Set to `0` or leave empty for no limit (default).
 
@@ -89,7 +108,7 @@ The collection also carries a **LastRunAt** field. It is written by the server a
 
 ## Cron Syntax
 
-FaaSBox uses the standard 5-column cron syntax:
+FaaSBox uses the standard 5-column cron syntax. The five columns are read in the trigger's own **Timezone** — see [Timezone](#timezone) — which is UTC for a trigger that names none:
 
 ```text
 ┌───────────── minute (0 - 59)
@@ -149,6 +168,8 @@ FaaSBox does not replay them, but it does tell you about them. On every startup,
 
 - a warning is written to the application log;
 - a single entry with `status: "missed"` and `trigger: "cron"` is added to `faasbox_logs`, carrying the number of occurrences and the period concerned.
+
+The occurrences are counted in the trigger's own timezone, so the number matches the schedule you actually wrote. The two dates in the entry, however, are in **UTC**: what they bound is a period during which the server was down, which is one absolute stretch of time whatever clock you read it from.
 
 You get **one entry per trigger and per startup**, never one per lost occurrence — a trigger scheduled every minute over a two-day outage would otherwise write thousands of rows and flush the rest of your logs.
 

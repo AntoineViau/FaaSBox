@@ -160,7 +160,7 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
   ],
   "plainEnv": { "STRIPE_KEY": "sk_test_..." },
   "triggers": [
-    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1 },
+    { "name": "nightly", "schedule": "0 3 * * *", "timezone": "Europe/Paris", "payload": {}, "active": true, "maxQueue": 1 },
     { "name": "boot", "kind": "startup", "startupDelayMinutes": 5, "payload": {}, "active": true }
   ]
 }
@@ -171,6 +171,7 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
 - `sampleBody` and `sampleHeaders` are the **sample call** saved with the function: the request the Editor's Runner replays, and what someone opening the function sees without having to compose a call of their own. The body is sent as written — JSON, XML, a form, a signed payload — and the headers are a list of `{ "name", "value" }` whose **order is kept**. Write the call the function expects and it is documentation that runs. It is not a vault: everyone who can read the function reads its sample, so put the *shape* of a signed request there and never a live secret — those belong in `plainEnv`. Four header names are dropped from the envelope on the way in (see [The Rules for Headers and Query](03-writing-functions.md#the-rules-for-headers-and-query)); a sample may carry one and it is stored as sent, but it will not reach the function.
 - `triggers`, when present, is the complete set of triggers, not a patch. `active` defaults to `true` when omitted, `maxQueue` to `0` (no limit).
 - `kind` says which deadline fires a trigger: `"cron"` for a schedule, `"startup"` to fire once when the server comes up. **Omitted, it reads as `"cron"`** — a body written before startup triggers existed still describes what it described. The rules are exclusive: a `cron` trigger must carry a `schedule` that parses, a `startup` trigger must carry **no** `schedule` at all, and either violation is a `400`.
+- `timezone` says which clock the five columns of `schedule` are read in. An **IANA zone name** — `Europe/Paris`, `Asia/Kolkata` — and nothing else: a zone the server cannot resolve is a `400`, and so are `Local`, `localtime` and `posixrules` even where the server *can* resolve them. None of the three names a place: `Local` is the timezone of the running process (`TZ`, else `/etc/localtime`), `localtime` is a link to that same file placed inside the zone database on some systems, and `posixrules` is whichever zone the operating system pinned there — absent from the database FaaSBox ships. Accepting any of them would make the trigger fire on the clock of the machine, so the same record would mean one thing on the host that wrote it and another on the host that runs it, with nothing in the record saying so. **Omitted or empty, it reads as `"UTC"`** — a body written before this field existed still describes what it described. It is ignored on a `startup` trigger, whose delay is counted from boot and has no wall clock.
 - `startupDelayMinutes` is how long after the server comes up a `startup` trigger fires. A whole number of minutes, `0` to `1439` (23h59); anything else is a `400`. It is ignored on a cron trigger.
 - A startup trigger is armed **at boot and only at boot**. Writing one through this route does not fire it and does not arm it on the running server — it waits for the next start. Cron triggers, by contrast, are picked up immediately.
 - **The whole request is one write, or none of it is.** The function and its triggers are saved together: if any trigger is refused, the call answers `400` and *nothing* is applied — not the script, not `packageJson`, not `plainEnv`, not the other triggers. A refused `POST` leaves no function behind, so the corrected retry still creates rather than colliding with a `409`.
@@ -212,13 +213,13 @@ Reading secrets back is *not* part of this contract: `GET` never returns them. O
   "depsStatus": "installing",
   "depsError": "",
   "triggers": [
-    { "name": "boot", "schedule": "", "payload": {}, "active": true, "maxQueue": 0, "kind": "startup", "startupDelayMinutes": 5 },
-    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1, "kind": "cron", "startupDelayMinutes": 0 }
+    { "name": "boot", "schedule": "", "payload": {}, "active": true, "maxQueue": 0, "kind": "startup", "startupDelayMinutes": 5, "timezone": "UTC" },
+    { "name": "nightly", "schedule": "0 3 * * *", "payload": {}, "active": true, "maxQueue": 1, "kind": "cron", "startupDelayMinutes": 0, "timezone": "Europe/Paris" }
   ]
 }
 ```
 
-`kind` always comes back filled, even for a trigger written without it: the response says `"cron"` where the stored column is empty.
+`kind` and `timezone` always come back filled, even for a trigger written without them: the response says `"cron"` and `"UTC"` where the stored columns are empty. A `GET` response sent straight back as a `PUT` therefore writes those values explicitly, which is what the empty columns meant.
 
 `DELETE` answers `204` with no body.
 
@@ -240,7 +241,11 @@ Reading secrets back is *not* part of this contract: `GET` never returns them. O
     ```json
     { "error": "Trigger \"nightly\" was refused: A cron trigger needs a schedule: five fields, minute hour day-of-month month day-of-week." }
     ```
-    That covers a `cron` trigger with a blank or unparsable `schedule`, a `startup` trigger carrying a `schedule`, and a `startupDelayMinutes` outside `0`–`1439`. A client reading `fields.schedule` to detect a blank schedule has to read the message instead.
+    That covers a `cron` trigger with a blank or unparsable `schedule`, a `startup` trigger carrying a `schedule`, a `startupDelayMinutes` outside `0`–`1439`, and a `timezone` the server cannot resolve — the last one on **either** kind, since no record may carry an unknown zone:
+    ```json
+    { "error": "Trigger \"nightly\" was refused: Unknown timezone \"Europe/Nulle-Part\". Expected an IANA zone name such as \"Europe/Paris\", or nothing at all for UTC." }
+    ```
+    A client reading `fields.schedule` to detect a blank schedule has to read the message instead.
     `script` and `packageJson` are capped at **1,048,576 characters each** — the editor uses the same ceiling. It is counted in characters, not bytes, so a non-ASCII file gets more than a megabyte of room.
 
     `sampleBody` and `sampleHeaders` have a far smaller ceiling of their own, **16,384 characters each**, and the Editor obeys it too. `sampleHeaders` is measured on its stored form, the serialised list, not on any single value. The refusal names the field: `The sampleBody of a function is limited to 16384 characters.` A sample is an example of a call, not an archive of one.

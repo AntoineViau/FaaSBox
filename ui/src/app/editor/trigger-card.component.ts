@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 
 import { CronHelpComponent } from '@/editor/cron-help.component';
 import { DEFAULT_SCHEDULE, describeSchedule } from '@/editor/cron-presets';
+import { TimezoneSelectComponent } from '@/editor/timezone-select.component';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -34,6 +35,11 @@ export interface TriggerRow {
   kind: 'cron' | 'startup';
   /** On a startup row, how long after boot it fires. 0 to 1439. */
   startupDelayMinutes: number;
+  /**
+   * The zone the schedule is read in. Always filled on screen — a row loaded
+   * from an empty column reads 'UTC', a new one starts on the browser's zone.
+   */
+  timezone: string;
 }
 
 /**
@@ -42,11 +48,27 @@ export interface TriggerRow {
  */
 export const MAX_STARTUP_DELAY_MINUTES = 1439;
 
-/** Presentational: it owns no state and writes nothing. */
+/**
+ * Presentational: it owns no state and writes nothing.
+ *
+ * Past the 300-line guideline, deliberately: the file renders the two kinds of
+ * trigger in one card, and the overshoot is the second branch plus the comments
+ * carrying the toggle constraints. The concerns that could be lifted out already
+ * have been — the cron help and the timezone picker are components of their own,
+ * and the preset table is a plain module. The next cut, if one is wanted, moves
+ * the startup branch into a component beside them; splitting anything else would
+ * separate a field from the row it edits.
+ */
 @Component({
   selector: 'app-trigger-card',
   standalone: true,
-  imports: [CronHelpComponent, ZardButtonComponent, ZardIconComponent, ZardInputDirective],
+  imports: [
+    CronHelpComponent,
+    TimezoneSelectComponent,
+    ZardButtonComponent,
+    ZardIconComponent,
+    ZardInputDirective,
+  ],
   template: `
     <div class="mb-3 rounded-lg border border-border p-3">
       <div class="flex items-start gap-3">
@@ -126,11 +148,21 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
                 (input)="rowChange.emit({ schedule: $any($event.target).value })"
               />
               <p class="mt-0.5 text-xs text-muted-foreground">
-                {{ describe(row().schedule) }}
+                {{ describe(row().schedule) }} — {{ row().timezone }}
               </p>
               <div class="mt-1.5">
                 <app-cron-help (pick)="onPick($event)" />
               </div>
+            </div>
+
+            <!-- Which clock those five columns are read in -->
+            <div>
+              <label class="mb-1 block text-xs text-muted-foreground">Timezone</label>
+              <app-timezone-select
+                [value]="row().timezone"
+                [disabled]="demoMode()"
+                (valueChange)="rowChange.emit({ timezone: $event })"
+              />
             </div>
           }
 
@@ -231,6 +263,9 @@ export class TriggerCardComponent {
    * expression was typed before the switch would otherwise travel as a startup
    * trigger carrying one, which the server refuses — and the user would read a
    * 400 about a field no longer on screen.
+   *
+   * The timezone is deliberately left alone: it is ignored on a startup trigger,
+   * not refused, so nothing has to be emptied for the save to go through.
    */
   protected onStartupToggle(checked: boolean): void {
     if (this.demoMode()) return;

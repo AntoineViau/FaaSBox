@@ -3,6 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
+	"time"
+
+	// The timezone database, embedded in the binary. The release image is an
+	// alpine without the tzdata package and the binary is built CGO_ENABLED=0:
+	// nothing else would answer time.LoadLocation("Europe/Paris") in production,
+	// and every trigger would silently fall back to UTC.
+	_ "time/tzdata"
 
 	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
@@ -18,6 +26,92 @@ import (
 // startup trigger crosses this file only to be skipped.
 
 const cronJobPrefix = "__faasboxCron_"
+
+// everyMinute is the expression every FaaS job is registered on, whatever the
+// one its record carries, and that is deliberate: cron.Cron holds a single
+// timezone for the whole scheduler (SetTimezone, applied in runDue), so a zone
+// per record cannot travel through the registered expression. Each job wakes up
+// every minute and decides for itself, in its own zone. The cost is one
+// goroutine per active trigger per minute, negligible at this scale.
+const everyMinute = "* * * * *"
+
+// cronNow is the clock the registered closure reads to decide whether it is due.
+// A variable rather than a direct time.Now call, on the documented model of
+// startupDelayUnit and depsTimeout: a test that fires a job cannot wait until
+// three in the morning to prove the gate opens, and pinning the wall clock is
+// the only way to weigh a filter that reads it.
+//
+// The closure reads the clock itself because PocketBase calls go j.Run() without
+// handing the job its tick instant. The gap between the tick and the read is of
+// the order of a microsecond; only a delay past fifty-nine seconds crossing a
+// minute boundary would move the decision.
+var cronNow = time.Now
+
+// hostClockNames are the names time.LoadLocation resolves that designate a
+// *clock* rather than a place, and that must never reach the column.
+//
+// "Local" is a special value of the time package: LoadLocation accepts it and
+// yields the timezone of the running process (TZ, else /etc/localtime).
+// "localtime" and "posixrules" are entries a host tzdata package leaves in
+// /usr/share/zoneinfo — the first a symlink to /etc/localtime, so the same thing
+// under another spelling; the second a zone the distribution pinned, which the
+// embedded database does not carry at all.
+//
+// One property is shared by the three, and it is the reason for the list: what
+// they mean depends on the machine, not on a place. The same record would say
+// Europe/Paris in development and something else — or nothing, falling back to
+// UTC — in the release image, and a database replicated to another host would
+// change meaning on the way. That is exactly the property this column exists to
+// establish.
+//
+// They are reachable at all because time.LoadLocation reads the host's zoneinfo
+// directory *before* the embedded database: loadLocation walks its sources, then
+// falls back to loadFromEmbeddedTZData. The release image carries no such
+// directory, so there the two readings already agree; this list is what makes
+// them agree in development too. It closes the three known names, not the class
+// — any entry a host carries and the embedded database does not has the same
+// shape — but that residue exists in development only.
+var hostClockNames = []string{"Local", "localtime", "posixrules"}
+
+// triggerTimezone reads the zone an expression is evaluated in. An empty column
+// reads as "UTC": that is the shape every record had before, and the one the
+// PocketBase admin writes when the field is left untouched. Only point of
+// normalisation, like triggerKind for the kind.
+//
+// It lives here rather than beside the other accessors in triggers.go because it
+// carries what a five-field expression is worth and not what a trigger is: a
+// startup trigger has no clock face to read.
+func triggerTimezone(record *core.Record) string {
+	if tz := record.GetString("timezone"); tz != "" {
+		return tz
+	}
+	return "UTC"
+}
+
+// triggerLocation resolves that name. A zone that does not resolve falls back to
+// UTC with a log line: validateTriggerHook refuses one at save time, so this
+// branch is only reached on a record written outside the hook, or on a timezone
+// database that vanished from under the binary.
+func triggerLocation(app core.App, record *core.Record) *time.Location {
+	name := triggerTimezone(record)
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		app.Logger().Error("faasbox cron: unknown timezone, falling back to UTC",
+			"recordId", record.Id, "timezone", name, "error", err)
+		return time.UTC
+	}
+	return loc
+}
+
+// cronJobIsDue says whether an expression is due at this instant, seen from its
+// own zone. The projection is the only place the timezone comes in: the instant
+// stays absolute, so a daylight-saving change is taken without dedicated code.
+//
+// Extracted because two callers need it — the closure syncAllCronJobs registers
+// and the missed-run walk — and a projection written twice would diverge.
+func cronJobIsDue(s *cron.Schedule, loc *time.Location, at time.Time) bool {
+	return s.IsDue(cron.NewMoment(at.In(loc)))
+}
 
 // validateTriggerHook weighs a trigger record against the rules of its kind: a
 // cron trigger needs an expression that parses, a startup trigger needs no
@@ -38,6 +132,22 @@ func validateTriggerHook(e *core.RecordEvent) error {
 	// submitted value it weighs is still the plaintext, and the accessor is what
 	// makes the case the caller did not submit work too.
 	schedule := triggerSchedule(e.App, e.Record)
+
+	// Weighed before the kind branch, so a zone that does not resolve is refused
+	// whatever the kind — including on a startup trigger, where it is inert. No
+	// record may carry an unknown zone.
+	if name := e.Record.GetString("timezone"); name != "" {
+		// Two ways to be refused, one message: a name that does not resolve, and
+		// a name that resolves to a clock rather than a place (cf.
+		// hostClockNames). What is expected is an IANA zone name, and neither is
+		// one.
+		_, err := time.LoadLocation(name)
+		if err != nil || slices.Contains(hostClockNames, name) {
+			return apis.NewBadRequestError(fmt.Sprintf(
+				"Unknown timezone %q. Expected an IANA zone name such as \"Europe/Paris\", or nothing at all for UTC.",
+				name), nil)
+		}
+	}
 
 	if triggerKind(e.Record) == "startup" {
 		if schedule != "" {
@@ -124,6 +234,19 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 			continue
 		}
 
+		// Parsed here rather than handed to the scheduler: the job below is
+		// registered on everyMinute, so nothing downstream would weigh the
+		// expression any more.
+		parsed, err := cron.NewSchedule(schedule)
+		if err != nil {
+			// Already refused at save time; a stored expression can only be
+			// invalid if it was written outside the validation hook.
+			app.Logger().Error("faasbox cron: invalid schedule, skipping registration",
+				"recordId", record.Id, "schedule", schedule, "error", err)
+			continue
+		}
+		loc := triggerLocation(app, record)
+
 		jobId := cronJobPrefix + record.Id
 		recordId := record.Id
 		// The envelope is built at registration, like the schedule and the
@@ -131,7 +254,10 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 		// rewritten record rebuilds the whole job list. Nothing here can go
 		// stale that the resync does not already refresh.
 		in := newTriggerInput(triggerCron, triggerName(app, record), payload)
-		err = app.Cron().Add(jobId, schedule, func() {
+		err = app.Cron().Add(jobId, everyMinute, func() {
+			if !cronJobIsDue(parsed, loc, cronNow()) {
+				return
+			}
 			runFunction(ctx, app, functionsDir, functionId, in, maxQueue, recordId)
 		})
 		if err != nil {

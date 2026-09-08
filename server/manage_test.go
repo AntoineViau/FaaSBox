@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -805,6 +806,96 @@ func TestReplaceFunctionHandler_Crons(t *testing.T) {
 			},
 		})
 		s.Test(t)
+	})
+
+	t.Run("a timezone travels both ways, and an absent one reads back as UTC", func(t *testing.T) {
+		app, dir, fn := manageApp(t)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "written as received, rendered normalised",
+			Method: http.MethodPut,
+			URL:    "/api/faasbox/functions/echo",
+			Body: strings.NewReader(`{"script":"console.log('{}')",
+				"triggers":[{"name":"kolkata","schedule":"0 3 * * *","timezone":"Asia/Kolkata"},
+				            {"name":"implicit","schedule":"0 4 * * *"}]}`),
+			Headers:        manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus: 200,
+			// The response always carries a filled zone, exactly like kind.
+			ExpectedContent: []string{`"timezone":"Asia/Kolkata"`, `"timezone":"UTC"`},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				triggers := triggersOf(t, app, fn.Id)
+				if triggers["kolkata"] == nil || triggers["implicit"] == nil {
+					t.Fatalf("triggers = %v, want kolkata and implicit", triggers)
+				}
+				if got := triggers["kolkata"].GetString("timezone"); got != "Asia/Kolkata" {
+					t.Errorf("stored timezone = %q, want \"Asia/Kolkata\"", got)
+				}
+				// The column itself stays empty: normalising here as well would
+				// be a second place for the same default to drift.
+				if got := triggers["implicit"].GetString("timezone"); got != "" {
+					t.Errorf("stored timezone = %q, want the column left empty", got)
+				}
+			},
+		})
+		s.Test(t)
+	})
+
+	t.Run("a refused timezone answers a message and no fields object", func(t *testing.T) {
+		app, dir, fn := manageApp(t)
+		// The shape is what is under test, not merely the status: docs/09-api-
+		// reference.md publishes this exact body. A rule that depends on the
+		// value rather than on a single field has no field to blame, so it
+		// answers like the kind rules — a message naming the trigger, and no
+		// "fields" object a client could read instead.
+		app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
+		s := manageScenario(app, dir, tests.ApiScenario{
+			Name:   "unknown zone",
+			Method: http.MethodPut,
+			URL:    "/api/faasbox/functions/echo",
+			Body: strings.NewReader(`{"script":"console.log('{}')",
+				"triggers":[{"name":"nightly","schedule":"0 3 * * *","timezone":"Europe/Nulle-Part"}]}`),
+			Headers:        manageKeyHeader(t, app, "manager", nil),
+			ExpectedStatus: 400,
+			ExpectedContent: []string{
+				`Trigger \"nightly\" was refused`, // the trigger is named
+				`Unknown timezone`,
+				`Europe/Nulle-Part`, // and so is the value
+			},
+			AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+				body, err := io.ReadAll(res.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(body), `"fields"`) {
+					t.Errorf("the response carries a fields object: %s", body)
+				}
+				if len(triggersOf(t, app, fn.Id)) != 0 {
+					t.Error("the refused write left a trigger behind")
+				}
+			},
+		})
+		s.Test(t)
+	})
+
+	t.Run("a timezone naming the host clock is refused the same way", func(t *testing.T) {
+		// The three names time.LoadLocation resolves to a clock rather than a
+		// place. "Local" it accepts outright; the other two it finds in the
+		// host's zoneinfo directory when the tzdata package puts them there.
+		// Either way the record must not be written — cf. hostClockNames.
+		for _, name := range []string{"Local", "localtime", "posixrules"} {
+			app, dir, _ := manageApp(t)
+			app.OnRecordCreate(faasboxTriggersCollection).BindFunc(validateTriggerHook)
+			s := manageScenario(app, dir, tests.ApiScenario{
+				Name:   "host clock name " + name,
+				Method: http.MethodPut,
+				URL:    "/api/faasbox/functions/echo",
+				Body: strings.NewReader(`{"script":"console.log('{}')",
+					"triggers":[{"name":"nightly","schedule":"0 3 * * *","timezone":"` + name + `"}]}`),
+				Headers:         manageKeyHeader(t, app, "manager", nil),
+				ExpectedStatus:  400,
+				ExpectedContent: []string{`Unknown timezone`, name},
+			})
+			s.Test(t)
+		}
 	})
 
 	t.Run("a refused schedule rolls the whole write back", func(t *testing.T) {

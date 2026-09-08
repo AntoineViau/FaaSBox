@@ -33,10 +33,14 @@ type manageTrigger struct {
 	// admin can write an empty column outside of any contract.
 	Kind                string `json:"kind"`
 	StartupDelayMinutes int    `json:"startupDelayMinutes"`
+	// Timezone follows the same rule as Kind: written as received, with no
+	// default of its own. An absent field writes an empty column, which
+	// triggerTimezone reads back as "UTC".
+	Timezone string `json:"timezone"`
 }
 
-// triggerContract is one trigger in a response. Kind is normalised, because it is
-// read through the accessor.
+// triggerContract is one trigger in a response. Kind and Timezone are
+// normalised, because they are read through their accessors.
 type triggerContract struct {
 	Name                string          `json:"name"`
 	Schedule            string          `json:"schedule"`
@@ -45,6 +49,7 @@ type triggerContract struct {
 	MaxQueue            int             `json:"maxQueue"`
 	Kind                string          `json:"kind"`
 	StartupDelayMinutes int             `json:"startupDelayMinutes"`
+	Timezone            string          `json:"timezone"`
 }
 
 // refusedTrigger marks a write that a *trigger* refused, rather than the
@@ -113,6 +118,7 @@ func replaceTriggers(app core.App, fn *core.Record, triggers []manageTrigger) er
 			record.Set("maxQueue", c.MaxQueue)
 			record.Set("kind", c.Kind)
 			record.Set("startupDelayMinutes", c.StartupDelayMinutes)
+			record.Set("timezone", c.Timezone)
 			if len(c.Payload) > 0 {
 				record.Set("payload", c.Payload)
 			}
@@ -143,6 +149,7 @@ func functionTriggerContracts(app core.App, functionId string) ([]triggerContrac
 			MaxQueue:            int(record.GetFloat("maxQueue")),
 			Kind:                triggerKind(record),
 			StartupDelayMinutes: int(record.GetFloat("startupDelayMinutes")),
+			Timezone:            triggerTimezone(record),
 		})
 	}
 	slices.SortFunc(triggers, func(a, b triggerContract) int {

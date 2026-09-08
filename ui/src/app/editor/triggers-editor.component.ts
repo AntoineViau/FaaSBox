@@ -14,6 +14,7 @@ import type { FaasboxTrigger } from '@/models/faasbox-trigger.model';
 import { TriggersService } from '@/editor/triggers.service';
 import { DEFAULT_SCHEDULE } from '@/editor/cron-presets';
 import { TriggerCardComponent, type TriggerRow } from '@/editor/trigger-card.component';
+import { BROWSER_TIMEZONE } from '@/editor/timezone-select.component';
 import { errorText } from '@/editor/error-text';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardAlertComponent } from '@shared/components/alert';
@@ -175,6 +176,9 @@ export class TriggersEditorComponent {
         // The trigger you get without doing anything stays the scheduled one.
         kind: 'cron',
         startupDelayMinutes: 0,
+        // The zone of whoever is typing: someone writing "0 3 * * *" means three
+        // in the morning where they are, and UTC only by coincidence.
+        timezone: BROWSER_TIMEZONE,
       },
       ...list,
     ]);
@@ -243,6 +247,7 @@ export class TriggersEditorComponent {
         maxQueue: row.maxQueue,
         kind: row.kind,
         startupDelayMinutes: row.startupDelayMinutes,
+        timezone: row.timezone,
       };
       try {
         const record = row.id
@@ -296,6 +301,9 @@ export class TriggersEditorComponent {
       // the shape a record written from the PocketBase admin carries.
       kind: trigger.kind === 'startup' ? 'startup' : 'cron',
       startupDelayMinutes: trigger.startupDelayMinutes ?? 0,
+      // Same mirror of the server accessor: an absent or empty column reads
+      // 'UTC', which is what it has always meant.
+      timezone: trigger.timezone || 'UTC',
     };
   }
 
@@ -326,7 +334,8 @@ function sameRow(a: TriggerRow, b: TriggerRow): boolean {
     a.active === b.active &&
     a.maxQueue === b.maxQueue &&
     a.kind === b.kind &&
-    a.startupDelayMinutes === b.startupDelayMinutes
+    a.startupDelayMinutes === b.startupDelayMinutes &&
+    a.timezone === b.timezone
   );
 }
 

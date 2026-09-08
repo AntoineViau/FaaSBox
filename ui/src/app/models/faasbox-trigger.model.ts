@@ -15,6 +15,12 @@ export interface FaasboxTrigger {
   kind: 'cron' | 'startup' | '';
   /** On a startup trigger, how long after boot it fires. 0 to 1439. */
   startupDelayMinutes: number;
+  /**
+   * The IANA zone the cron expression is read in. Empty reads as 'UTC'
+   * server-side, which is the shape a record written from the PocketBase admin
+   * carries. Ignored on a startup trigger.
+   */
+  timezone: string;
   created: string;
   updated: string;
 }

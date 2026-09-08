@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
@@ -321,6 +322,7 @@ func TestRunFunction_CronEnvelope(t *testing.T) {
 	trigger := createTestTrigger(t, app, "nightly at 3", "0 3 * * *", fn.Id, true)
 	setTriggerPayload(t, app, trigger.Id, `{"full":true}`)
 
+	pinCronNow(t, time.Date(2026, 3, 10, 3, 0, 0, 0, time.UTC))
 	syncAllCronJobs(app, functionsDir, context.Background())
 	fireCronJob(t, app, trigger.Id)
 
@@ -349,8 +351,13 @@ func TestRunFunction_TwoTriggersAreToldApart(t *testing.T) {
 	morning := createTestTrigger(t, app, "morning sweep", "0 6 * * *", fn.Id, true)
 	evening := createTestTrigger(t, app, "evening sweep", "0 18 * * *", fn.Id, true)
 
+	// Both schedules are due on the minute, six in the morning and six in the
+	// evening: "0 6" and "0 18" share a minute field, which is all the pinned
+	// clock has to satisfy for either closure to open. It is set on the first.
+	pinCronNow(t, time.Date(2026, 3, 10, 6, 0, 0, 0, time.UTC))
 	syncAllCronJobs(app, functionsDir, context.Background())
 	fireCronJob(t, app, morning.Id)
+	pinCronNow(t, time.Date(2026, 3, 10, 18, 0, 0, 0, time.UTC))
 	fireCronJob(t, app, evening.Id)
 
 	entries := waitForExecutionLog(t, app, "booted", 2)
@@ -439,6 +446,17 @@ func loggedEnvelope(t testing.TB, app core.App, entry *core.Record) map[string]a
 	return envelope
 }
 
+// pinCronNow freezes the clock the registered closures read, so a job can be
+// fired at a chosen minute. Every job is registered on "* * * * *" and decides
+// for itself whether it is due (cf. cronNow), so a test firing one at an
+// arbitrary wall-clock minute would otherwise run nothing.
+func pinCronNow(t testing.TB, at time.Time) {
+	t.Helper()
+	original := cronNow
+	cronNow = func() time.Time { return at }
+	t.Cleanup(func() { cronNow = original })
+}
+
 // fireCronJob runs the scheduler job registered for a trigger record, the way a
 // tick would — the alternative being a test that waits for the clock.
 func fireCronJob(t testing.TB, app core.App, recordId string) {
@@ -450,6 +468,20 @@ func fireCronJob(t testing.TB, app core.App, recordId string) {
 		}
 	}
 	t.Fatalf("no cron job registered for trigger %q", recordId)
+}
+
+// setTriggerTimezone writes the zone of an existing trigger record through
+// app.Save, so the validation hook weighs it the way it weighs any other write.
+func setTriggerTimezone(t testing.TB, app core.App, recordId, timezone string) {
+	t.Helper()
+	record, err := app.FindRecordById(faasboxTriggersCollection, recordId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Set("timezone", timezone)
+	if err := app.Save(record); err != nil {
+		t.Fatalf("failed to set the timezone of trigger %q: %v", recordId, err)
+	}
 }
 
 // setTriggerPayload writes the payload of an existing trigger record through

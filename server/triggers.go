@@ -76,6 +76,11 @@ func ensureTriggersCollection(app core.App) error {
 		// Not Required either — see triggerKind for what an empty value reads as.
 		&core.SelectField{Name: "kind", MaxSelect: 1, Values: []string{"cron", "startup"}},
 		&core.NumberField{Name: "startupDelayMinutes"},
+		// Left in the clear like kind, active and maxQueue: a zone name says
+		// nothing about the business content. Not Required either — an empty
+		// value reads as "UTC", cf. triggerTimezone in cron.go, which carries
+		// what a five-field expression is worth and not what a trigger is.
+		&core.TextField{Name: "timezone"},
 		&core.AutodateField{Name: "created", OnCreate: true},
 		&core.AutodateField{Name: "updated", OnCreate: true, OnUpdate: true},
 	)

@@ -35,7 +35,7 @@ func TestCountMissedRuns(t *testing.T) {
 				t.Fatalf("invalid test expression %q: %v", tc.expr, err)
 			}
 
-			got, capped := countMissedRuns(schedule, tc.since, tc.now)
+			got, capped := countMissedRuns(schedule, time.UTC, tc.since, tc.now)
 			if got != tc.want {
 				t.Errorf("countMissedRuns() = %d, want %d", got, tc.want)
 			}
@@ -43,6 +43,70 @@ func TestCountMissedRuns(t *testing.T) {
 				t.Error("countMissedRuns() reported a capped walk on a short interval")
 			}
 		})
+	}
+}
+
+// TestCountMissedRuns_FollowsTheZone is the reason loc is a parameter: the same
+// expression over the same absolute interval does not count the same number of
+// occurrences depending on the clock it is read from.
+//
+// The interval is a single UTC day, and the expression fires once a day at 03:00
+// local. Asia/Kolkata is +05:30, so its 03:00 falls at 21:30 UTC the day before —
+// inside the walked interval — while 03:00 UTC falls outside it. A count that
+// ignored the zone would announce the wrong one.
+func TestCountMissedRuns_FollowsTheZone(t *testing.T) {
+	schedule, err := cron.NewSchedule("0 3 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kolkata, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		t.Fatalf("the embedded timezone database did not answer: %v", err)
+	}
+
+	// ]04:00 UTC, 23:00 UTC[ on a single day: 03:00 UTC is behind the start, and
+	// 03:00 Kolkata is 21:30 UTC, inside.
+	since := time.Date(2026, 3, 10, 4, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 3, 10, 23, 0, 0, 0, time.UTC)
+
+	if got, _ := countMissedRuns(schedule, time.UTC, since, now); got != 0 {
+		t.Errorf("countMissedRuns() in UTC = %d, want 0", got)
+	}
+	if got, _ := countMissedRuns(schedule, kolkata, since, now); got != 1 {
+		t.Errorf("countMissedRuns() in Asia/Kolkata = %d, want 1", got)
+	}
+}
+
+// TestCronJobIsDue_ProjectsIntoTheZone pins the absolute minute a schedule fires
+// on. "0 3 * * *" set on Asia/Kolkata (+05:30) is due at 21:30 UTC the day
+// before, and not at 03:00 UTC — the half-hour offset makes the *minute* differ,
+// so nothing here could pass by accident on an hour-aligned zone.
+func TestCronJobIsDue_ProjectsIntoTheZone(t *testing.T) {
+	schedule, err := cron.NewSchedule("0 3 * * *")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kolkata, err := time.LoadLocation("Asia/Kolkata")
+	if err != nil {
+		t.Fatalf("the embedded timezone database did not answer: %v", err)
+	}
+
+	due := time.Date(2026, 3, 9, 21, 30, 0, 0, time.UTC)
+	if !cronJobIsDue(schedule, kolkata, due) {
+		t.Errorf("cronJobIsDue(%s, Asia/Kolkata) = false, want true", due)
+	}
+	if cronJobIsDue(schedule, time.UTC, due) {
+		t.Errorf("cronJobIsDue(%s, UTC) = true, want false", due)
+	}
+
+	utcDue := time.Date(2026, 3, 10, 3, 0, 0, 0, time.UTC)
+	if cronJobIsDue(schedule, kolkata, utcDue) {
+		t.Errorf("cronJobIsDue(%s, Asia/Kolkata) = true, want false — that is the UTC minute", utcDue)
+	}
+	if !cronJobIsDue(schedule, time.UTC, utcDue) {
+		t.Errorf("cronJobIsDue(%s, UTC) = false, want true", utcDue)
 	}
 }
 
@@ -55,7 +119,7 @@ func TestCountMissedRuns_CappedAtLookback(t *testing.T) {
 	now := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
 	since := now.Add(-90 * 24 * time.Hour)
 
-	got, capped := countMissedRuns(schedule, since, now)
+	got, capped := countMissedRuns(schedule, time.UTC, since, now)
 	if !capped {
 		t.Error("countMissedRuns() should report a capped walk on a 90-day interval")
 	}

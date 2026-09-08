@@ -63,7 +63,8 @@ type mcpTrigger struct {
 	Kind     string `json:"kind,omitempty" jsonschema:"cron for a scheduled trigger, startup to fire once when the server comes up; defaults to cron when omitted"`
 	// The delay is a whole number of minutes rather than a duration string: it is
 	// what the column holds, and what the bound is expressed in.
-	StartupDelayMinutes int `json:"startupDelayMinutes,omitempty" jsonschema:"on a startup trigger, how long after the server comes up it fires, in minutes, from 0 to 1439"`
+	StartupDelayMinutes int    `json:"startupDelayMinutes,omitempty" jsonschema:"on a startup trigger, how long after the server comes up it fires, in minutes, from 0 to 1439"`
+	Timezone            string `json:"timezone,omitempty" jsonschema:"the IANA zone the cron expression is read in, such as Europe/Paris; defaults to UTC when omitted, and is ignored on a startup trigger"`
 }
 
 // mcpFunctionArgs is what the three tools that only designate a function take.
@@ -384,6 +385,7 @@ func mcpTriggers(triggers []mcpTrigger) ([]manageTrigger, error) {
 			MaxQueue:            c.MaxQueue,
 			Kind:                c.Kind,
 			StartupDelayMinutes: c.StartupDelayMinutes,
+			Timezone:            c.Timezone,
 		})
 	}
 	return converted, nil

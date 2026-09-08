@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
@@ -292,6 +293,219 @@ func TestValidateTriggerHook_ByKind(t *testing.T) {
 			ExpectedContent: c.content,
 		}
 		s.Test(t)
+	}
+}
+
+// TestValidateTriggerHook_Timezone covers the rule the zone brings: a value that
+// does not resolve is refused whatever the kind, and an empty one is accepted on
+// both. The refusal is weighed before the kind branch, so a startup trigger — on
+// which the zone is inert — is refused too: no record may carry an unknown zone.
+func TestValidateTriggerHook_Timezone(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		status  int
+		content []string
+	}{
+		{
+			name:    "an unknown zone is refused, and named",
+			body:    `{"name":"nowhere","schedule":"0 3 * * *","timezone":"Europe/Nulle-Part","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Unknown timezone`, `Europe/Nulle-Part`, `IANA`},
+		},
+		{
+			// LoadLocation accepts "Local" without error and yields the timezone
+			// of the process: the same record would mean two different things on
+			// two hosts, which is the property this column exists to establish.
+			name:    "\"Local\" is refused although LoadLocation accepts it",
+			body:    `{"name":"local","schedule":"0 3 * * *","timezone":"Local","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Unknown timezone`, `Local`},
+		},
+		{
+			// Whether these two resolve depends on the host tzdata package, and
+			// the assertion is deliberately indifferent to it: unresolvable,
+			// they are refused by the LoadLocation error; resolvable, by the
+			// list. A test that only passed on a host carrying them would prove
+			// nothing on the one that does not.
+			name:    "\"localtime\" is refused: it is /etc/localtime under another spelling",
+			body:    `{"name":"hostclock","schedule":"0 3 * * *","timezone":"localtime","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Unknown timezone`, `localtime`},
+		},
+		{
+			name:    "\"posixrules\" is refused: a distro-pinned zone absent from the embedded database",
+			body:    `{"name":"posix","schedule":"0 3 * * *","timezone":"posixrules","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Unknown timezone`, `posixrules`},
+		},
+		{
+			name:    "an unknown zone is refused on a startup trigger too",
+			body:    `{"name":"boot","kind":"startup","startupDelayMinutes":5,"timezone":"Europe/Nulle-Part","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`Unknown timezone`},
+		},
+		{
+			name:    "an empty zone goes through on a cron trigger",
+			body:    `{"name":"implicit","schedule":"0 3 * * *","timezone":"","function":"echofunction001","active":true}`,
+			status:  200,
+			content: []string{`"timezone":""`},
+		},
+		{
+			name:    "an empty zone goes through on a startup trigger",
+			body:    `{"name":"boot","kind":"startup","startupDelayMinutes":5,"function":"echofunction001","active":true}`,
+			status:  200,
+			content: []string{`"kind":"startup"`},
+		},
+		{
+			name:    "an IANA zone goes through",
+			body:    `{"name":"kolkata","schedule":"0 3 * * *","timezone":"Asia/Kolkata","function":"echofunction001","active":true}`,
+			status:  200,
+			content: []string{`"timezone":"Asia/Kolkata"`},
+		},
+	}
+
+	for _, c := range cases {
+		s := tests.ApiScenario{
+			Name:   c.name,
+			Method: http.MethodPost,
+			URL:    "/api/collections/" + faasboxTriggersCollection + "/records",
+			Body:   strings.NewReader(c.body),
+			Headers: map[string]string{
+				"Authorization": superuserToken,
+			},
+			BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+				setupFaaSCollections(t, app)
+				saveTestFunctionAs(t, app, t.TempDir(), testFunctionId, "echo", "console.log(1)", "")
+				bindTriggerHook(app)
+			},
+			ExpectedStatus:  c.status,
+			ExpectedContent: c.content,
+		}
+		s.Test(t)
+	}
+}
+
+// TestTriggerTimezone_EmptyReadsAsUTC mirrors TestTriggerKind_EmptyReadsAsCron:
+// the accessor is the only place the default lives.
+func TestTriggerTimezone_EmptyReadsAsUTC(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	col, err := app.FindCollectionByNameOrId(faasboxTriggersCollection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := core.NewRecord(col)
+
+	if got := triggerTimezone(record); got != "UTC" {
+		t.Errorf("triggerTimezone on an empty column = %q, want \"UTC\"", got)
+	}
+	if loc := triggerLocation(app, record); loc != time.UTC {
+		t.Errorf("triggerLocation on an empty column = %v, want UTC", loc)
+	}
+
+	record.Set("timezone", "Asia/Kolkata")
+	if got := triggerTimezone(record); got != "Asia/Kolkata" {
+		t.Errorf("triggerTimezone = %q, want \"Asia/Kolkata\"", got)
+	}
+	if got := triggerLocation(app, record).String(); got != "Asia/Kolkata" {
+		t.Errorf("triggerLocation = %q, want \"Asia/Kolkata\"", got)
+	}
+
+	// A zone written outside the validation hook falls back rather than panicking.
+	record.Set("timezone", "Europe/Nulle-Part")
+	if loc := triggerLocation(app, record); loc != time.UTC {
+		t.Errorf("triggerLocation on an unknown zone = %v, want UTC", loc)
+	}
+}
+
+// TestSyncAllCronJobs_RegistersEveryMinute pins the consequence of the global
+// scheduler timezone: the expression handed to cron.Cron is no longer the one the
+// record carries, because the closure decides for itself in the trigger's own
+// zone. A job registered on its own expression would fire on the UTC minute.
+func TestSyncAllCronJobs_RegistersEveryMinute(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fn := saveTestFunction(t, app, functionsDir, "echo", "console.log(1)", "")
+	record := createTestTrigger(t, app, "nightly", "0 3 * * *", fn.Id, true)
+
+	syncAllCronJobs(app, functionsDir, context.Background())
+
+	for _, job := range app.Cron().Jobs() {
+		if job.Id() != cronJobPrefix+record.Id {
+			continue
+		}
+		if got := job.Expression(); got != everyMinute {
+			t.Errorf("job expression = %q, want %q", got, everyMinute)
+		}
+		return
+	}
+	t.Fatalf("cron job for record %q was not registered", record.Id)
+}
+
+// TestSyncAllCronJobs_ClosureFiresOnTheZoneMinute is the whole point of the
+// change, driven end to end: two triggers carrying the same expression in two
+// zones, fired at the same instant, and only the one whose zone makes it due
+// runs.
+//
+// 21:30 UTC is 03:00 in Asia/Kolkata (+05:30). The half-hour offset makes the
+// *minute* differ, so neither closure could open by accident on an hour-aligned
+// coincidence.
+func TestSyncAllCronJobs_ClosureFiresOnTheZoneMinute(t *testing.T) {
+	app, functionsDir, fn := startupApp(t)
+
+	kolkata := createTestTrigger(t, app, "kolkata nightly", "0 3 * * *", fn.Id, true)
+	setTriggerTimezone(t, app, kolkata.Id, "Asia/Kolkata")
+	utc := createTestTrigger(t, app, "utc nightly", "0 3 * * *", fn.Id, true)
+
+	pinCronNow(t, time.Date(2026, 3, 9, 21, 30, 0, 0, time.UTC))
+	syncAllCronJobs(app, functionsDir, context.Background())
+
+	// Job.Run calls the closure synchronously, so both decisions are settled once
+	// these return: the count below is definitive rather than a race to observe.
+	fireCronJob(t, app, utc.Id)
+	fireCronJob(t, app, kolkata.Id)
+
+	entries := executionLogsOf(t, app, "booted")
+	if len(entries) != 1 {
+		t.Fatalf("execution logs = %d, want 1 — only the Kolkata trigger is due at 21:30 UTC", len(entries))
+	}
+	if got := loggedEnvelope(t, app, entries[0])["triggerName"]; got != "kolkata nightly" {
+		t.Errorf("the run that fired was %v, want the trigger whose zone makes it due", got)
+	}
+}
+
+// TestSyncAllCronJobs_SkipsAnUnparsableSchedule covers the record written outside
+// the validation hook: it is logged and left out, rather than registered on a
+// job whose closure could never fire.
+func TestSyncAllCronJobs_SkipsAnUnparsableSchedule(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+	setupFaaSCollections(t, app)
+
+	functionsDir := t.TempDir()
+	fn := saveTestFunction(t, app, functionsDir, "echo", "console.log(1)", "")
+	// Saved without the hook bound, which is the only way such a record exists.
+	record := createTestTrigger(t, app, "broken", "not a cron expression", fn.Id, true)
+
+	syncAllCronJobs(app, functionsDir, context.Background())
+
+	if hasCronJob(app, record.Id) {
+		t.Error("a trigger whose expression does not parse should not be registered")
 	}
 }
 

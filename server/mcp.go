@@ -209,6 +209,8 @@ What you need to know before writing one:
    schedule and fires once when the server comes up, "startupDelayMinutes"
    after it — 0 to 1439. A startup trigger is armed at boot and nowhere else:
    creating or changing one does not fire it, it waits for the next start.
+   A cron expression is read in the timezone of its own trigger: "timezone"
+   carries an IANA zone name such as "Europe/Paris", and omitting it means UTC.
 
 6. Writes replace, they do not patch. update_function reads the function first
    and merges what you send onto what is stored, so a field you leave out is

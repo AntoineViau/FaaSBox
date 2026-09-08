@@ -20,13 +20,16 @@ const maxMissedLookback = 30 * 24 * time.Hour
 // current minute, which may still be about to fire.
 //
 // cron.Schedule only answers "is it due at this moment" (no Next(), no Prev()),
-// so the interval is walked minute by minute. Moments are built in UTC, the
-// timezone the PocketBase scheduler ticks in.
+// so the interval is walked minute by minute. The walk itself stays in absolute
+// time — bounds truncated to the minute in UTC, one minute per step — and loc is
+// only what each instant is projected into, through the same helper the
+// scheduler uses. Counting in the wrong zone would announce a number that
+// matches no expression the user wrote.
 //
 // The walk starts at most maxMissedLookback before now; the second return value
 // reports whether that cap moved the start, in which case the count is a lower
 // bound.
-func countMissedRuns(schedule *cron.Schedule, since, now time.Time) (int, bool) {
+func countMissedRuns(schedule *cron.Schedule, loc *time.Location, since, now time.Time) (int, bool) {
 	start := since.UTC().Truncate(time.Minute).Add(time.Minute)
 	end := now.UTC().Truncate(time.Minute)
 
@@ -38,7 +41,7 @@ func countMissedRuns(schedule *cron.Schedule, since, now time.Time) (int, bool) 
 
 	count := 0
 	for t := start; t.Before(end); t = t.Add(time.Minute) {
-		if schedule.IsDue(cron.NewMoment(t)) {
+		if cronJobIsDue(schedule, loc, t) {
 			count++
 		}
 	}
@@ -95,7 +98,7 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 			continue
 		}
 
-		missed, capped := countMissedRuns(schedule, since, now)
+		missed, capped := countMissedRuns(schedule, triggerLocation(app, record), since, now)
 		if missed == 0 {
 			// Deliberately silent even when capped: a schedule whose only missed
 			// occurrences predate the lookback bound cannot be observed without
@@ -107,6 +110,14 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 		// Two dates that say different things: countedFrom is how far back the
 		// walk went, from is when the job last ran. Collapsing them would lose
 		// the more useful one — since when the schedule has been silent.
+		//
+		// Both stay in UTC while the count follows the trigger's zone, and that
+		// is not an oversight. types.DefaultDateLayout is "2006-01-02
+		// 15:04:05.000Z", where the Z is a *literal*: formatting a local instant
+		// with it would print a local time suffixed Z, which is a wrong date.
+		// And what these two dates bound is a period of server downtime, which
+		// is absolute rather than local. The zone goes on the application log
+		// below, where nothing formats it.
 		from := since.UTC().Format(types.DefaultDateLayout)
 		countedFrom := from
 		message := fmt.Sprintf(
@@ -120,7 +131,8 @@ func reportMissedCronRuns(app core.App, now time.Time) {
 		}
 
 		app.Logger().Warn("faasbox cron: missed runs detected",
-			"function", name, "schedule", expr, "missed", missed,
+			"function", name, "schedule", expr, "timezone", triggerTimezone(record),
+			"missed", missed,
 			"since", from, "countedFrom", countedFrom, "capped", capped)
 
 		recordExecution(app, logEntry{
