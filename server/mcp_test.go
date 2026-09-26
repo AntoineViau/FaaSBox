@@ -161,9 +161,12 @@ func TestMCPServerAdvertises(t *testing.T) {
 		if init == nil {
 			t.Fatal("the session carries no initialize result")
 		}
-		// One marker per point of the contract, so a rewrite that drops one is
-		// caught rather than merely reformatted.
+		// One marker per point of the contract, plus the two the opening paragraph
+		// carries, so a rewrite that drops one is caught rather than merely
+		// reformatted.
 		for _, marker := range []string{
+			"bun:sqlite",                // the folder is a function's own, and holds a database
+			"import.meta.dir",           // where a path into it is built from
 			"stdin", "stdout", "stderr", // execution contract
 			"envelope",     // what stdin actually carries
 			"triggerName",  // and what tells two schedules apart

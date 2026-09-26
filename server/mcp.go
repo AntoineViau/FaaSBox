@@ -170,16 +170,30 @@ func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mc
 // is written nowhere a machine receives without being handed it.
 //
 // Distilled from docs/ — 03-writing-functions.md for the execution contract, the
-// naming rule and the caps, 05-triggers.md for the triggers, and
-// 09-api-reference.md for what a write replaces. It lives in the code rather
-// than in a served file so what an agent receives follows the version of the
-// server serving it.
+// naming rule, the caps and the folder each function writes into, 05-triggers.md
+// for the triggers, and 09-api-reference.md for what a write replaces. It lives
+// in the code rather than in a served file so what an agent receives follows the
+// version of the server serving it.
 //
 // Six points, and it stays at six. Everything else belongs to the description of
 // the tool it concerns, which arrives with that tool's schema; piling it up here
 // would make the whole thing unreadable for the agent as much as for us.
 const mcpInstructions = `FaaSBox runs short TypeScript/JavaScript functions on Bun. Each invocation is a
-separate subprocess. These tools write, run and inspect those functions.
+separate subprocess, but not a stateless one: every function has a folder of its
+own on the server's disk, and what it writes there is still there on its next
+invocation. That is enough for a local database — bun:sqlite ships with Bun,
+with nothing to install:
+
+    import { Database } from "bun:sqlite";
+    const db = new Database(import.meta.dir + "/data.sqlite", { create: true });
+
+Build paths from import.meta.dir: the working directory is the root of all
+functions, not the function's own folder. Concurrent invocations are concurrent
+processes, so let SQLite do the locking. That folder is deleted with the
+function, and FaaSBox neither backs it up nor restores it: a host whose
+filesystem does not survive a redeployment starts it empty.
+
+These tools write, run and inspect those functions.
 
 What you need to know before writing one:
 

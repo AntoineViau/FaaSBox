@@ -8,8 +8,10 @@ does not survive a redeploy hands you a fresh, empty disk every time you ship.
 mirrors that file continuously to any S3-compatible storage, and puts it back
 before anything reads it on the next boot. Together with the fact that the
 server rebuilds `functions/` from the database, that is what makes the container
-disposable: the database comes back from S3, and everything else comes back from
-the database.
+disposable: the database comes back from S3, and your functions come back from
+the database. One thing does not: what a function wrote in its own folder, a
+[local database](03-writing-functions.md#writing-to-it-yourself) included.
+Nothing replicates it, and a fresh disk starts it empty.
 
 **It is entirely optional**, and off unless you ask for it. Leave the variables
 unset and FaaSBox starts normally, from the local file alone — which is the

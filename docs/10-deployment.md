@@ -44,7 +44,10 @@ sidecar.
 
 Two of the three are derived, and that is the point: the database is the source
 of truth, and the server rebuilds `functions/` from it on every boot. Losing
-that directory costs the time of one dependency install, nothing else.
+that directory costs the time of one dependency install — plus anything your
+functions wrote in their own folders, a [local
+database](03-writing-functions.md#writing-to-it-yourself) included, since the
+rebuild restores only what the database holds.
 
 Where they live:
 
@@ -273,8 +276,10 @@ directory from the table above that has to survive: without it, every restart
 starts an empty instance — no functions, no keys, no logs.
 
 The other two directories are deliberately left inside the container. There is
-nothing to mount for them, and mounting `functions/` would only pin a cache the
-server rebuilds anyway.
+nothing to mount for `pb_public/`, and mounting `functions/` would mostly pin a
+cache the server rebuilds anyway — mostly, because a function that keeps [files
+of its own](03-writing-functions.md#writing-to-it-yourself) there is the one
+thing that rebuild does not bring back.
 
 ## 3. Litestream replication (optional)
 

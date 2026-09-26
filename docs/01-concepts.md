@@ -62,8 +62,10 @@ Everything else the database holds of your work is encrypted the same way, under
 
 The **database is the single source of truth** for functions. All function code and metadata live in the `faasbox_functions` collection.
 
-The file system is a derived cache used only for execution:
+The file system holds what FaaSBox derives from it, so that Bun has something to run:
 -  **DB to Disk (startup)**: At startup, all functions are restored from the database to the `functions/` directory on disk.
 -  **DB to Disk (live)**: When you create, update, or delete a function via the UI, the changes are saved to the database and immediately synced to disk.
 
 Functions are executed from disk by the Bun runtime, but the database is always the authoritative copy. This means a container restart simply recreates the files from the database.
+
+That derived copy is not read-only, though: a function may write into its own folder, and what it writes is the one thing the database cannot give back. See [Writing to It Yourself](03-writing-functions.md#writing-to-it-yourself) for what that affords and what it costs.

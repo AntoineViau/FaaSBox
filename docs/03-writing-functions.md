@@ -256,7 +256,29 @@ Two files are shown differently:
 - A **binary** file is not printed. The verdict is a NUL byte in its first kilobytes, not its extension — `node_modules/.bin` is full of files with no extension at all. Download it to inspect it.
 - A file **larger than 256 KB** (`FAASBOX_MAX_FILE_VIEW`) is not printed either, and the message says how big it is. The limit is on what gets displayed, never on what gets downloaded: the **Download** button works whatever the size.
 
-> **Your working directory is the functions root, not your own folder.** A function that writes to a relative path — `Bun.write("cache.json", …)` — creates the file next to its folder, not inside it, so the Files tab will not show it. Build the path from `import.meta.dir`, which is your own folder, if you want the file to land where the tab looks. And remember that nothing written to disk survives a redeployment: only what the database holds is restored.
+> **Your working directory is the functions root, not your own folder.** A function that writes to a relative path — `Bun.write("cache.json", …)` — creates the file next to its folder, not inside it, so the Files tab will not show it. Build the path from `import.meta.dir`, which is your own folder, if you want the file to land where the tab looks.
+
+### Writing to It Yourself
+
+Nothing stops your function from writing into that folder, and **what it writes is still there on the next invocation**. Between two calls the folder is left alone: a restart rewrites `index.ts`, `package.json` and `bun.lock` from the database and touches nothing else, and an install wipes `node_modules` and nothing else. A file you put next to your script stays where you put it.
+
+That is enough for a **local database**. `bun:sqlite` ships with Bun, so there is nothing to install and nothing to configure:
+
+```typescript
+import { Database } from "bun:sqlite";
+
+const db = new Database(`${import.meta.dir}/data.sqlite`, { create: true });
+db.exec("PRAGMA journal_mode = WAL");
+db.exec("PRAGMA busy_timeout = 5000");
+db.exec("CREATE TABLE IF NOT EXISTS hits (at TEXT NOT NULL)");
+db.query("INSERT INTO hits (at) VALUES (?)").run(new Date().toISOString());
+```
+
+Three things come with it:
+
+- **Concurrent invocations are concurrent processes.** Two calls arriving together are two `bun` processes opening the same file, not two handles inside one runtime. That is what the two `PRAGMA` lines above are for: WAL mode lets one read while another writes, and `busy_timeout` makes the loser of a write race wait rather than fail. WAL also puts a `-wal` and a `-shm` file beside your database, so the Files tab shows three entries where you wrote one. Closing the database — `db.close()`, which the snippet above leaves out — checkpoints the `-wal` back into the file and removes both.
+- **Deleting the function deletes the folder**, database included. There is no undo, and the execution history goes with it.
+- **FaaSBox neither backs it up nor restores it.** [Litestream](14-litestream-replication.md) replicates the database that holds your functions — not these folders. On a host whose filesystem does not survive a redeployment, the folder comes back empty and your function starts again on a blank database. What you keep there is a cache you can afford to lose, never the record of something that matters.
 
 ## Testing in the Editor
 
@@ -311,7 +333,7 @@ Renaming a function changes that URL. The Editor warns you as soon as the name f
 
 ## Best Practices
 
-1.  **Be Stateless**: Functions should be stateless. Any persistent data should be stored in PocketBase (via its API) or an external database.
+1.  **Know where your state lives**: Anything two functions share, and anything you cannot afford to lose, belongs in PocketBase (via its API) or an external database. What a single function keeps for itself — a cache, a local index, a working file — can live in [its own folder on disk](#writing-to-it-yourself): that folder survives from one invocation to the next, but nothing backs it up.
 2.  **Error Handling**: Wrap your logic in `try/catch` and use `console.error` for debugging.
 3.  **JSON Always**: Always try to return valid JSON. This makes it easier for the calling application to parse the result.
 4.  **Keep it Small**: Smaller functions start faster and are easier to maintain.
