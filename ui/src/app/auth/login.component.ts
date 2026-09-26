@@ -1,6 +1,7 @@
 import { Component, signal, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { FormControl, FormsModule, Validators } from '@angular/forms';
+import { safeReturnUrl } from '@/auth/auth.guard';
 import { AuthService } from '@/auth/auth.service';
 import { InstanceService } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
@@ -156,7 +157,9 @@ export class LoginComponent {
 
     try {
       await this.authService.login(this.email, this.password);
-      this.router.navigateByUrl(this.returnUrl());
+      this.router.navigateByUrl(
+        safeReturnUrl(this.route.snapshot.queryParamMap.get('returnUrl')),
+      );
     } catch (error) {
       this.errorMessage.set(
         error instanceof Error ? error.message : 'Authentication failed',
@@ -180,18 +183,5 @@ export class LoginComponent {
   private emailFromUrl(): string {
     const raw = this.route.snapshot.queryParamMap.get('email') ?? '';
     return raw && Validators.email(new FormControl(raw)) === null ? raw : '';
-  }
-
-  /**
-   * Where to go once signed in: back to the page authGuard turned away, or the
-   * editor.
-   *
-   * Only a path of this application is followed. A value starting with `//`, or
-   * carrying a scheme, would turn the login page into an open redirect — and the
-   * parameter is in the address bar, so it is whatever anyone cares to put there.
-   */
-  private returnUrl(): string {
-    const raw = this.route.snapshot.queryParamMap.get('returnUrl') ?? '';
-    return raw.startsWith('/') && !raw.startsWith('//') ? raw : '/editor';
   }
 }

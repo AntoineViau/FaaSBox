@@ -2,7 +2,7 @@ import { Routes, type UrlMatchResult, type UrlSegment } from '@angular/router';
 
 import { AgentsComponent } from '@/agents/agents.component';
 import { ApiKeysComponent } from '@/api-keys/api-keys.component';
-import { authGuard } from '@/auth/auth.guard';
+import { authGuard, guestGuard } from '@/auth/auth.guard';
 import { LoginComponent } from '@/auth/login.component';
 import { ConsentComponent } from '@/consent/consent.component';
 import { EditorComponent } from '@/editor/editor.component';
@@ -41,6 +41,7 @@ export const routes: Routes = [
   {
     path: 'login',
     component: LoginComponent,
+    canActivate: [guestGuard],
     title: 'FaaSBox - Login',
   },
   {

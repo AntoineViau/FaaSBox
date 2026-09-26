@@ -62,7 +62,7 @@ cd server && go run . serve --http=127.0.0.1:8080 --dir=../data/pb_data
 
 If you started the server without superuser credentials, open `http://localhost:8080/_/` once to create the account. Both the Docker command above and `dev.sh` with `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` already create it for you — sign in with those.
 
-A link to the sign-in page can fill in the email for you: `http://localhost:8080/login?email=you@example.com` opens with the field already typed, and only the password is left. A value that is not an email address is ignored and the field stays empty. Encode the address when you build the link — a bare `+` reads as a space in a URL, so `you+tag@example.com` must be written `you%2Btag@example.com`. The password is never taken from the URL. On a [demo instance](15-demo-mode.md), the demo account fills the form and the link's email is ignored.
+A link to the sign-in page can fill in the email for you: `http://localhost:8080/login?email=you@example.com` opens with the field already typed, and only the password is left. A value that is not an email address is ignored and the field stays empty. Encode the address when you build the link — a bare `+` reads as a space in a URL, so `you+tag@example.com` must be written `you%2Btag@example.com`. The password is never taken from the URL. If you are already signed in, the link skips the form and takes you straight to the editor. On a [demo instance](15-demo-mode.md), the demo account fills the form and the link's email is ignored.
 
 ## 3. The Two Interfaces
 
