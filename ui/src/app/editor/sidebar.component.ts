@@ -28,14 +28,15 @@ import { ZardIconComponent } from '@shared/components/icon';
       <div class="flex items-center justify-between border-b border-border px-3 py-2">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Functions</span>
         <div class="flex items-center">
-          <!-- The list is only read on load: a function written from the API, or
-               from another tab, shows up here on demand and not before. -->
+          <!-- Nothing is read again on its own: a function written from the API,
+               by an agent or from another tab shows up here on demand and not
+               before - and so does what they changed in the one that is open. -->
           <button
             z-button
             zType="ghost"
             zSize="icon"
             class="h-7 w-7"
-            title="Reload the list"
+            title="Reload"
             [disabled]="loading()"
             (click)="refresh.emit()"
           >

@@ -143,6 +143,14 @@ export class TriggersEditorComponent {
     });
   }
 
+  /**
+   * Public because the editor reloads the open function on demand, and the id
+   * the effect above keys on does not change then.
+   */
+  reload(): void {
+    this.load(this.functionId());
+  }
+
   private async load(functionId: string): Promise<void> {
     this.isLoading.set(true);
     this.errorMessage.set('');

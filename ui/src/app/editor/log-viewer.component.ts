@@ -21,7 +21,7 @@ import { ZardIconComponent } from '@shared/components/icon';
           logs().length
         }}</span>
         <div class="flex-1"></div>
-        <button z-button zType="ghost" zSize="sm" (click)="refresh()">
+        <button z-button zType="ghost" zSize="sm" (click)="reload()">
           <z-icon zType="refresh-cw" class="h-3.5 w-3.5" />
         </button>
       </div>
@@ -145,7 +145,8 @@ export class LogViewerComponent {
     }
   }
 
-  protected refresh(): void {
+  /** Public because the editor reloads the open function through it too. */
+  reload(): void {
     this.loadLogs(this.functionId());
   }
 

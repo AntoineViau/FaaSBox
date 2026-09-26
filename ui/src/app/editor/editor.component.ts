@@ -51,6 +51,7 @@ import { FilesTabComponent } from '@/editor/files-tab.component';
 import { InvokeHintComponent } from '@/editor/invoke-hint.component';
 import { DEMO_MODE_HINT, InstanceService } from '@/instance/instance.service';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
+import type { FaasboxFunction } from '@/models/faasbox-function.model';
 import { RunnerComponent } from '@/editor/runner.component';
 import { SidebarComponent } from '@/editor/sidebar.component';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
@@ -439,6 +440,10 @@ export class EditorComponent implements OnInit {
   // Both resolve from any tab: the tab bar hides panels, it does not destroy
   // them, so what was typed in one is still there while another is on screen.
   private readonly triggersEditor = viewChild(TriggersEditorComponent);
+  // The two panels that hold no input, reached only to be reloaded. The log
+  // viewer can be hidden, so it may not be there at all.
+  private readonly filesTab = viewChild(FilesTabComponent);
+  private readonly logViewer = viewChild(LogViewerComponent);
   private readonly tabButtons = viewChildren<ElementRef<HTMLButtonElement>>('tabButton');
 
   /** Guards the sync effect below: see why it keys on the id and not the record. */
@@ -510,16 +515,10 @@ export class EditorComponent implements OnInit {
       // Only on a change of selection. The store record is also patched by every
       // save - including the Environment tab's own - and re-filling the buffers
       // then would discard whatever was typed during the round trip.
+      // An explicit reload is the one other time they are refilled: onRefresh.
       if (fn?.id === this.lastSyncedId) return;
       this.lastSyncedId = fn?.id ?? null;
-      this.localName.set(fn?.name ?? '');
-      this.localScript.set(fn?.script ?? '');
-      this.localPackageJson.set(fn?.packageJson ?? '');
-      // Straight off the record, like everything above it: the starting sample
-      // was written there when the function was created, so there is nothing to
-      // substitute and an empty sample is an empty sample.
-      this.localSampleBody.set(fn?.sampleBody ?? '');
-      this.localSampleHeaders.set(readSampleHeaders(fn?.sampleHeaders ?? ''));
+      this.fillBuffers(fn);
     });
 
     // URL -> state. Reading the parameters is all this effect tracks; what it
@@ -555,6 +554,18 @@ export class EditorComponent implements OnInit {
     // answered, so the save response alone would show one frozen value. The
     // server pushes instead — nothing here polls.
     this.destroyRef.onDestroy(this.store.startDepsStateSync());
+  }
+
+  /** Puts the record's fields in the buffers, discarding whatever was typed there. */
+  private fillBuffers(fn: FaasboxFunction | null): void {
+    this.localName.set(fn?.name ?? '');
+    this.localScript.set(fn?.script ?? '');
+    this.localPackageJson.set(fn?.packageJson ?? '');
+    // Straight off the record, like everything above it: the starting sample
+    // was written there when the function was created, so there is nothing to
+    // substitute and an empty sample is an empty sample.
+    this.localSampleBody.set(fn?.sampleBody ?? '');
+    this.localSampleHeaders.set(readSampleHeaders(fn?.sampleHeaders ?? ''));
   }
 
   /** The one spelling of an editor address, so no caller builds it by hand. */
@@ -597,22 +608,27 @@ export class EditorComponent implements OnInit {
   }
 
   /**
-   * The Environment and Triggers tabs save themselves, so neither is part of
-   * isDirty - but leaving either behind unsaved loses just as much. Triggers
-   * especially: the panel discards its rows as soon as the function changes.
-   *
+   * Unsaved input anywhere on the open function. The Environment and Triggers
+   * tabs save themselves, so neither is part of isDirty - but losing either
+   * costs just as much. Triggers especially: the panel discards its rows as soon
+   * as it loads again. Switching function and reloading ask this same question.
+   */
+  private hasUnsavedChanges(): boolean {
+    return (
+      this.isDirty() ||
+      (this.envEditor()?.isDirty() ?? false) ||
+      (this.triggersEditor()?.isDirty() ?? false)
+    );
+  }
+
+  /**
    * A function that is already gone asks nothing: its deletion was confirmed on
    * its own, and there is nothing left to go back to.
    */
   private mayLeave(): boolean {
     const previous = this.appliedId();
     if (!previous || !this.store.functions().some((f) => f.id === previous)) return true;
-
-    const dirty =
-      this.isDirty() ||
-      (this.envEditor()?.isDirty() ?? false) ||
-      (this.triggersEditor()?.isDirty() ?? false);
-    return !dirty || confirm('You have unsaved changes. Discard and switch?');
+    return !this.hasUnsavedChanges() || confirm('You have unsaved changes. Discard and switch?');
   }
 
   protected goToTab(slug: EditorTabSlug): void {
@@ -652,15 +668,35 @@ export class EditorComponent implements OnInit {
   }
 
   /**
-   * Re-reads what the sidebar shows: the functions and their trigger markers.
-   * The two go together — a function written from the API may arrive with its
-   * triggers, and reloading one without the other would show it without its mark.
+   * Re-reads what the sidebar shows - the functions and their trigger markers -
+   * then the open function and every one of its tabs. The first two go together:
+   * a function written from the API may arrive with its triggers, and reloading
+   * one without the other would show it without its mark.
    *
-   * The open buffers are left alone: the sync effect keys on the selected id,
-   * which a reload does not change, so nothing typed here is discarded.
+   * The open function is what an agent or another tab may have rewritten, and
+   * nothing else ever re-reads it: every panel loads on a change of id, which a
+   * reload does not make.
+   *
+   * Refusing to discard unsaved input still reloads the list. The question is
+   * about losing what was typed, and reading the list loses nothing - it is how
+   * a function created elsewhere shows up without saving first.
    */
   protected async onRefresh(): Promise<void> {
+    // Asked before the round trip: it is about what is on screen now.
+    const reloadOpen =
+      !this.hasUnsavedChanges() ||
+      confirm('You have unsaved changes. Discard them and reload this function?');
     await Promise.all([this.store.loadFunctions(), this.loadTriggerFunctions()]);
+    // A list that could not be read says nothing new about the open function.
+    if (!reloadOpen || this.store.error()) return;
+    const fn = this.store.selectedFunction();
+    // Gone since: the unknown-id effect is already taking the editor back to /editor.
+    if (!fn) return;
+    this.fillBuffers(fn);
+    this.envEditor()?.reload();
+    this.triggersEditor()?.reload();
+    this.filesTab()?.reload();
+    this.logViewer()?.reload();
   }
 
   protected async loadTriggerFunctions(): Promise<void> {

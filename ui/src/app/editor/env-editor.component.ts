@@ -146,6 +146,14 @@ export class EnvEditorComponent {
     effect(() => void this.load(this.functionId()));
   }
 
+  /**
+   * Public because the editor reloads the open function on demand, and the id
+   * the effect above keys on does not change then. Masks the values again.
+   */
+  reload(): void {
+    void this.load(this.functionId());
+  }
+
   private async load(functionId: string): Promise<void> {
     this.loaded.set(false);
     this.error.set('');

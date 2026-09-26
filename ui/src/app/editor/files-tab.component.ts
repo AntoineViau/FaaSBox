@@ -170,8 +170,14 @@ export class FilesTabComponent {
     this.enter(parts.join('/'));
   }
 
-  protected reload(): void {
+  /**
+   * Re-reads the current directory, and the file open beside it: what a run
+   * writes on disk is as likely to have changed as the listing. Public because
+   * the editor reloads the open function through it too.
+   */
+  reload(): void {
     this.loadLevel(this.functionId(), this.path());
+    if (this.selected()) void this.openFile(this.selected());
   }
 
   /** Joins a name onto the current directory. Public to the template only. */
