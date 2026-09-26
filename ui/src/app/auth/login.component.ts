@@ -1,6 +1,6 @@
 import { Component, signal, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormsModule, Validators } from '@angular/forms';
 import { AuthService } from '@/auth/auth.service';
 import { InstanceService } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
@@ -104,14 +104,18 @@ export class LoginComponent {
   /**
    * A showcase hands the visitor the account it wants them to use, already
    * typed in. Nothing else about signing in changes: the click below opens the
-   * same session as anywhere else, and the two fields are empty on an instance
-   * that publishes no demo credentials.
+   * same session as anywhere else.
+   *
+   * Elsewhere, a link to this page may name the account in `?email=`, and only
+   * the password is left to type. The showcase wins over the link: its fields
+   * are read-only, and any other address would only fail. The password is never
+   * read from the address bar — it would end up in the history and the logs.
    *
    * Read once, in a field initializer: the mode is loaded before the first
-   * render, so there is nothing to wait for and nothing to overwrite once the
-   * visitor starts typing.
+   * render and the link is already in the address bar, so there is nothing to
+   * wait for and nothing to overwrite once the visitor starts typing.
    */
-  email = this.instance.demoMode() ? this.instance.demoEmail() : '';
+  email = this.instance.demoMode() ? this.instance.demoEmail() : this.emailFromUrl();
   password = this.instance.demoMode() ? this.instance.demoPassword() : '';
 
   /**
@@ -160,6 +164,22 @@ export class LoginComponent {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  /**
+   * The address a link to this page carries in `?email=`, when it is one.
+   *
+   * Anything else is dropped without a word and without being tidied up: a
+   * prefill is a convenience, and an empty field says nothing wrong. Validity is
+   * Angular's own email rule, which holds an empty value for valid, hence the
+   * first test.
+   *
+   * A `+` has to reach the page as `%2B`: the router reads a bare one as a
+   * space, like any query string, and `a+tag@example.com` would then fail.
+   */
+  private emailFromUrl(): string {
+    const raw = this.route.snapshot.queryParamMap.get('email') ?? '';
+    return raw && Validators.email(new FormControl(raw)) === null ? raw : '';
   }
 
   /**
