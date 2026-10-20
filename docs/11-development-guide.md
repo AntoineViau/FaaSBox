@@ -51,7 +51,9 @@ We provide a helper script that builds the UI and starts the server:
 bash infra/dev/dev.sh
 ```
 
-You can pass superuser credentials via environment variables:
+You can pass superuser credentials via environment variables. On a fresh
+database they create the account; once it exists they are left alone, and
+`SUPERUSER_RESET=true` imposes them again (see [12 - Lost Password](12-lost-password.md)):
 ```bash
 SUPERUSER_EMAIL=admin@example.com SUPERUSER_PASSWORD=changeme bash infra/dev/dev.sh
 ```
@@ -85,6 +87,7 @@ is why the pair exists at all — a tool has no request to read.
 - `apikeys.go`: Middleware, hashing and scope enforcement.
 - `crypto.go` / `cryptofields.go`: The cipher and the two subkeys derived from `FAASBOX_ENCRYPTION_KEY` — one that encrypts, one that computes the keyed fingerprints the server looks a row up by — and where each encrypted column lives: the hooks that seal them on the way in, the hook that stamps those fingerprints, the enrichment that opens them for a response, and the accessors the server reads them through.
 - `ratelimit.go`: Turning PocketBase's rate limiter on at startup, without writing its rules.
+- `superuser.go`: Seeding the superuser from `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` on an instance that has none, and `SUPERUSER_RESET`, which imposes them again.
 
 **Agents**
 

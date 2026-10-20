@@ -28,8 +28,8 @@ tags, and for how to check where the image came from before you run it.
 
 ### Environment Variables:
 
-- `SUPERUSER_EMAIL`: The email for your admin account.
-- `SUPERUSER_PASSWORD`: The password for your admin account (min 8 chars).
+- `SUPERUSER_EMAIL`: The email for your admin account, created on first start.
+- `SUPERUSER_PASSWORD`: Used to create your admin account on first start (min 8 chars); change it afterwards in `/_/`. Editing the variable later changes nothing — see [12 - Lost Password](12-lost-password.md) to impose it again.
 - `FAASBOX_ENCRYPTION_KEY`: A 64-character hex string. It encrypts the whole database at rest — your function code, its triggers, its execution history and its secrets. The server refuses to start without it, and an existing database cannot be read without the key it was written with. **Keep this safe, and keep a copy somewhere other than the machine that runs FaaSBox.**
 - `-v faasbox-data:/app/data/pb_data`: Mounts a volume to persist your data.
 

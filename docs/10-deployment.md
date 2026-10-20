@@ -97,7 +97,8 @@ Only one is genuinely required, and only for a feature you may not use:
 | Variable | Status | Without it |
 |---|---|---|
 | `FAASBOX_ENCRYPTION_KEY` | **Required, always.** 64 hex characters — `openssl rand -hex 32`. | **The server does not start.** Absent, malformed or the wrong length are all fatal, on purpose: the database is encrypted at rest, so an instance without the key can neither write nor read its own content. |
-| `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. | The step is skipped; create the account at `/_/` on first boot instead. |
+| `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. They create the superuser on the first start of an instance that has none, and are left alone afterwards: a password changed in `/_/` survives every restart. | The step is skipped; create the account at `/_/` on first boot instead. |
+| `SUPERUSER_RESET` | Optional, the way back in after a lost password, see [12 - Lost Password](12-lost-password.md). Imposes the two variables above again at every start. Remove it once signed in; a value that is not a boolean stops the server. | The two variables only seed the account. |
 | `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin, scheme included. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
 | `FAASBOX_DEMOMODE` (+ `_EMAIL`, `_PASSWORD`) | Optional, see [15 - Demo Mode](15-demo-mode.md). Turns the instance into a read-only showcase. | A normal instance: everything runs and everything can be written. |
 | `LITESTREAM_*` | Optional, see [14 - Litestream Replication](14-litestream-replication.md). | No replication; the database stays local. |

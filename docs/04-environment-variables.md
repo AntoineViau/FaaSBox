@@ -88,8 +88,9 @@ These environment variables configure the FaaSBox server itself (not injected in
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SUPERUSER_EMAIL` | Admin superuser email | *(required)* |
-| `SUPERUSER_PASSWORD` | Admin superuser password | *(required)* |
+| `SUPERUSER_EMAIL` | Email of the superuser account created on first start, when the instance has none | *(none)* |
+| `SUPERUSER_PASSWORD` | Password of that account on first start; change it afterwards in the admin (`/_/`) | *(none)* |
+| `SUPERUSER_RESET` | Imposes `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` again at every start — the way back in after a lost password | `false` |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
 | `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin, `http://` or `https://` included | *(OAuth disabled)* |
 | `FAASBOX_NAME` | A name for this instance, shown in the interface and used to name its MCP server | *(unnamed)* |
@@ -108,9 +109,11 @@ Every numeric setting behaves the same way: an absent variable uses the default 
 
 `FAASBOX_ENCRYPTION_KEY` is the exception, and the only variable of the table that is not optional: absent, malformed, or the wrong length, the server stops and says so.
 
-`FAASBOX_DEMOMODE` is the **second** variable of the table — after `FAASBOX_ENCRYPTION_KEY` — whose unreadable value stops the server instead of falling back. The reason is what it commands: a bound that falls back costs a misconfigured limit, while `FAASBOX_DEMOMODE=treu` would leave every write route of something published as a showcase wide open. `true`, `1`, `false`, `0` and their casings are accepted; anything else is refused by name and by value. Absent, it is simply `false`.
+`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` **seed** the account: they create it on the first start of an instance that has no superuser, and are left alone once one exists. A password or an address you change in the admin survives every restart, and editing the two variables afterwards changes nothing. When they no longer describe the account — the password does not open it, or no superuser has the address — a line at startup says so, naming the address and never the password. Without them, no account is created and nothing is said. `SUPERUSER_RESET=true` is what imposes them again, by address, at every start for as long as it is set: see [12 - Lost Password](12-lost-password.md), and remove it once you are signed in.
 
-Its two companions command nothing and are read as they stand: they fill the two fields of the sign-in form on a demo instance, and they create no account — the one they name must already exist as a superuser. See [15 - Demo Mode](15-demo-mode.md) for what the mode stops, what it publishes, and why those two variables are not simply the superuser ones.
+`FAASBOX_DEMOMODE` and `SUPERUSER_RESET` are the two flags of the table, and the two variables — after `FAASBOX_ENCRYPTION_KEY` — whose unreadable value stops the server instead of falling back. The reason is what they command: a bound that falls back costs a misconfigured limit, while `FAASBOX_DEMOMODE=treu` would leave every write route of something published as a showcase wide open, and a `SUPERUSER_RESET` read the wrong way would either impose a password nobody meant to impose or miss the recovery it was set for. `true`, `1`, `false`, `0` and their casings are accepted; anything else is refused by name and by value. Absent, each is simply `false`.
+
+The two companions of `FAASBOX_DEMOMODE`, `FAASBOX_DEMOMODE_EMAIL` and `FAASBOX_DEMOMODE_PASSWORD`, command nothing and are read as they stand: they fill the two fields of the sign-in form on a demo instance, and they create no account — the one they name must already exist as a superuser. See [15 - Demo Mode](15-demo-mode.md) for what the mode stops, what it publishes, and why those two variables are not simply the superuser ones.
 
 `FAASBOX_NAME` tells your boxes apart. Set it to `toto` and both the sign-in card and the editor header read **FaaSBox toto** — you see which box you are signing in to before you sign in, not after — and the snippets on the **AI MCP** page name the server `faasbox-toto` instead of `faasbox` — which is what stops a second instance from overwriting the first in your agent's configuration when you paste both. Letters, digits, `.`, `-` and `_`, 32 characters at most; nothing else, and nothing is trimmed, so ` toto ` is refused rather than tidied. A refused value leaves the instance unnamed with a line in the server log, exactly like a bad numeric setting — a label is not worth refusing to start over.
 

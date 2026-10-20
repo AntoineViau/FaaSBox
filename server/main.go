@@ -26,6 +26,14 @@ func main() {
 		log.Fatalf("faasbox: %v", demoErr)
 	}
 
+	// Same policy for the flag that imposes the superuser again: read wrong, it
+	// would either reopen a password nobody meant to reopen or miss the recovery
+	// it was set for.
+	superusers, superusersErr := superuserSettingsFromEnv()
+	if superusersErr != nil {
+		log.Fatalf("faasbox: %v", superusersErr)
+	}
+
 	// What this instance is called, read once here and handed to its two
 	// consumers below: the route the editor reads before its first render, and
 	// the MCP server, which announces the name to every agent that connects.
@@ -95,6 +103,13 @@ func main() {
 			if err := ensureRateLimits(e.App); err != nil {
 				return fmt.Errorf("failed to enable the rate limiter: %w", err)
 			}
+
+			// Seed the superuser from the environment, or impose it again
+			// under SUPERUSER_RESET. In a showcase too: it needs its account.
+			// Synchronous and before e.Next(), so it runs ahead of
+			// PocketBase's installer, which only looks for an account once
+			// this chain is done. A failure is printed, not fatal.
+			ensureSuperuser(e.App, superusers)
 
 			// Restore functions from DB to disk (recreate files after container
 			// restart). It runs in a showcase too: it writes to disk and not to
