@@ -32,6 +32,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { AuthService } from '@/auth/auth.service';
+import { ChangePasswordComponent } from '@/auth/change-password.component';
 import { TriggersService } from '@/editor/triggers.service';
 import { FunctionsStore } from '@/editor/functions.store';
 import { CodeEditorComponent } from '@/editor/code-editor.component';
@@ -75,6 +76,7 @@ import { ZardInputDirective } from '@shared/components/input';
     LogViewerComponent,
     RunnerComponent,
     SidebarComponent,
+    ChangePasswordComponent,
     ThemeToggleComponent,
   ],
   template: `
@@ -118,6 +120,7 @@ import { ZardInputDirective } from '@shared/components/input';
             </button>
           }
           <div class="ml-auto flex items-center gap-2">
+            <app-change-password [demoMode]="demoMode()" />
             <app-theme-toggle />
             <button z-button zType="outline" zSize="sm" (click)="logout()">
               <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />

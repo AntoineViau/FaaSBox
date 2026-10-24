@@ -89,7 +89,7 @@ These environment variables configure the FaaSBox server itself (not injected in
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SUPERUSER_EMAIL` | Email of the superuser account created on first start, when the instance has none | *(none)* |
-| `SUPERUSER_PASSWORD` | Password of that account on first start; change it afterwards in the admin (`/_/`) | *(none)* |
+| `SUPERUSER_PASSWORD` | Password of that account on first start; change it afterwards from the editor header, or in the admin (`/_/`) | *(none)* |
 | `SUPERUSER_RESET` | Imposes `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` again at every start — the way back in after a lost password | `false` |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
 | `FAASBOX_PUBLIC_URL` | The address this instance answers on, as a bare origin, `http://` or `https://` included | *(OAuth disabled)* |

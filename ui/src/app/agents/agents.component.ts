@@ -14,6 +14,7 @@ import { AgentsService } from '@/agents/agents.service';
 import { AuthorizedAgentsComponent } from '@/agents/authorized-agents.component';
 import { SnippetListComponent } from '@/agents/snippet-list.component';
 import { AuthService } from '@/auth/auth.service';
+import { ChangePasswordComponent } from '@/auth/change-password.component';
 import { InstanceService } from '@/instance/instance.service';
 import { type FaasboxOAuthGrant, grantClientName } from '@/models/faasbox-oauth-grant.model';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
@@ -46,6 +47,7 @@ import { ZardIconComponent } from '@shared/components/icon';
     RouterLink,
     AuthorizedAgentsComponent,
     SnippetListComponent,
+    ChangePasswordComponent,
     ThemeToggleComponent,
     ZardAlertComponent,
     ZardButtonComponent,
@@ -62,6 +64,7 @@ import { ZardIconComponent } from '@shared/components/icon';
           <h1 class="text-lg font-semibold">AI MCP</h1>
         </div>
         <div class="flex items-center gap-2">
+          <app-change-password [demoMode]="demoMode()" />
           <app-theme-toggle />
           <button z-button zType="outline" zSize="sm" (click)="logout()">
             <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />

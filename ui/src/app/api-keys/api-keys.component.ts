@@ -11,6 +11,7 @@ import {
   type ScopeFunction,
 } from '@/api-keys/function-scope.component';
 import { AuthService } from '@/auth/auth.service';
+import { ChangePasswordComponent } from '@/auth/change-password.component';
 import { FunctionsService } from '@/editor/functions.service';
 import { DEMO_MODE_HINT, InstanceService } from '@/instance/instance.service';
 import type { FaasboxApiKey } from '@/models/faasbox-api-key.model';
@@ -44,6 +45,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
     RouterLink,
     ApiKeyCreateComponent,
     FunctionScopeComponent,
+    ChangePasswordComponent,
     ThemeToggleComponent,
     ZardAlertComponent,
     ZardButtonComponent,
@@ -60,6 +62,7 @@ function asRow(key: FaasboxApiKey): ApiKeyRow {
           <h1 class="text-lg font-semibold">API keys</h1>
         </div>
         <div class="flex items-center gap-2">
+          <app-change-password [demoMode]="demoMode()" />
           <app-theme-toggle />
           <button z-button zType="outline" zSize="sm" (click)="logout()">
             <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />

@@ -2,7 +2,7 @@
 
 If you've lost your superuser password, you reset it by starting the instance once with `SUPERUSER_RESET=true`, then starting it again without.
 
-`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` only **create** the account, on the first start of an instance that has none. Once it exists they are left alone: a password you change in the admin (`/_/`) survives every restart, and editing the variables afterwards changes nothing. `SUPERUSER_RESET` is the one thing that makes the server impose them again — and it is the only way back in on a host that lets you edit the environment without opening a shell.
+`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` only **create** the account, on the first start of an instance that has none. Once it exists they are left alone: a password you change from the editor header, or in the admin (`/_/`), survives every restart, and editing the variables afterwards changes nothing. `SUPERUSER_RESET` is the one thing that makes the server impose them again — and it is the only way back in on a host that lets you edit the environment without opening a shell.
 
 ## Docker
 
@@ -20,7 +20,7 @@ docker run -d -p 8080:8080 \
 
 At startup the server finds the superuser by `SUPERUSER_EMAIL`, gives it `SUPERUSER_PASSWORD`, and prints a warning. Sign in, then recreate the container **without** `SUPERUSER_RESET`. Your data, functions, and API keys are preserved — only the password changes.
 
-> ⚠️ **Remove the flag once you are signed in.** Left set, it imposes the variables again at every start: a password you change in the admin is undone by the next restart, the old one opens the account again, and every superuser session is signed out each time. The warning in the server log is printed at every start for as long as the flag is there.
+> ⚠️ **Remove the flag once you are signed in.** Left set, it imposes the variables again at every start: a password you change — from the header or in the admin — is undone by the next restart, the old one opens the account again, and every superuser session is signed out each time. The warning in the server log is printed at every start for as long as the flag is there.
 
 > ⛔ **You must pass the same `FAASBOX_ENCRYPTION_KEY` you were already running with**, along with every other variable the instance had. This is not a precaution, it is the condition: the database is encrypted at rest, so **without that key the server will not start at all**, and nothing in it can be read again. A lost password is recoverable; a lost key is not. This page changes a password, not a configuration.
 >
