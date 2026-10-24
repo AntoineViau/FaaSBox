@@ -210,7 +210,7 @@ you would rather name one:
 
 | Tag | Follows |
 |---|---|
-| `:0.7.0` | That exact release, and never moves. |
+| `:0.7.1` | That exact release, and never moves. |
 | `:0.7` | The newest patch of that minor version. |
 
 The difference only shows at the next `docker pull`: `:latest` hands you the
