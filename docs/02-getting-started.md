@@ -28,8 +28,8 @@ tags, and for how to check where the image came from before you run it.
 
 ### Environment Variables:
 
-- `SUPERUSER_EMAIL`: The email for your admin account, created on first start.
-- `SUPERUSER_PASSWORD`: Used to create your admin account on first start (min 8 chars); change it afterwards from the editor header (see **Password** below). Editing the variable later changes nothing — see [12 - Lost Password](12-lost-password.md) to impose it again.
+- `SUPERUSER_EMAIL`: The email for your admin account, created on first start; change it afterwards from the editor header (see **Account** below).
+- `SUPERUSER_PASSWORD`: Used to create your admin account on first start (min 8 chars); change it afterwards from the editor header (see **Account** below). Editing the variable later changes nothing — see [12 - Lost Password](12-lost-password.md) to impose it again.
 - `FAASBOX_ENCRYPTION_KEY`: A 64-character hex string. It encrypts the whole database at rest — your function code, its triggers, its execution history and its secrets. The server refuses to start without it, and an existing database cannot be read without the key it was written with. **Keep this safe, and keep a copy somewhere other than the machine that runs FaaSBox.**
 - `-v faasbox-data:/app/data/pb_data`: Mounts a volume to persist your data.
 
@@ -77,7 +77,7 @@ A link to the sign-in page can fill in the email for you: `http://localhost:8080
 - **API keys.** A dedicated page, reached from **API keys** at the top of the left sidebar, creates, scopes, disables and deletes keys. See [06 - API Keys and Security](06-api-keys-and-security.md).
 - **Plug in an AI agent.** The **AI MCP** page, just under **API keys**, carries the ready-made snippet for each client and lists the agents you have authorized, with a **Revoke** button for each. See [13 - AI Agents](13-ai-agents.md).
 - **Theme.** The sun/moon button in the header switches between light and dark. Your choice is remembered by the browser; without one, the editor follows your system preference.
-- **Password.** The person button in the header, next to the theme switch, changes your password — from the editor, the **API keys** page or the **AI MCP** page. It asks for your current password first, then the new one twice. The tab you are in stays signed in and keeps whatever you had not saved; every other session — other browsers, the PocketBase admin — is signed out. The new password holds across restarts; see [12 - Lost Password](12-lost-password.md) for what only `SUPERUSER_RESET` undoes.
+- **Account.** The person button in the header, next to the theme switch, changes your email address, your password, or both — from the editor, the **API keys** page or the **AI MCP** page. The dialog opens with your current address; leave the new password empty to keep the one you have. Any change asks for your current password, in the last field. The tab you are in stays signed in and keeps whatever you had not saved; every other session — other browsers, the PocketBase admin — is signed out. The change holds across restarts; see [12 - Lost Password](12-lost-password.md) for what only `SUPERUSER_RESET` undoes. If you change the address and `SUPERUSER_EMAIL` is set on the server, set it to the new address too: until then, a line at startup says that no superuser has the old one.
 
 #### Keyboard shortcuts
 

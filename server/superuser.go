@@ -99,8 +99,8 @@ func seedSuperuser(app core.App, s superuserSettings) error {
 	record, err := app.FindAuthRecordByEmail(core.CollectionNameSuperusers, s.Email)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		log.Printf("faasbox: no superuser has the address %s — none was created, since superusers already exist. Set %s=true to create it.",
-			s.Email, superuserResetEnv)
+		log.Printf("faasbox: no superuser has the address %s — none was created, since superusers already exist. If you changed the address, set %s to the new one; to create this account, set %s=true.",
+			s.Email, superuserEmailEnv, superuserResetEnv)
 	case err != nil:
 		return err
 	case !record.ValidatePassword(s.Password):

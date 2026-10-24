@@ -88,7 +88,7 @@ These environment variables configure the FaaSBox server itself (not injected in
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SUPERUSER_EMAIL` | Email of the superuser account created on first start, when the instance has none | *(none)* |
+| `SUPERUSER_EMAIL` | Email of the superuser account created on first start, when the instance has none; change it afterwards from the editor header, or in the admin (`/_/`) | *(none)* |
 | `SUPERUSER_PASSWORD` | Password of that account on first start; change it afterwards from the editor header, or in the admin (`/_/`) | *(none)* |
 | `SUPERUSER_RESET` | Imposes `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` again at every start — the way back in after a lost password | `false` |
 | `FAASBOX_ENCRYPTION_KEY` | 64-char hex key encrypting the database at rest | *(required)* |
@@ -109,7 +109,7 @@ Every numeric setting behaves the same way: an absent variable uses the default 
 
 `FAASBOX_ENCRYPTION_KEY` is the exception, and the only variable of the table that is not optional: absent, malformed, or the wrong length, the server stops and says so.
 
-`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` **seed** the account: they create it on the first start of an instance that has no superuser, and are left alone once one exists. A password or an address you change in the admin survives every restart, and editing the two variables afterwards changes nothing. When they no longer describe the account — the password does not open it, or no superuser has the address — a line at startup says so, naming the address and never the password. Without them, no account is created and nothing is said. `SUPERUSER_RESET=true` is what imposes them again, by address, at every start for as long as it is set: see [12 - Lost Password](12-lost-password.md), and remove it once you are signed in.
+`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` **seed** the account: they create it on the first start of an instance that has no superuser, and are left alone once one exists. A password or an address you change from the editor header or in the admin survives every restart, and editing the two variables afterwards changes nothing. When they no longer describe the account — the password does not open it, or no superuser has the address — a line at startup says so, naming the address and never the password. For an address with no account, the line gives both ways out: if you changed the address, set `SUPERUSER_EMAIL` to the new one; to create an account with that address, set `SUPERUSER_RESET=true`. Without them, no account is created and nothing is said. `SUPERUSER_RESET=true` is what imposes them again, by address, at every start for as long as it is set: see [12 - Lost Password](12-lost-password.md), and remove it once you are signed in.
 
 `FAASBOX_DEMOMODE` and `SUPERUSER_RESET` are the two flags of the table, and the two variables — after `FAASBOX_ENCRYPTION_KEY` — whose unreadable value stops the server instead of falling back. The reason is what they command: a bound that falls back costs a misconfigured limit, while `FAASBOX_DEMOMODE=treu` would leave every write route of something published as a showcase wide open, and a `SUPERUSER_RESET` read the wrong way would either impose a password nobody meant to impose or miss the recovery it was set for. `true`, `1`, `false`, `0` and their casings are accepted; anything else is refused by name and by value. Absent, each is simply `false`.
 

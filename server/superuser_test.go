@@ -167,9 +167,10 @@ func TestSuperuserSeedKeepsAChangedPassword(t *testing.T) {
 	assertLine(t, out, seed.Password, superuserPasswordEnv, seed.Email, superuserResetEnv)
 }
 
-// TestSuperuserSeedKeepsAChangedAddress pins that an address changed in the
-// admin does not leave a second superuser behind, and that the line names the
-// address nobody has any more.
+// TestSuperuserSeedKeepsAChangedAddress pins that an address changed from the
+// header or the admin does not leave a second superuser behind, and that the
+// line names the address nobody has any more, then both ways out: the variable
+// to correct, and the flag that creates the account.
 func TestSuperuserSeedKeepsAChangedAddress(t *testing.T) {
 	app := seededApp(t)
 	editSuperuser(t, app, findSuperuser(t, app, seed.Email), func(r *core.Record) {
@@ -182,7 +183,7 @@ func TestSuperuserSeedKeepsAChangedAddress(t *testing.T) {
 	if total := countSuperusers(t, app); total != 1 {
 		t.Errorf("%d superusers, want 1", total)
 	}
-	assertLine(t, out, seed.Password, seed.Email, superuserResetEnv)
+	assertLine(t, out, seed.Password, seed.Email, superuserEmailEnv, superuserResetEnv+"=true")
 }
 
 // TestSuperuserSeedTwiceKeepsTheSessions pins that a start with nothing changed

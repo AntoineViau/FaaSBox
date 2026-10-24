@@ -2,7 +2,7 @@
 
 If you've lost your superuser password, you reset it by starting the instance once with `SUPERUSER_RESET=true`, then starting it again without.
 
-`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` only **create** the account, on the first start of an instance that has none. Once it exists they are left alone: a password you change from the editor header, or in the admin (`/_/`), survives every restart, and editing the variables afterwards changes nothing. `SUPERUSER_RESET` is the one thing that makes the server impose them again — and it is the only way back in on a host that lets you edit the environment without opening a shell.
+`SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` only **create** the account, on the first start of an instance that has none. Once it exists they are left alone: a password or an address you change from the editor header, or in the admin (`/_/`), survives every restart, and editing the variables afterwards changes nothing. `SUPERUSER_RESET` is the one thing that makes the server impose them again — and it is the only way back in on a host that lets you edit the environment without opening a shell.
 
 ## Docker
 
@@ -50,8 +50,8 @@ Once signed in, stop it and start it again without `SUPERUSER_RESET`.
 
 ## Notes
 
-- The flag finds the account **by address**. If `SUPERUSER_EMAIL` matches no superuser — because you changed the address in the admin, say — it creates a **second** superuser with that address and password, beside the renamed one. Sign in with it, then delete the account you no longer want in the admin, under `_superusers`.
-- Without the flag, the server tells you when the variables no longer describe the account: a line at startup says that `SUPERUSER_PASSWORD` does not open it, or that no superuser has the address `SUPERUSER_EMAIL` names. The account is left as it stands. The line names the address, never the password.
+- The flag finds the account **by address**. If `SUPERUSER_EMAIL` matches no superuser — because you changed the address from the header or in the admin, say — it creates a **second** superuser with that address and password, beside the renamed one. Sign in with it, then delete the account you no longer want in the admin, under `_superusers`.
+- Without the flag, the server tells you when the variables no longer describe the account: a line at startup says that `SUPERUSER_PASSWORD` does not open it, or that no superuser has the address `SUPERUSER_EMAIL` names. For the address, the line tells you to set `SUPERUSER_EMAIL` to the new address if you changed it, or to set the flag to create that account. The account is left as it stands. The line names the address, never the password.
 - The flag needs both other variables. Set alone, or with only one of them, it touches no account, and a line at startup says so.
 - A value of `SUPERUSER_RESET` that is not a boolean — `treu` — stops the server and names the variable, rather than guessing whether you meant to reset.
 - No data is lost during this process. Only the superuser credentials are changed.
