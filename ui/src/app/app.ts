@@ -12,12 +12,16 @@ import { InstanceService } from '@/instance/instance.service';
  * The routed pages fill the box below the banner rather than the viewport,
  * which is what keeps the banner from pushing them off the bottom of the
  * screen. It is also why they measure themselves in percent and not in `vh`.
+ *
+ * The shell itself is `h-dvh`, not `h-screen`: on a phone `100vh` is the height
+ * with the address bar retracted, so the bottom of every page would sit under
+ * the bar. On a desktop the two are the same.
  */
 @Component({
   selector: 'app-root',
   imports: [DemoBannerComponent, RouterOutlet],
   template: `
-    <div class="flex h-screen flex-col">
+    <div class="flex h-dvh flex-col">
       <app-demo-banner [demoMode]="demoMode()" />
       <div class="min-h-0 flex-1">
         <router-outlet />

@@ -39,23 +39,30 @@ import { ZardIconComponent } from '@shared/components/icon';
     ZardIconComponent,
   ],
   template: `
-    <div class="mx-auto flex h-screen w-full max-w-app flex-col">
+    <div class="mx-auto flex h-dvh w-full max-w-app flex-col">
       <header class="flex items-center justify-between border-b border-border px-4 py-2">
         <h1 class="text-lg font-semibold">Authorize an agent</h1>
         <div class="flex items-center gap-2">
           <app-theme-toggle />
           <button z-button zType="outline" zSize="sm" (click)="logout()">
-            <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
-            Sign out
+            <z-icon zType="log-out" class="h-4 w-4 md:mr-1.5" />
+            <span class="max-md:sr-only">Sign out</span>
           </button>
         </div>
       </header>
 
+      <!-- Below md the cards centre by their auto margins, which outrank
+           items-center: on a screen shorter than the card they fall back to the
+           top, and the box scrolls, where centring would cut the top off for
+           good. -->
       <div class="flex flex-1 items-center justify-center overflow-y-auto p-4">
         @if (loading()) {
           <p class="text-sm text-muted-foreground">Loading the request…</p>
         } @else if (failure()) {
-          <z-card zTitle="This request cannot be shown" class="w-full max-w-lg">
+          <z-card
+            zTitle="This request cannot be shown"
+            class="w-full max-w-lg max-md:my-auto max-md:wrap-anywhere"
+          >
             <z-alert zType="destructive" zTitle="Error" [zDescription]="failure()" />
             <p class="mt-3 text-sm text-muted-foreground">
               An authorization request is valid for a few minutes and can be answered once. Start the
@@ -66,7 +73,7 @@ import { ZardIconComponent } from '@shared/components/icon';
           <z-card
             [zTitle]="consent.client + ' wants to connect to FaaSBox'"
             zDescription="Authorizing gives it a token. There is nothing to choose: the token carries everything below."
-            class="w-full max-w-lg"
+            class="w-full max-w-lg max-md:my-auto"
           >
             <ul class="mb-4 space-y-1.5 text-sm">
               @for (grant of consent.grants; track grant) {
@@ -108,7 +115,7 @@ import { ZardIconComponent } from '@shared/components/icon';
   styles: `
     :host {
       display: block;
-      height: 100vh;
+      height: 100dvh;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

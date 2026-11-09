@@ -82,9 +82,22 @@ import { ZardInputDirective } from '@shared/components/input';
   template: `
     <div class="mx-auto flex h-full w-full max-w-app flex-col">
       <!-- Header. The title block matches the sidebar width, so the actions
-           below start exactly where the editor area does. -->
+           below start exactly where the editor area does. Below md the sidebar
+           leaves the flow, so the block takes what the actions leave it, and
+           the labels of the buttons go to screen readers only. -->
       <header class="flex items-center border-b border-border py-2">
-        <div class="w-56 shrink-0 px-4">
+        <button
+          z-button
+          zType="ghost"
+          zSize="icon"
+          class="ml-2 md:hidden"
+          aria-label="Functions"
+          [attr.aria-expanded]="sidebarOpen()"
+          (click)="sidebarOpen.set(!sidebarOpen())"
+        >
+          <z-icon zType="panel-left" class="h-4 w-4" />
+        </button>
+        <div class="w-56 shrink-0 px-4 max-md:w-auto max-md:min-w-0 max-md:shrink max-md:px-2">
           <!-- The name of the instance sits beside the wordmark rather than
                inside it: the product is still FaaSBox, this box is one of
                several, and whoever runs two of them reads the tab by the
@@ -96,7 +109,7 @@ import { ZardInputDirective } from '@shared/components/input';
             }
           </h1>
         </div>
-        <div class="flex flex-1 items-center gap-2 px-4">
+        <div class="flex flex-1 items-center gap-2 px-4 max-md:px-2">
           <!-- Panels of the open function, so they only exist when there is one.
                Save is not here: it lives next to the name it records. -->
           @if (store.selectedFunction()) {
@@ -106,8 +119,8 @@ import { ZardInputDirective } from '@shared/components/input';
               zSize="sm"
               (click)="showRunner.set(!showRunner())"
             >
-              <z-icon zType="terminal" class="mr-1.5 h-4 w-4" />
-              Runner
+              <z-icon zType="terminal" class="h-4 w-4 md:mr-1.5" />
+              <span class="max-md:sr-only">Runner</span>
             </button>
             <button
               z-button
@@ -115,25 +128,36 @@ import { ZardInputDirective } from '@shared/components/input';
               zSize="sm"
               (click)="showLogs.set(!showLogs())"
             >
-              <z-icon zType="scroll-text" class="mr-1.5 h-4 w-4" />
-              Logs
+              <z-icon zType="scroll-text" class="h-4 w-4 md:mr-1.5" />
+              <span class="max-md:sr-only">Logs</span>
             </button>
           }
           <div class="ml-auto flex items-center gap-2">
             <app-account [demoMode]="demoMode()" />
             <app-theme-toggle />
             <button z-button zType="outline" zSize="sm" (click)="logout()">
-              <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
-              Sign out
+              <z-icon zType="log-out" class="h-4 w-4 md:mr-1.5" />
+              <span class="max-md:sr-only">Sign out</span>
             </button>
           </div>
         </div>
       </header>
 
       <!-- Main -->
-      <div class="flex flex-1 overflow-hidden">
-        <!-- Sidebar -->
-        <div class="w-56 shrink-0 border-r border-border">
+      <div class="flex flex-1 overflow-hidden max-md:relative">
+        <!-- Sidebar. Below md it leaves the flow and becomes a drawer over the
+             editor area, under the header that carries its button. Closed, it
+             is display: none, so it is out of the tab order as well. -->
+        @if (sidebarOpen()) {
+          <div
+            class="absolute inset-0 z-30 bg-black/50 md:hidden"
+            (click)="sidebarOpen.set(false)"
+          ></div>
+        }
+        <div
+          class="w-56 shrink-0 border-r border-border max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:bg-background"
+          [class.max-md:hidden]="!sidebarOpen()"
+        >
           <app-sidebar
             [functions]="store.sortedFunctions()"
             [selectedId]="store.selectedId()"
@@ -147,8 +171,10 @@ import { ZardInputDirective } from '@shared/components/input';
           />
         </div>
 
-        <!-- Editor area -->
-        <div class="flex flex-1 flex-col overflow-hidden">
+        <!-- Editor area. Below md it scrolls: the tabs keep a floor height, so
+             with the Runner and the Logs open the column grows past the screen
+             instead of crushing the code to nothing. -->
+        <div class="flex flex-1 flex-col overflow-hidden max-md:overflow-y-auto">
           @if (store.selectedFunction(); as fn) {
             <!-- Name field, and the one Save of the function: it records the
                  name, the script and the package.json, from any of the tabs. -->
@@ -226,8 +252,10 @@ import { ZardInputDirective } from '@shared/components/input';
 
             <!-- Tabs, written here rather than taken from shared/: the vendored
                  tab group keeps its active index to itself, so the URL could
-                 neither drive it nor read it. -->
-            <div class="flex flex-1 flex-col overflow-hidden">
+                 neither drive it nor read it. The floor height is a utility
+                 here, on the wrapper: .tab-content sets its own min-height in
+                 the styles block, and component styles beat any utility. -->
+            <div class="flex flex-1 flex-col overflow-hidden max-md:min-h-[70dvh]">
               <nav
                 role="tablist"
                 aria-label="Function"
@@ -315,9 +343,10 @@ import { ZardInputDirective } from '@shared/components/input';
 
             <!-- Runner panel. Taller than the logs below it: it stacks the
                  request over the result, and 16rem would leave each of the two
-                 rows a couple of lines. -->
+                 rows a couple of lines. Taller still below md, where the request
+                 stacks into two rows of its own and the column scrolls. -->
             @if (showRunner()) {
-              <div class="h-96 shrink-0 border-t border-border">
+              <div class="h-96 shrink-0 border-t border-border max-md:h-[36rem]">
                 <app-runner
                   [functionId]="fn.id"
                   [functionName]="fn.name"
@@ -339,8 +368,24 @@ import { ZardInputDirective } from '@shared/components/input';
               </div>
             }
           } @else {
-            <div class="flex flex-1 items-center justify-center">
-              <p class="text-muted-foreground">Select or create a function to start editing.</p>
+            <!-- Below md the list is in the closed drawer, so the invitation
+                 comes with the way to it. -->
+            <div
+              class="flex flex-1 items-center justify-center max-md:flex-col max-md:gap-3 max-md:p-4"
+            >
+              <p class="text-muted-foreground max-md:text-center">
+                Select or create a function to start editing.
+              </p>
+              <button
+                z-button
+                zType="outline"
+                zSize="sm"
+                class="md:hidden"
+                (click)="sidebarOpen.set(true)"
+              >
+                <z-icon zType="panel-left" class="mr-1.5 h-4 w-4" />
+                Show functions
+              </button>
             </div>
           }
         </div>
@@ -434,6 +479,11 @@ export class EditorComponent implements OnInit {
   protected readonly localSampleHeaders = signal<HeaderRow[]>([]);
   protected readonly showRunner = signal(true);
   protected readonly showLogs = signal(true);
+  /**
+   * The sidebar as a drawer, below md only: above, the classes keep it in the
+   * flow whatever this says, so no breakpoint has to be known here.
+   */
+  protected readonly sidebarOpen = signal(false);
   protected readonly running = signal(false);
   /** Ids of the functions carrying at least one active trigger. */
   protected readonly triggerFunctions = signal<Set<string>>(new Set());
@@ -798,8 +848,13 @@ export class EditorComponent implements OnInit {
    * A saved link keeps naming its tab - applyRoute reads it off the URL, and
    * this rule lives at the click site precisely so that it does not reach
    * there.
+   *
+   * The drawer closes here for the same reason: picking a function is what
+   * the drawer was opened for. A refused switch confirmation leaves it closed
+   * on the function already open, which is where the user chose to stay.
    */
   protected onSelectFunction(id: string): void {
+    this.sidebarOpen.set(false);
     void this.router.navigate(this.tabLink(id, DEFAULT_EDITOR_TAB));
   }
 
@@ -814,6 +869,7 @@ export class EditorComponent implements OnInit {
       // on the script, like every other opening, which is also where the
       // example the function is created with can be read.
       const created = await this.store.createFunction(name.trim());
+      this.sidebarOpen.set(false);
       void this.router.navigate(this.tabLink(created.id, DEFAULT_EDITOR_TAB));
     } catch (e) {
       alert(`Failed to create function: ${errorText(e)}`);

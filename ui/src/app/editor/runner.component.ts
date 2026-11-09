@@ -70,14 +70,19 @@ import { ZardIconComponent } from '@shared/components/icon';
            edited together — one is useless without the other — and the result
            is full width because that is where the long output lands. -->
       <div class="flex min-h-0 flex-1 flex-col">
-        <!-- Request: headers on the left, body on the right -->
-        <div class="flex min-h-0 flex-1 border-b border-border">
-          <div class="w-1/2 overflow-auto border-r border-border">
+        <!-- Request: headers on the left, body on the right — or, below md,
+             headers above body, since two halves of a phone fit neither. -->
+        <div class="flex min-h-0 flex-1 border-b border-border max-md:flex-col">
+          <div
+            class="w-1/2 overflow-auto border-r border-border max-md:min-h-0 max-md:w-full max-md:flex-1 max-md:border-r-0 max-md:border-b"
+          >
             <app-header-editor [(headers)]="headers" [readOnly]="demoMode()" />
           </div>
           <!-- min-h-0 on the wrapper, or the code editor sizes itself on its
                content and pushes the pane into a scroll of its own. -->
-          <div class="flex w-1/2 flex-col overflow-hidden">
+          <div
+            class="flex w-1/2 flex-col overflow-hidden max-md:min-h-0 max-md:w-full max-md:flex-1"
+          >
             <div class="px-3 py-1 text-xs text-muted-foreground">Body</div>
             <div class="min-h-0 flex-1 overflow-auto">
               <app-code-editor

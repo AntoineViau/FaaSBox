@@ -72,7 +72,10 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
   template: `
     <div class="mb-3 rounded-lg border border-border p-3">
       <div class="flex items-start gap-3">
-        <div class="flex-1 space-y-2">
+        <!-- min-w-0 below md: without it the column cannot shrink under the
+             width of the cron help diagram, which then widens the whole card
+             past a phone screen instead of scrolling inside its own box. -->
+        <div class="flex-1 space-y-2 max-md:min-w-0">
           <!-- Name -->
           <div>
             <label class="mb-1 block text-xs text-muted-foreground">Name</label>

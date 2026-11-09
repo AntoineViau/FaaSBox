@@ -76,12 +76,15 @@ import { ZardIconComponent } from '@shared/components/icon';
             @if (triggerFunctions().has(fn.id)) {
               <z-icon zType="calendar" class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             }
+            <!-- Revealed by hovering the row with a mouse. A touch screen has
+                 no hover, so there the button is always shown — hidden, it
+                 would simply not exist. -->
             <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
               <button
                 z-button
                 zType="ghost"
                 zSize="icon"
-                class="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+                class="h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100"
                 [disabled]="demoMode()"
                 (click)="$event.stopPropagation(); deleteItem.emit(fn.id)"
               >

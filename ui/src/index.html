@@ -22,7 +22,10 @@
     })();
   </script>
 </head>
-<body class="bg-background text-foreground min-h-screen antialiased">
+<!-- min-h-dvh like the shell in app.ts: min-h-screen is the height with a
+     phone's address bar retracted, so the page itself would scroll by the
+     height of the bar while it is shown. -->
+<body class="bg-background text-foreground min-h-dvh antialiased">
   <app-root></app-root>
 </body>
 </html>

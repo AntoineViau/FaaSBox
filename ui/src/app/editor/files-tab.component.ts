@@ -54,9 +54,12 @@ import { ZardIconComponent } from '@shared/components/icon';
         </button>
       </div>
 
-      <div class="flex min-h-0 flex-1">
+      <!-- Side by side, or below md the listing above the reading pane. -->
+      <div class="flex min-h-0 flex-1 max-md:flex-col">
         <!-- Level listing: directories first, then files, each group by name. -->
-        <div class="w-1/2 overflow-y-auto border-r border-border">
+        <div
+          class="w-1/2 overflow-y-auto border-r border-border max-md:min-h-0 max-md:w-full max-md:flex-1 max-md:border-r-0 max-md:border-b"
+        >
           @if (listError()) {
             <p class="p-3 text-xs text-destructive">{{ listError() }}</p>
           } @else if (loading()) {
@@ -87,7 +90,7 @@ import { ZardIconComponent } from '@shared/components/icon';
         </div>
 
         <!-- Reading pane. -->
-        <div class="flex w-1/2 flex-col overflow-hidden">
+        <div class="flex w-1/2 flex-col overflow-hidden max-md:min-h-0 max-md:w-full max-md:flex-1">
           @if (!selected()) {
             <p class="p-3 text-xs text-muted-foreground">Select a file to read it.</p>
           } @else {

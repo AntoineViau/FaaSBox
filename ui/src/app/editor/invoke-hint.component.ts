@@ -37,12 +37,16 @@ import { ZardIconComponent } from '@shared/components/icon';
 
     @if (dialogOpen()) {
       <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        class="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-black/50 p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="invoke-hint-title"
       >
-        <div class="w-full max-w-2xl rounded-lg border border-border bg-background p-4 shadow-lg">
+        <!-- Centred by its auto margins, so that taller than the screen it
+             starts at the top and the overlay scrolls. -->
+        <div
+          class="my-auto w-full max-w-2xl rounded-lg border border-border bg-background p-4 shadow-lg"
+        >
           <div class="flex items-start justify-between gap-4">
             <h2 id="invoke-hint-title" class="text-sm font-semibold">Invoke {{ name() }}</h2>
             <button z-button zType="ghost" zSize="icon" class="h-7 w-7" (click)="close()">

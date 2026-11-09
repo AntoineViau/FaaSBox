@@ -58,8 +58,8 @@ import { ZardIconComponent } from '@shared/components/icon';
       <header class="flex items-center justify-between border-b border-border px-4 py-2">
         <div class="flex items-center gap-3">
           <a z-button zType="ghost" zSize="sm" routerLink="/editor">
-            <z-icon zType="arrow-left" class="mr-1.5 h-4 w-4" />
-            Functions
+            <z-icon zType="arrow-left" class="h-4 w-4 md:mr-1.5" />
+            <span class="max-md:sr-only">Functions</span>
           </a>
           <h1 class="text-lg font-semibold">AI MCP</h1>
         </div>
@@ -67,8 +67,8 @@ import { ZardIconComponent } from '@shared/components/icon';
           <app-account [demoMode]="demoMode()" />
           <app-theme-toggle />
           <button z-button zType="outline" zSize="sm" (click)="logout()">
-            <z-icon zType="log-out" class="mr-1.5 h-4 w-4" />
-            Sign out
+            <z-icon zType="log-out" class="h-4 w-4 md:mr-1.5" />
+            <span class="max-md:sr-only">Sign out</span>
           </button>
         </div>
       </header>

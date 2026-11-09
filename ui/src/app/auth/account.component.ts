@@ -68,12 +68,14 @@ import { ZardInputDirective } from '@shared/components/input';
 
     @if (dialogOpen()) {
       <div
-        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        class="fixed inset-0 z-50 flex justify-center overflow-y-auto bg-black/50 p-4"
         role="dialog"
         aria-modal="true"
         aria-labelledby="account-title"
       >
-        <div class="w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg">
+        <div
+          class="my-auto w-full max-w-sm rounded-lg border border-border bg-background p-4 shadow-lg"
+        >
           <h2 id="account-title" class="text-sm font-semibold">Account</h2>
 
           @if (done()) {
