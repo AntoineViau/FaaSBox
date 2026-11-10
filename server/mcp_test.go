@@ -186,6 +186,16 @@ func TestMCPServerAdvertises(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("the implementation carries the build version", func(t *testing.T) {
+		init := session.InitializeResult()
+		if init == nil || init.ServerInfo == nil {
+			t.Fatal("the session carries no server info")
+		}
+		if init.ServerInfo.Version != faasboxVersion {
+			t.Errorf("server version = %q, want faasboxVersion (%q)", init.ServerInfo.Version, faasboxVersion)
+		}
+	})
 }
 
 func TestMCPListFunctions(t *testing.T) {

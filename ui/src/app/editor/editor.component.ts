@@ -164,6 +164,7 @@ import { ZardInputDirective } from '@shared/components/input';
             [triggerFunctions]="triggerFunctions()"
             [loading]="store.isLoading()"
             [demoMode]="demoMode()"
+            [version]="version()"
             (select)="onSelectFunction($event)"
             (create)="onCreateFunction()"
             (deleteItem)="onDeleteFunction($event)"
@@ -441,6 +442,9 @@ export class EditorComponent implements OnInit {
    */
   protected readonly instanceName = this.instance.name;
 
+  /** The build that answers, read once signed in (cf. ngOnInit). */
+  protected readonly version = this.instance.version;
+
   /**
    * The address bar is the source of truth: these two are the only inputs of
    * the selection and of the active tab, and applyRoute is the only writer of
@@ -602,6 +606,9 @@ export class EditorComponent implements OnInit {
   ngOnInit(): void {
     void this.store.loadFunctions().then(() => this.listLoaded.set(true));
     this.loadTriggerFunctions();
+    // Here and not in the app initializer: the route wants a superuser session,
+    // which does not exist yet when the initializer runs.
+    void this.instance.loadVersion();
 
     // The install runs in the background for up to a minute after the save
     // answered, so the save response alone would show one frozen value. The

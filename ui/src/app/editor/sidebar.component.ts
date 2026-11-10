@@ -94,6 +94,12 @@ import { ZardIconComponent } from '@shared/components/icon';
           </div>
         }
       </div>
+      <!-- Below the list, which is the part that scrolls, so it stays in view. -->
+      @if (version()) {
+        <p class="border-t border-border px-3 py-2 text-xs text-muted-foreground">
+          Version {{ version() }}
+        </p>
+      }
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -107,6 +113,8 @@ export class SidebarComponent {
   readonly loading = input(false);
   /** A showcase lists the functions and closes what would write one. */
   readonly demoMode = input(false);
+  /** The build that answers, shown at the foot when known. */
+  readonly version = input('');
 
   protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
 

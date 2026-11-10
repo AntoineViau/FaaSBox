@@ -255,6 +255,9 @@ func main() {
 				return functionFileContentHandler(re, functionsDir)
 			}).Bind(apis.RequireSuperuserAuth())
 
+			// Which build answers (superuser only)
+			e.Router.GET("/api/faasbox/version", versionHandler).Bind(apis.RequireSuperuserAuth())
+
 			// serve static files from pb_public (Angular SPA + assets)
 			if !e.Router.HasRoute(http.MethodGet, "/{path...}") {
 				e.Router.GET("/{path...}", apis.Static(os.DirFS(publicDir()), true))

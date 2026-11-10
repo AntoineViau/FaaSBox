@@ -3,6 +3,7 @@ import { inject, Injectable, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 const INSTANCE_URL = '/api/faasbox/instance';
+const VERSION_URL = '/api/faasbox/version';
 
 /**
  * The one wording of the tooltip every affordance the demo mode closes carries.
@@ -17,6 +18,10 @@ interface InstanceResponse {
   name?: string;
   email?: string;
   password?: string;
+}
+
+interface VersionResponse {
+  version?: string;
 }
 
 /**
@@ -36,6 +41,9 @@ interface InstanceResponse {
  * **Reading it once is enough because the answer cannot be stale.** The response
  * forbids being stored, so this call always reaches the server: the freshness is
  * the response's own doing, and nothing here has to ask for it.
+ *
+ * The build version is a third facet, read apart: it is served to a superuser
+ * only, so it cannot be in the answer read before sign-in.
  */
 @Injectable({ providedIn: 'root' })
 export class InstanceService {
@@ -45,11 +53,14 @@ export class InstanceService {
   private readonly instanceName = signal('');
   private readonly email = signal('');
   private readonly password = signal('');
+  private readonly buildVersion = signal('');
 
   readonly demoMode = this.demo.asReadonly();
   readonly name = this.instanceName.asReadonly();
   readonly demoEmail = this.email.asReadonly();
   readonly demoPassword = this.password.asReadonly();
+  /** The build that answers — a release tag such as 0.7.2, or dev. Empty until read. */
+  readonly version = this.buildVersion.asReadonly();
 
   /**
    * Called by the application initializer, so nothing renders before the answer
@@ -71,6 +82,20 @@ export class InstanceService {
       this.password.set(info?.password ?? '');
     } catch (e) {
       console.warn('Could not read the instance mode; treating it as a normal instance.', e);
+    }
+  }
+
+  /**
+   * Called by the editor once signed in, since the route wants a superuser
+   * session. A failure leaves the version empty, and an empty version is simply
+   * not shown: nothing depends on it.
+   */
+  async loadVersion(): Promise<void> {
+    try {
+      const info = await firstValueFrom(this.http.get<VersionResponse>(VERSION_URL));
+      this.buildVersion.set(info?.version ?? '');
+    } catch (e) {
+      console.warn('Could not read the version of this instance.', e);
     }
   }
 }

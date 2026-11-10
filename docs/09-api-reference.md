@@ -667,6 +667,26 @@ visitor opens is an ordinary superuser session.
 
 ---
 
+## 13. Instance Version
+**Endpoint**: `GET /api/faasbox/version`
+
+**Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`). An API key is refused with `401`, whatever its scope.
+
+Says which build of FaaSBox answers. The editor shows it at the foot of its sidebar once you are signed in.
+
+- **Response**: `200 OK`
+    ```json
+    {
+      "version": "0.7.2"
+    }
+    ```
+
+A released image answers with its tag, without the leading `v`. Anything built another way — `go run`, or a `docker build` without `--build-arg FAASBOX_VERSION=...` — answers `"dev"`.
+
+It is not a field of [Instance Mode](#12-instance-mode) on purpose: that endpoint is public, and a version handed to anyone who asks tells a scanner which known flaws to try.
+
+---
+
 ## Internal Collections API
 Since FaaSBox is built on PocketBase, you can also use the standard PocketBase Web APIs to manage the collections (`faasbox_api_keys`, `faasbox_triggers`, `faasbox_logs`, `faasbox_functions`, and — on an instance that publishes its address — `faasbox_oauth_clients` and `faasbox_oauth_grants`).
 

@@ -387,6 +387,9 @@ func registerFaaSRoutesFor(app *tests.TestApp, e *core.ServeEvent, functionsDir 
 	e.Router.GET("/api/faasbox/functions/{name}/files/content", func(re *core.RequestEvent) error {
 		return functionFileContentHandler(re, functionsDir)
 	}).Bind(apis.RequireSuperuserAuth())
+
+	// Which build answers (superuser only)
+	e.Router.GET("/api/faasbox/version", versionHandler).Bind(apis.RequireSuperuserAuth())
 }
 
 // setRecordDate overwrites a date column PocketBase manages itself (created) or
