@@ -25,16 +25,10 @@ import { ZardIconComponent } from '@shared/components/icon';
   imports: [ZardButtonComponent, ZardIconComponent, CodeEditorComponent, HeaderEditorComponent],
   template: `
     <div class="flex h-full flex-col">
-      <!-- Toolbar -->
+      <!-- Toolbar. Run sits right after the label it acts on; only the fold
+           control is pushed to the far end. -->
       <div class="flex items-center gap-2 border-b border-border px-3 py-1.5">
         <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Runner</span>
-        <div class="flex-1"></div>
-        @if (busy()) {
-          <span class="flex items-center text-xs text-muted-foreground">
-            <z-icon zType="loader-circle" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            Running...
-          </span>
-        }
         <!-- The hint goes on the wrapper: a disabled button gets no hover
              event, so a title placed on it would never show. -->
         <span [title]="demoMode() ? DEMO_MODE_HINT : ''">
@@ -43,7 +37,7 @@ import { ZardIconComponent } from '@shared/components/icon';
             [zType]="dirty() ? 'outline' : 'default'"
             zSize="sm"
             [disabled]="busy() || !functionName() || demoMode()"
-            (click)="run.emit()"
+            (click)="open.set(true); run.emit()"
           >
             <z-icon zType="zap" class="mr-1.5 h-4 w-4" />
             Run
@@ -56,20 +50,39 @@ import { ZardIconComponent } from '@shared/components/icon';
               zType="default"
               zSize="sm"
               [disabled]="busy() || !functionName() || demoMode()"
-              (click)="saveAndRun.emit()"
+              (click)="open.set(true); saveAndRun.emit()"
             >
               <z-icon zType="save" class="mr-1.5 h-4 w-4" />
               Save and run
             </button>
           </span>
         }
+        @if (busy()) {
+          <span class="flex items-center text-xs text-muted-foreground">
+            <z-icon zType="loader-circle" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            Running...
+          </span>
+        }
+        <div class="flex-1"></div>
+        <button
+          z-button
+          zType="ghost"
+          zSize="sm"
+          [attr.aria-expanded]="open()"
+          [attr.aria-label]="open() ? 'Hide runner' : 'Show runner'"
+          [title]="open() ? 'Hide runner' : 'Show runner'"
+          (click)="open.set(!open())"
+        >
+          <z-icon [zType]="open() ? 'chevron-down' : 'chevron-up'" class="h-3.5 w-3.5" />
+        </button>
       </div>
 
       <!-- Two rows: the request on top, split in half, and what came back
            under it. The request is two panes because headers and body are
            edited together — one is useless without the other — and the result
-           is full width because that is where the long output lands. -->
-      <div class="flex min-h-0 flex-1 flex-col">
+           is full width because that is where the long output lands. Folded,
+           it is hidden and not destroyed, so the last result survives. -->
+      <div class="flex min-h-0 flex-1 flex-col" [hidden]="!open()">
         <!-- Request: headers on the left, body on the right — or, below md,
              headers above body, since two halves of a phone fit neither. -->
         <div class="flex min-h-0 flex-1 border-b border-border max-md:flex-col">
@@ -210,6 +223,13 @@ export class RunnerComponent {
    */
   readonly body = model.required<string>();
   readonly headers = model.required<HeaderRow[]>();
+
+  /**
+   * Unfolded or folded onto its bar. Two-way, since the editor sizes the panel
+   * from it. A run started from the folded bar unfolds it: the result is what
+   * the click was for.
+   */
+  readonly open = model(true);
 
   /**
    * What the last execution answered. **It stays here**, and it is the one

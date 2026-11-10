@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, Component, effect, inject, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  inject,
+  input,
+  model,
+  signal,
+} from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 
 import type { FaasboxLog } from '@/models/faasbox-log.model';
@@ -24,10 +32,21 @@ import { ZardIconComponent } from '@shared/components/icon';
         <button z-button zType="ghost" zSize="sm" (click)="reload()">
           <z-icon zType="refresh-cw" class="h-3.5 w-3.5" />
         </button>
+        <button
+          z-button
+          zType="ghost"
+          zSize="sm"
+          [attr.aria-expanded]="open()"
+          [attr.aria-label]="open() ? 'Hide logs' : 'Show logs'"
+          [title]="open() ? 'Hide logs' : 'Show logs'"
+          (click)="open.set(!open())"
+        >
+          <z-icon [zType]="open() ? 'chevron-down' : 'chevron-up'" class="h-3.5 w-3.5" />
+        </button>
       </div>
 
-      <!-- Log list -->
-      <div class="flex-1 overflow-y-auto">
+      <!-- Log list. Folded, the bar alone stays, count included. -->
+      <div class="flex-1 overflow-y-auto" [hidden]="!open()">
         @if (isLoading()) {
           <div class="flex items-center justify-center py-4">
             <z-icon zType="loader-circle" class="h-4 w-4 animate-spin text-muted-foreground" />
@@ -111,6 +130,8 @@ export class LogViewerComponent {
   private readonly logsService = inject(LogsService);
 
   readonly functionId = input.required<string>();
+  /** Unfolded or folded onto its bar. Two-way, since the editor sizes the panel from it. */
+  readonly open = model(true);
 
   protected readonly logs = signal<FaasboxLog[]>([]);
   protected readonly isLoading = signal(false);

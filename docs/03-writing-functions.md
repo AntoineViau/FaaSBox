@@ -285,7 +285,7 @@ Three things come with it:
 The FaaSBox Editor includes a built-in **Runner** panel that lets you test your function without leaving the browser.
 
 1. Open your function in the Editor.
-2. Open the **Runner** panel from the header.
+2. The **Runner** panel sits below the code. If it is folded, click the arrow at the right of its bar — or just click **Run**, which unfolds it.
 3. Set the **headers** on the left, and type the **body** on the right (it defaults to `{}`).
 4. Click **Run**, or **Save and run** if you changed something.
 

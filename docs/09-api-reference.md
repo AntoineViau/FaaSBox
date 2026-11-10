@@ -672,7 +672,7 @@ visitor opens is an ordinary superuser session.
 
 **Requires Superuser Authentication** (PocketBase standard `Authorization: Bearer <token>`). An API key is refused with `401`, whatever its scope.
 
-Says which build of FaaSBox answers. The editor shows it at the foot of its sidebar once you are signed in.
+Says which build of FaaSBox answers. The editor shows it beside the **FaaSBox** title of its header once you are signed in.
 
 - **Response**: `200 OK`
     ```json

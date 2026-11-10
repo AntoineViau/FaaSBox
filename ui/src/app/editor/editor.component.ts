@@ -81,10 +81,11 @@ import { ZardInputDirective } from '@shared/components/input';
   ],
   template: `
     <div class="mx-auto flex h-full w-full max-w-app flex-col">
-      <!-- Header. The title block matches the sidebar width, so the actions
-           below start exactly where the editor area does. Below md the sidebar
-           leaves the flow, so the block takes what the actions leave it, and
-           the labels of the buttons go to screen readers only. -->
+      <!-- Header. The title takes all the width the three session commands
+           leave it, so a long instance name reads whole; it is only cut when
+           there is truly no room, on a phone mostly. Below md the labels of
+           the buttons go to screen readers only. The Runner and the Logs are
+           shown and hidden from their own bars, not from here. -->
       <header class="flex items-center border-b border-border py-2">
         <button
           z-button
@@ -97,49 +98,33 @@ import { ZardInputDirective } from '@shared/components/input';
         >
           <z-icon zType="panel-left" class="h-4 w-4" />
         </button>
-        <div class="w-56 shrink-0 px-4 max-md:w-auto max-md:min-w-0 max-md:shrink max-md:px-2">
+        <div class="min-w-0 flex-1 px-4 max-md:px-2">
           <!-- The name of the instance sits beside the wordmark rather than
                inside it: the product is still FaaSBox, this box is one of
                several, and whoever runs two of them reads the tab by the
-               second half. Absent, the header is exactly what it always was. -->
+               second half. Absent, the header is exactly what it always was.
+               The build version follows the wordmark it belongs to, small, and
+               only once read: it needs a signed-in session. -->
           <h1 class="truncate text-lg font-semibold">
             FaaSBox
+            @if (version()) {
+              <!-- &ngsp; keeps the space before the instance name: Angular drops
+                   the whitespace between two blocks, which glued them. -->
+              <span class="text-xs font-normal text-muted-foreground">{{ version() }}</span
+              >&ngsp;
+            }
             @if (instanceName()) {
               <span class="font-normal text-muted-foreground">{{ instanceName() }}</span>
             }
           </h1>
         </div>
-        <div class="flex flex-1 items-center gap-2 px-4 max-md:px-2">
-          <!-- Panels of the open function, so they only exist when there is one.
-               Save is not here: it lives next to the name it records. -->
-          @if (store.selectedFunction()) {
-            <button
-              z-button
-              [zType]="showRunner() ? 'secondary' : 'outline'"
-              zSize="sm"
-              (click)="showRunner.set(!showRunner())"
-            >
-              <z-icon zType="terminal" class="h-4 w-4 md:mr-1.5" />
-              <span class="max-md:sr-only">Runner</span>
-            </button>
-            <button
-              z-button
-              [zType]="showLogs() ? 'secondary' : 'outline'"
-              zSize="sm"
-              (click)="showLogs.set(!showLogs())"
-            >
-              <z-icon zType="scroll-text" class="h-4 w-4 md:mr-1.5" />
-              <span class="max-md:sr-only">Logs</span>
-            </button>
-          }
-          <div class="ml-auto flex items-center gap-2">
-            <app-account [demoMode]="demoMode()" />
-            <app-theme-toggle />
-            <button z-button zType="outline" zSize="sm" (click)="logout()">
-              <z-icon zType="log-out" class="h-4 w-4 md:mr-1.5" />
-              <span class="max-md:sr-only">Sign out</span>
-            </button>
-          </div>
+        <div class="flex shrink-0 items-center gap-2 px-4 max-md:px-2">
+          <app-account [demoMode]="demoMode()" />
+          <app-theme-toggle />
+          <button z-button zType="outline" zSize="sm" (click)="logout()">
+            <z-icon zType="log-out" class="h-4 w-4 md:mr-1.5" />
+            <span class="max-md:sr-only">Sign out</span>
+          </button>
         </div>
       </header>
 
@@ -164,7 +149,6 @@ import { ZardInputDirective } from '@shared/components/input';
             [triggerFunctions]="triggerFunctions()"
             [loading]="store.isLoading()"
             [demoMode]="demoMode()"
-            [version]="version()"
             (select)="onSelectFunction($event)"
             (create)="onCreateFunction()"
             (deleteItem)="onDeleteFunction($event)"
@@ -345,29 +329,33 @@ import { ZardInputDirective } from '@shared/components/input';
             <!-- Runner panel. Taller than the logs below it: it stacks the
                  request over the result, and 16rem would leave each of the two
                  rows a couple of lines. Taller still below md, where the request
-                 stacks into two rows of its own and the column scrolls. -->
-            @if (showRunner()) {
-              <div class="h-96 shrink-0 border-t border-border max-md:h-[36rem]">
-                <app-runner
-                  [functionId]="fn.id"
-                  [functionName]="fn.name"
-                  [(body)]="localSampleBody"
-                  [(headers)]="localSampleHeaders"
-                  [busy]="running()"
-                  [dirty]="isDirty()"
-                  [demoMode]="demoMode()"
-                  (run)="run()"
-                  (saveAndRun)="saveAndRun()"
-                />
-              </div>
-            }
+                 stacks into two rows of its own and the column scrolls.
+                 Both panels fold onto their own bar rather than leave the page:
+                 the bar is what opens them again, and a folded Runner keeps the
+                 result of its last run. Folded, the panel takes the height of
+                 its bar and the code gets the rest. -->
+            <div
+              class="shrink-0 border-t border-border"
+              [class]="showRunner() ? 'h-96 max-md:h-[36rem]' : ''"
+            >
+              <app-runner
+                [functionId]="fn.id"
+                [functionName]="fn.name"
+                [(body)]="localSampleBody"
+                [(headers)]="localSampleHeaders"
+                [(open)]="showRunner"
+                [busy]="running()"
+                [dirty]="isDirty()"
+                [demoMode]="demoMode()"
+                (run)="run()"
+                (saveAndRun)="saveAndRun()"
+              />
+            </div>
 
             <!-- Logs panel -->
-            @if (showLogs()) {
-              <div class="h-64 shrink-0 border-t border-border">
-                <app-log-viewer [functionId]="fn.id" />
-              </div>
-            }
+            <div class="shrink-0 border-t border-border" [class]="showLogs() ? 'h-64' : ''">
+              <app-log-viewer [functionId]="fn.id" [(open)]="showLogs" />
+            </div>
           } @else {
             <!-- Below md the list is in the closed drawer, so the invitation
                  comes with the way to it. -->

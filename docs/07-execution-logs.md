@@ -67,7 +67,7 @@ Truncation applies **only to the persisted copy**. The HTTP response of `POST /i
 The FaaSBox Editor includes a built-in **Logs** panel for each function:
 
 1. Open your function in the Editor.
-2. Click **Logs** in the header — it toggles a panel below the code, alongside the **Runner**.
+2. The **Logs** panel sits below the code, under the **Runner**. If it is folded, click the arrow at the right of its bar to show it.
 3. Logs appear in real time — new entries are pushed automatically as the function runs.
 
 Each entry shows the status (success, error, timeout, missed), trigger type (http/cron/startup/mcp), duration, and relative timestamp. Click on any entry to expand it and see the full stdout, stderr, envelope, and exit code.
