@@ -101,6 +101,11 @@ func TestDecodeResponseEnvelope_Refuses(t *testing.T) {
 		{"empty stdout", "", "one JSON object", ""},
 		{"an ordinary business output", `{"ok":true}`, "unknown field", ""},
 		{"an unknown field named after a secret", `{"body":"","sk_live_1":1}`, "unknown field", "sk_live_1"},
+		// encoding/json would match these to the struct fields, case ignored.
+		{"body in other capitals", `{"Body":"x"}`, "unknown field", ""},
+		{"status in capitals", `{"STATUS":302,"body":""}`, "unknown field", ""},
+		{"two spellings of body", `{"body":"a","Body":"b"}`, "unknown field", ""},
+		{"bodyEncoding in lowercase", `{"body":"","bodyencoding":"base64"}`, "unknown field", ""},
 		{"body absent", `{"status":200}`, `"body" is required`, ""},
 		{"body null", `{"body":null}`, `"body" is required`, ""},
 		{"body not a string", `{"body":{"a":1}}`, `"body" is required`, ""},

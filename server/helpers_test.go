@@ -328,13 +328,13 @@ func executionLogsOf(t testing.TB, app core.App, functionName string) []*core.Re
 // on an instance where FAASBOX_PUBLIC_URL is not set: no OAuth, so /mcp answers
 // to an API key and to nothing else.
 func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir string) {
-	registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly, "")
+	registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly, "", noPages)
 }
 
-// registerFaaSRoutesFor is registerFaaSRoutes with the OAuth footing and the
-// instance name chosen — the first the way main.go hands it to the /mcp group
-// alone, the second the way it hands the name to the same handler.
-func registerFaaSRoutesFor(app *tests.TestApp, e *core.ServeEvent, functionsDir string, oauth oauthConfig, instanceName string) {
+// registerFaaSRoutesFor is registerFaaSRoutes with the OAuth footing, the
+// instance name and the pages chosen — the first the way main.go hands it to
+// the /mcp group alone, the other two the way it hands them to the same handler.
+func registerFaaSRoutesFor(app *tests.TestApp, e *core.ServeEvent, functionsDir string, oauth oauthConfig, instanceName string, pages pagesConfig) {
 	// Health check (public)
 	e.Router.GET("/health", func(re *core.RequestEvent) error {
 		return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -366,7 +366,7 @@ func registerFaaSRoutesFor(app *tests.TestApp, e *core.ServeEvent, functionsDir 
 	mcpRoutes.Bind(requireAPIKey(e.App, oauth))
 	mcpRoutes.Bind(requireManageKey())
 	mcpRoutes.Bind(exposeKeyScope())
-	mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir, instanceName))
+	mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir, instanceName, pages))
 	mcpRoutes.POST("", mcpServe)
 	mcpRoutes.GET("", mcpServe)
 

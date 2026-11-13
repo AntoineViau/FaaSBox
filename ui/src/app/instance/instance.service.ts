@@ -13,6 +13,17 @@ const VERSION_URL = '/api/faasbox/version';
  */
 export const DEMO_MODE_HINT = 'Disabled — this instance is a read-only demo';
 
+/**
+ * The one wording of "this route reaches no one", read wherever a route is shown
+ * while the server serves no page — the Triggers tab and the sidebar badge.
+ *
+ * It names no cause on purpose: an empty origin covers an unset variable, a
+ * refused one and a showcase alike, and only the server's startup line knows
+ * which. It points there instead.
+ */
+export const PAGES_OFF_HINT =
+  'Not served: public pages are off on this server — see FAASBOX_PAGES_URL and the startup log of the server. The route is kept and serves again once they are on.';
+
 interface InstanceResponse {
   demoMode?: boolean;
   name?: string;
@@ -45,8 +56,9 @@ interface VersionResponse {
  *
  * Where the public pages are served is a third facet: the origin a function
  * opened by a route is published on, or the empty string when the server
- * serves none (no `FAASBOX_PAGES_URL`, or a showcase). The Triggers tab builds
- * the public URL from it, and turns the route option off without it.
+ * serves none (no usable `FAASBOX_PAGES_URL`, or a showcase). The Triggers tab
+ * builds the public URL from it and turns the route option off without it; the
+ * sidebar strikes the `public` badge through. Both say PAGES_OFF_HINT then.
  *
  * The build version is a fourth facet, read apart: it is served to a superuser
  * only, so it cannot be in the answer read before sign-in.
@@ -81,8 +93,10 @@ export class InstanceService {
    * network hiccup would cost a working instance its editor and add nothing to
    * the safety. The name falls back to none for the same reason: an unnamed
    * header is the state every instance was in before the variable existed, and
-   * a missing pages origin only greys an option out: whether /f/ answers is the
-   * server's decision, not this one's.
+   * a missing pages origin only greys an option out and strikes a badge
+   * through: whether /f/ answers is the server's decision, not this one's. A
+   * failed read therefore says "not served" of routes a server may well be
+   * serving — the cost of failing open on the editor rather than closed.
    */
   async load(): Promise<void> {
     try {

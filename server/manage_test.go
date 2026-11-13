@@ -58,7 +58,7 @@ func manageScenarioNamed(app *tests.TestApp, functionsDir, instanceName string, 
 	s.TestAppFactory = func(t testing.TB) *tests.TestApp { return app }
 	s.DisableTestAppCleanup = true
 	s.BeforeTestFunc = func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
-		registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly, instanceName)
+		registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly, instanceName, noPages)
 	}
 	return s
 }

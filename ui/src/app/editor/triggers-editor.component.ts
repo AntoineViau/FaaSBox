@@ -282,8 +282,8 @@ export class TriggersEditorComponent {
 
     this.saving.set(false);
 
-    // Never before: the sidebar icon must not announce a schedule the database
-    // refused. Not guarded either: the icons are recomputed for every function
+    // Never before: the sidebar badge must not announce a schedule the database
+    // refused. Not guarded either: the badges are recomputed for every function
     // at once, and the writes that just landed are real whichever function the
     // panel is showing by now.
     if (written) {

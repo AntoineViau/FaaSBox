@@ -236,7 +236,7 @@ func main() {
 			mcpRoutes.Bind(requireAPIKey(e.App, oauth))
 			mcpRoutes.Bind(requireManageKey())
 			mcpRoutes.Bind(exposeKeyScope())
-			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir, instanceName))
+			mcpServe := apis.WrapStdHandler(mcpHandler(e.App, functionsDir, instanceName, pages))
 			mcpRoutes.POST("", mcpServe)
 			mcpRoutes.GET("", mcpServe)
 

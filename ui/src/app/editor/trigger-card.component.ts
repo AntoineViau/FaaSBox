@@ -113,7 +113,7 @@ const KINDS: readonly { kind: TriggerRow['kind']; label: string }[] = [
                 <span class="text-xs text-muted-foreground">
                   {{ option.label }}
                   @if (option.kind === 'route' && !pagesUrl()) {
-                    (off: no FAASBOX_PAGES_URL on this server)
+                    (off: no public pages on this server)
                   }
                 </span>
               </label>

@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestEnvInt(t *testing.T) {
 	const def = 4096
@@ -57,6 +60,33 @@ func TestTunableDefaults(t *testing.T) {
 	for _, tt := range cases {
 		if tt.got != tt.want {
 			t.Errorf("%s = %d, want %d", tt.name, tt.got, tt.want)
+		}
+	}
+}
+
+// TestParseBareOrigin covers the two shapes url.Parse accepts and an origin
+// cannot be: a port with no name, and a colon with no port. The other refusals
+// are covered through their callers (TestParsePublicURL, TestParsePagesURL).
+func TestParseBareOrigin(t *testing.T) {
+	for _, raw := range []string{"https://x.example.com:8443", "http://[::1]:8080", "https://x.example.com/"} {
+		if _, err := parseBareOrigin("FAASBOX_TEST_URL", raw); err != nil {
+			t.Errorf("parseBareOrigin(%q) refused: %v", raw, err)
+		}
+	}
+
+	refused := []struct{ raw, reason string }{
+		{"https://x.example.com:", "empty port"},
+		{"http://[::1]:", "empty port"},
+		{"https://:8080", "no host"},
+	}
+	for _, tc := range refused {
+		_, err := parseBareOrigin("FAASBOX_TEST_URL", tc.raw)
+		if err == nil {
+			t.Errorf("parseBareOrigin(%q) was accepted, want a refusal", tc.raw)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.reason) || !strings.Contains(err.Error(), "FAASBOX_TEST_URL") {
+			t.Errorf("refusal %q does not name the variable and %q", err, tc.reason)
 		}
 	}
 }

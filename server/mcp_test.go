@@ -27,7 +27,7 @@ func mcpSession(t testing.TB, app core.App, functionsDir string, allowed []strin
 	t.Helper()
 	ctx := context.Background()
 
-	server := newMCPServer(app, functionsDir, allowed, nil, "")
+	server := newMCPServer(app, functionsDir, allowed, nil, "", mcpInstructionsFor(noPages))
 	clientTransport, serverTransport := mcp.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
@@ -730,6 +730,51 @@ func TestMCPEndpointAnnouncesTheInstanceName(t *testing.T) {
 	s.Test(t)
 }
 
+// TestMCPEndpointCarriesThePagesOrigin proves the closing paragraph of the
+// instructions reaches a session through main.go's wiring, not only that
+// mcpInstructionsFor composes it: a configuration dropped on the way would leave
+// the agent with the "no public page" paragraph on an instance that serves pages.
+func TestMCPEndpointCarriesThePagesOrigin(t *testing.T) {
+	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{` +
+		`"protocolVersion":"2025-06-18","capabilities":{},` +
+		`"clientInfo":{"name":"test","version":"0"}}}`
+
+	for _, tc := range []struct {
+		name    string
+		pages   pagesConfig
+		want    string
+		notWant string
+	}{
+		{"with pages", pagesConfig{Origin: "https://pages.example.com", Host: "pages.example.com"},
+			"https://pages.example.com/f/{idOrName}", "serves no public page"},
+		{"without pages", noPages, "serves no public page", "/f/{idOrName},"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, functionsDir, _ := manageApp(t)
+			s := tests.ApiScenario{
+				Name:   "initialize " + tc.name,
+				Method: http.MethodPost,
+				URL:    "/mcp",
+				Body:   strings.NewReader(initialize),
+				Headers: map[string]string{
+					"Accept":       "application/json, text/event-stream",
+					"Content-Type": "application/json",
+					"X-API-Key":    createTestManageKey(t, app, "pages-manager", nil, true),
+				},
+				ExpectedStatus:        200,
+				ExpectedContent:       []string{tc.want},
+				NotExpectedContent:    []string{tc.notWant},
+				TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+				DisableTestAppCleanup: true,
+				BeforeTestFunc: func(t testing.TB, app *tests.TestApp, e *core.ServeEvent) {
+					registerFaaSRoutesFor(app, e, functionsDir, apiKeysOnly, "", tc.pages)
+				},
+			}
+			s.Test(t)
+		})
+	}
+}
+
 // TestMCPEndpointOAuth pins the endpoint on the other footing: the signpost that
 // starts the flow, a token that opens the session, and the key that still works.
 func TestMCPEndpointOAuth(t *testing.T) {
@@ -1045,4 +1090,22 @@ func TestMCPFunctionSample(t *testing.T) {
 			t.Errorf("error = %q, want the refusal naming the field", got)
 		}
 	})
+}
+
+// TestMCPInstructionsNameThePagesOrigin covers what lets an agent tell the user
+// where a page it published lives: nothing else it can reach says so. Without
+// pages, the instructions say that instead of an address that answers 404.
+func TestMCPInstructionsNameThePagesOrigin(t *testing.T) {
+	with := mcpInstructionsFor(pagesConfig{Origin: "https://pages.example.com", Host: "pages.example.com"})
+	if !strings.Contains(with, "https://pages.example.com/f/{idOrName}") {
+		t.Errorf("the instructions do not give the public address of a page:\n%s", with)
+	}
+	if !strings.HasPrefix(with, mcpInstructions) {
+		t.Error("the writing contract no longer opens the instructions")
+	}
+
+	without := mcpInstructionsFor(noPages)
+	if !strings.Contains(without, "serves no public page") || strings.Contains(without, "/f/{idOrName},") {
+		t.Errorf("the instructions of an instance without pages do not say so:\n%s", without)
+	}
 }

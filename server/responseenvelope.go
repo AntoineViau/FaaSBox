@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -28,8 +30,8 @@ import (
 // "bodyEncoding": "base64" saying so.
 //
 // The decoding is strict on purpose. An ordinary business output such as
-// {"ok": true} must not pass for an empty page, so an unknown field is a
-// refusal, and so is anything net/http would silently drop or mangle: a header
+// {"ok": true} must not pass for an empty page, so an unknown field — a known
+// one spelled with other capitals included — is a refusal, and so is anything net/http would silently drop or mangle: a header
 // we compute, a header that would split the response, two spellings of one
 // header whose winner a map's iteration order would pick.
 
@@ -86,14 +88,18 @@ type pageResponse struct {
 	Body    []byte
 }
 
-// wireResponse is the envelope as it is read. Pointers and a map of pointers
-// tell an absent or null field apart from an empty one: a body or a header value
-// that is not a string has to be refused, not read as "".
-type wireResponse struct {
-	Status       *int               `json:"status"`
-	Headers      map[string]*string `json:"headers"`
-	Body         *string            `json:"body"`
-	BodyEncoding *string            `json:"bodyEncoding"`
+// envelopeFields are the names an envelope may carry, spelled exactly.
+//
+// The envelope is read as a map of exact names, and not into a tagged struct:
+// encoding/json matches a struct field without regard to case, so a struct
+// would take {"Body": ...} for a body — a strict decoder accepting a spelling
+// the contract does not have — and would let {"body": "a", "Body": "b"} pick its
+// winner by position in the document.
+var envelopeFields = map[string]bool{
+	"status":       true,
+	"headers":      true,
+	"body":         true,
+	"bodyEncoding": true,
 }
 
 // decodeResponseEnvelope turns a function's stdout into the response to write,
@@ -102,6 +108,10 @@ type wireResponse struct {
 // A truncated stdout is refused whatever its shape, before it is even read: a
 // page cut at the capture cap is never served, even in the unlikely case that
 // what survived still parses.
+//
+// Every field is decoded into a pointer, or a map of pointers for the headers,
+// which tells an absent or null field apart from an empty one: a body or a
+// header value that is not a string has to be refused, not read as "".
 func decodeResponseEnvelope(stdout string, truncated bool) (*pageResponse, error) {
 	if truncated {
 		return nil, &errOutputUnusable{limit: maxOutputSize}
@@ -113,10 +123,9 @@ func decodeResponseEnvelope(stdout string, truncated bool) (*pageResponse, error
 	}
 
 	dec := json.NewDecoder(bytes.NewReader(trimmed))
-	dec.DisallowUnknownFields()
-	var wire wireResponse
-	if err := dec.Decode(&wire); err != nil {
-		return nil, wireDecodeRefusal(err)
+	var fields map[string]json.RawMessage
+	if err := dec.Decode(&fields); err != nil {
+		return nil, refuseResponse("stdout must be one JSON object")
 	}
 	// One object and nothing after it: a second line printed by mistake would
 	// otherwise be dropped without a word.
@@ -124,31 +133,53 @@ func decodeResponseEnvelope(stdout string, truncated bool) (*pageResponse, error
 		return nil, refuseResponse("stdout must hold one JSON object and nothing else")
 	}
 
-	if wire.Body == nil {
+	// Sorted, so that of two unknown fields the same one is named every time.
+	// The name came out of stdout: it goes to the log, not into the reason.
+	for _, name := range slices.Sorted(maps.Keys(fields)) {
+		if !envelopeFields[name] {
+			return nil, refuseResponseAbout(name,
+				"unknown field; the envelope takes status, headers, body and bodyEncoding, spelled exactly so, and nothing else")
+		}
+	}
+
+	var bodyText *string
+	if err := decodeField(fields, "body", &bodyText); err != nil || bodyText == nil {
 		return nil, refuseResponse(`"body" is required and must be a string`)
 	}
 
+	var statusCode *int
+	if err := decodeField(fields, "status", &statusCode); err != nil {
+		return nil, refuseResponse(`"status" must be an integer from 200 to 599`)
+	}
 	status := http.StatusOK
-	if wire.Status != nil {
-		status = *wire.Status
+	if statusCode != nil {
+		status = *statusCode
 		if status < 200 || status > 599 {
 			return nil, refuseResponse(`"status" must be an integer from 200 to 599`)
 		}
 	}
 
-	body := []byte(*wire.Body)
-	if wire.BodyEncoding != nil {
-		if *wire.BodyEncoding != "base64" {
+	var encoding *string
+	if err := decodeField(fields, "bodyEncoding", &encoding); err != nil {
+		return nil, refuseResponse(`"bodyEncoding" must be absent or "base64"`)
+	}
+	body := []byte(*bodyText)
+	if encoding != nil {
+		if *encoding != "base64" {
 			return nil, refuseResponse(`"bodyEncoding" must be absent or "base64"`)
 		}
-		decoded, err := base64.StdEncoding.DecodeString(*wire.Body)
+		decoded, err := base64.StdEncoding.DecodeString(*bodyText)
 		if err != nil {
 			return nil, refuseResponse(`"body" is not valid base64`)
 		}
 		body = decoded
 	}
 
-	headers, err := responseHeaders(wire.Headers)
+	var wireHeaders map[string]*string
+	if err := decodeField(fields, "headers", &wireHeaders); err != nil {
+		return nil, refuseResponse(`"headers" must be a flat object of strings`)
+	}
+	headers, err := responseHeaders(wireHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -156,30 +187,14 @@ func decodeResponseEnvelope(stdout string, truncated bool) (*pageResponse, error
 	return &pageResponse{Status: status, Headers: headers, Body: body}, nil
 }
 
-// wireDecodeRefusal names the rule a decoding error broke. The JSON library's
-// own wording names Go types; this one names fields.
-func wireDecodeRefusal(err error) error {
-	var typeErr *json.UnmarshalTypeError
-	if errors.As(err, &typeErr) {
-		switch {
-		case typeErr.Field == "status":
-			return refuseResponse(`"status" must be an integer from 200 to 599`)
-		case typeErr.Field == "body":
-			return refuseResponse(`"body" is required and must be a string`)
-		case typeErr.Field == "bodyEncoding":
-			return refuseResponse(`"bodyEncoding" must be absent or "base64"`)
-		case typeErr.Field == "headers" || strings.HasPrefix(typeErr.Field, "headers."):
-			return refuseResponse(`"headers" must be a flat object of strings`)
-		}
-		return refuseResponse("stdout must be one JSON object")
+// decodeField decodes one field of the envelope into target, and leaves target
+// untouched when the field is absent.
+func decodeField(fields map[string]json.RawMessage, name string, target any) error {
+	raw, ok := fields[name]
+	if !ok {
+		return nil
 	}
-	// DisallowUnknownFields reports the field it met, and only that. The name
-	// came out of stdout, so it goes to the log and not into the reason.
-	if msg := err.Error(); strings.HasPrefix(msg, "json: unknown field ") {
-		return refuseResponseAbout(strings.TrimPrefix(msg, "json: unknown field "),
-			"unknown field; the envelope takes status, headers, body and bodyEncoding, and nothing else")
-	}
-	return refuseResponse("stdout must be one JSON object")
+	return json.Unmarshal(raw, target)
 }
 
 // responseHeaders weighs the headers of an envelope and lowercases their names.

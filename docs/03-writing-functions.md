@@ -210,7 +210,7 @@ console.log(JSON.stringify({ status: 302, headers: { location: "https://example.
 The envelope is read strictly. A run that prints anything else is answered with a `502`, and the message names the rule broken — never what the function printed. Refused:
 
 - `stdout` that is not one JSON object, or that holds anything after it;
-- an unknown field: `{"ok": true}` is an ordinary result, not an empty page;
+- an unknown field: `{"ok": true}` is an ordinary result, not an empty page. Names are case-sensitive, so `Body` or `STATUS` is an unknown field too;
 - `body` missing or not a string, `status` not an integer between 200 and 599, a `bodyEncoding` other than `base64`, a `body` that is not valid base64;
 - a header the server sets itself: `content-length`, `transfer-encoding`, `connection`, `keep-alive`, `upgrade`, `te`, `trailer`;
 - a header name that is not a valid HTTP token, a value containing CR, LF or NUL, or the same header twice under two casings;

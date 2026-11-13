@@ -54,7 +54,7 @@ import { DEMO_MODE_HINT, InstanceService } from '@/instance/instance.service';
 import { LogViewerComponent } from '@/editor/log-viewer.component';
 import type { FaasboxFunction } from '@/models/faasbox-function.model';
 import { RunnerComponent } from '@/editor/runner.component';
-import { SidebarComponent } from '@/editor/sidebar.component';
+import { badgesOf, SidebarComponent, type FunctionBadges } from '@/editor/sidebar.component';
 import { ThemeToggleComponent } from '@/theme/theme-toggle.component';
 import { ZardButtonComponent } from '@shared/components/button';
 import { ZardIconComponent } from '@shared/components/icon';
@@ -146,7 +146,8 @@ import { ZardInputDirective } from '@shared/components/input';
           <app-sidebar
             [functions]="store.sortedFunctions()"
             [selectedId]="store.selectedId()"
-            [triggerFunctions]="triggerFunctions()"
+            [badges]="functionBadges()"
+            [pagesServed]="pagesUrl() !== ''"
             [loading]="store.isLoading()"
             [demoMode]="demoMode()"
             (select)="onSelectFunction($event)"
@@ -481,8 +482,8 @@ export class EditorComponent implements OnInit {
    */
   protected readonly sidebarOpen = signal(false);
   protected readonly running = signal(false);
-  /** Ids of the functions carrying at least one active trigger. */
-  protected readonly triggerFunctions = signal<Set<string>>(new Set());
+  /** What the active triggers of each function make of it, for the sidebar. */
+  protected readonly functionBadges = signal<Map<string, FunctionBadges>>(new Map());
 
   private readonly runner = viewChild(RunnerComponent);
   private readonly envEditor = viewChild(EnvEditorComponent);
@@ -753,13 +754,7 @@ export class EditorComponent implements OnInit {
 
   protected async loadTriggerFunctions(): Promise<void> {
     const res = await firstValueFrom(this.triggersService.listAll());
-    const ids = new Set<string>();
-    for (const trigger of res.items) {
-      if (trigger.active) {
-        ids.add(trigger.function);
-      }
-    }
-    this.triggerFunctions.set(ids);
+    this.functionBadges.set(badgesOf(res.items));
   }
 
   @HostListener('window:keydown', ['$event'])

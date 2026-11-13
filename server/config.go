@@ -79,8 +79,13 @@ func parseBareOrigin(name, raw string) (*url.URL, error) {
 	switch {
 	case u.Scheme != "http" && u.Scheme != "https":
 		return nil, fmt.Errorf("%s=%q is not an absolute http:// or https:// URL", name, raw)
-	case u.Host == "":
+	case u.Hostname() == "":
+		// Host alone would let https://:8080 through: a port and no name.
 		return nil, fmt.Errorf("%s=%q carries no host, so it is not an absolute URL", name, raw)
+	case strings.HasSuffix(u.Host, ":"):
+		// url.Parse accepts https://x: and leaves the colon in Host, where it
+		// matches no Host header a client will ever send.
+		return nil, fmt.Errorf("%s=%q carries an empty port; drop the colon or name the port", name, raw)
 	case u.User != nil:
 		return nil, fmt.Errorf("%s=%q carries credentials; it must be a bare origin", name, raw)
 	case u.Path != "" && u.Path != "/":

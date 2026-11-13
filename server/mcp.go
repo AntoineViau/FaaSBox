@@ -104,8 +104,10 @@ func keyScopeFromContext(ctx context.Context) ([]string, error) {
 // The schema cache is what makes that affordable: without it every request would
 // pay the reflection pass that infers the seven input schemas. The SDK ships it
 // for this exact deployment shape.
-func mcpHandler(app core.App, functionsDir, instanceName string) http.Handler {
+func mcpHandler(app core.App, functionsDir, instanceName string, pages pagesConfig) http.Handler {
 	cache := &mcp.SchemaCache{}
+	// Composed once: the pages origin is read at startup and does not move.
+	instructions := mcpInstructionsFor(pages)
 
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		allowed, err := keyScopeFromContext(r.Context())
@@ -117,7 +119,7 @@ func mcpHandler(app core.App, functionsDir, instanceName string) http.Handler {
 				"error", err)
 			return nil
 		}
-		return newMCPServer(app, functionsDir, allowed, cache, instanceName)
+		return newMCPServer(app, functionsDir, allowed, cache, instanceName, instructions)
 	}, &mcp.StreamableHTTPOptions{Stateless: true})
 }
 
@@ -141,7 +143,7 @@ func mcpIdentity(instanceName string) (name, title string) {
 
 // newMCPServer builds the server one request works with, carrying that request's
 // authorization.
-func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mcp.SchemaCache, instanceName string) *mcp.Server {
+func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mcp.SchemaCache, instanceName, instructions string) *mcp.Server {
 	name, title := mcpIdentity(instanceName)
 	server := mcp.NewServer(
 		&mcp.Implementation{
@@ -150,7 +152,7 @@ func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mc
 			Version: faasboxVersion,
 		},
 		&mcp.ServerOptions{
-			Instructions: mcpInstructions,
+			Instructions: instructions,
 			SchemaCache:  cache,
 		},
 	)
@@ -158,8 +160,35 @@ func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mc
 	return server
 }
 
-// mcpInstructions is what a session receives at initialization, before the first
-// tool is called. It carries the contract for writing a FaaSBox function, which
+// mcpInstructionsFor is what a session receives: the writing contract, then
+// where this instance serves its public pages.
+//
+// The closing paragraph is not a seventh point. Like the instance's name in the
+// identity, it is a fact about this server rather than a rule of the contract:
+// an agent that publishes a function has to be able to tell the user where the
+// page is, and nothing else it can reach says so — the tools hand back /invoke
+// paths, and the instance route is not one of them. Without pages it says that
+// too, so the agent does not hand out an address that answers 404 — without
+// naming a cause: an empty origin covers an absent variable, a refused one and a
+// showcase alike, and only the startup line knows which.
+func mcpInstructionsFor(pages pagesConfig) string {
+	if pages.Origin == "" {
+		return mcpInstructions + `
+
+This instance serves no public page: the operator has public pages off, and
+the startup log of the server says why. A "route" trigger is stored but
+publishes nothing, and /f/ answers 404, until they are turned on. Say so rather
+than handing out an address.`
+	}
+	return mcpInstructions + `
+
+Public pages on this instance are served at ` + pages.Origin + `: a function
+published by a "route" trigger answers at ` + pages.Origin + `/f/{idOrName},
+and nowhere else. Give the user that address once you have published one.`
+}
+
+// mcpInstructions is the contract a session receives at initialization, before
+// the first tool is called. It carries the contract for writing a FaaSBox function, which
 // is written nowhere a machine receives without being handed it.
 //
 // Distilled from docs/ — 03-writing-functions.md for the execution contract, the

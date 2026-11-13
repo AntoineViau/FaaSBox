@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 
+import { PAGES_OFF_HINT } from '@/instance/instance.service';
+
 /**
  * The route branch of a trigger card: where the function is published, and what
  * that means.
@@ -12,9 +14,9 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
  * being typed in the name field: /f/ resolves what the database holds. The id
  * would survive a rename, the name reads better in a link; both are served.
  *
- * `pagesUrl` empty means the server serves no page at all — no
- * FAASBOX_PAGES_URL, or a showcase. A route already stored is then shown as
- * what it is: kept, and not served.
+ * `pagesUrl` empty means the server serves no page at all — an unset or
+ * refused FAASBOX_PAGES_URL, or a showcase. A route already stored is then
+ * shown as what it is: kept, and not served (PAGES_OFF_HINT).
  */
 @Component({
   selector: 'app-route-trigger',
@@ -47,14 +49,15 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
       <p
         class="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2 py-1.5 text-xs text-yellow-600 dark:text-yellow-500"
       >
-        Not served: public pages are off on this server (FAASBOX_PAGES_URL is not set). The
-        trigger is kept, and starts serving once they are turned on.
+        {{ PAGES_OFF_HINT }}
       </p>
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RouteTriggerComponent {
+  protected readonly PAGES_OFF_HINT = PAGES_OFF_HINT;
+
   /** The saved name of the function the route publishes. */
   readonly functionName = input.required<string>();
   /** The origin of the public pages, or '' when the server serves none. */

@@ -123,8 +123,8 @@ proxy header or from a database setting would put whatever the proxy said — or
 `http://localhost:8090` — in a document clients trust.
 
 It has to be a **bare origin**: scheme and host, an optional port, nothing else.
-A trailing slash is dropped; a path, a query, a fragment or credentials are
-refused.
+A trailing slash is dropped; a path, a query, a fragment, credentials or an
+empty port (`https://faasbox.example.com:`) are refused.
 
 **The scheme is part of the value, not an optional prefix.** `http://` or
 `https://` has to be written out: a host on its own, `faasbox.example.com`, is
