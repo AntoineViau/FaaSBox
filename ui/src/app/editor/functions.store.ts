@@ -125,7 +125,7 @@ const body = JSON.parse(req.body || "{}");
 const visitor = body.name;
 const header = req.headers?.["x-header-name"]; // header names are lowercased
 const secret = process.env.SECRET; // see Environment tab — returning it puts it in the logs
-const trigger = req.trigger; // "http", "cron", "startup" or "mcp"
+const trigger = req.trigger; // "http", "route", "cron", "startup" or "mcp"
 
 console.log(JSON.stringify({ message: "Hello from ${name}!", visitor, header, secret, trigger }));
 `;

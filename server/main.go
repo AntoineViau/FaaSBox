@@ -162,11 +162,6 @@ func main() {
 				return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
 			})
 
-			// What this instance is (public, both modes): the mode the sign-in
-			// form reads to fill itself in on a showcase, and the name the
-			// editor header shows beside the wordmark.
-			e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName))
-
 			// What this instance is called from outside, read once: it says
 			// whether the OAuth authorization server goes up at all, and it is
 			// what /mcp is handed so a token opens it and its 401 says where
@@ -177,6 +172,27 @@ func main() {
 				reportOAuthDisabled(oauthErr)
 				oauth = apiKeysOnly
 			}
+
+			// Where the public pages are served, read once and on the same
+			// model: absent, invalid or on a showcase, the reason is printed
+			// and no /f/ route is registered.
+			pages, pagesErr := pagesConfigFromEnv(demo.Enabled)
+			if pagesErr != nil {
+				reportPagesDisabled(pagesErr)
+				pages = noPages
+			} else {
+				reportPagesEnabled(pages)
+			}
+			// The host gate goes up either way: without pages it is what
+			// answers 404 under /f/ instead of the SPA catch-all. It lands on
+			// the root router and covers every route, PocketBase's included,
+			// whatever the order they are added in.
+			mountPages(e, pages, functionsDir)
+
+			// What this instance is (public, both modes): the mode the sign-in
+			// form reads to fill itself in on a showcase, the name the editor
+			// header shows beside the wordmark, and where the public pages are.
+			e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName, pages))
 
 			// Routes protected by API key
 			faas := e.Router.Group("")

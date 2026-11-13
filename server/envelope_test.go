@@ -59,7 +59,7 @@ func TestNewHTTPInput_CarriesTheWholeCall(t *testing.T) {
 	r.Header.Set("Stripe-Signature", "t=1756290000,v1=8f3a")
 	r.Header.Set("Content-Type", "application/json")
 
-	in := newHTTPInput(r, body)
+	in := newHTTPInput(r, body, triggerHTTP)
 	if in.Trigger != triggerHTTP {
 		t.Errorf("trigger recorded = %q, want %q", in.Trigger, triggerHTTP)
 	}
@@ -108,7 +108,7 @@ func TestNewHTTPInput_DropsWhatAuthenticatesTheCaller(t *testing.T) {
 	r.Header.Set("Proxy-Authorization", "Basic secret")
 	r.Header.Set("X-Kept", "visible")
 
-	in := newHTTPInput(r, nil)
+	in := newHTTPInput(r, nil, triggerHTTP)
 	headers := envelopeStrings(t, decodeEnvelope(t, in), "headers")
 
 	for _, denied := range []string{"x-api-key", "authorization", "cookie", "proxy-authorization"} {
@@ -133,7 +133,7 @@ func TestNewHTTPInput_JoinsRepeatedValues(t *testing.T) {
 	r.Header.Add("X-Custom", "A")
 	r.Header.Add("x-custom", "B")
 
-	envelope := decodeEnvelope(t, newHTTPInput(r, nil))
+	envelope := decodeEnvelope(t, newHTTPInput(r, nil, triggerHTTP))
 
 	if got := envelopeStrings(t, envelope, "headers")["x-custom"]; got != "A, B" {
 		t.Errorf("headers[x-custom] = %q, want %q", got, "A, B")
@@ -148,7 +148,7 @@ func TestNewHTTPInput_JoinsRepeatedValues(t *testing.T) {
 // wrote — and a URL with no query string still carries the field, empty.
 func TestNewHTTPInput_EmptyBodyAndQuery(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/invoke/echo", nil)
-	envelope := decodeEnvelope(t, newHTTPInput(r, nil))
+	envelope := decodeEnvelope(t, newHTTPInput(r, nil, triggerHTTP))
 
 	if got := envelope["body"]; got != "" {
 		t.Errorf("body = %v, want the empty string", got)

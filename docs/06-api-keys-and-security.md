@@ -8,6 +8,8 @@ Everything below assumes one thing: **the person running the instance is the per
 
 That is why the protections here are about who may invoke a function and what leaves the process, not about what the function itself is allowed to do. A function can read files, open outbound connections, and burn CPU; that is the product, not a hole in it.
 
+**One road crosses that boundary without a key, and only because you open it.** A function with a [public route](05-triggers.md#public-route) answers anyone at `/f/{idOrName}`. That road lives on a host of its own, `FAASBOX_PAGES_URL`, and never beside the Editor: the Editor keeps your session in the browser's local storage, and a page served from the same origin — a single unescaped parameter in it — could read it. On the pages host nothing else answers, and on every other host `/f/` does not. See [Serving public pages](10-deployment.md#serving-public-pages). What the function writes on that road is then yours to make safe for its visitors: escape what you echo.
+
 Found a hole on the other side of that boundary? **Do not open a public issue.** [SECURITY.md](../SECURITY.md) has the private reporting channel, the expected response time, and the full in-scope / out-of-scope list.
 
 ## Two Ways to Prove Who You Are
@@ -32,7 +34,7 @@ Tokens only exist if `FAASBOX_PUBLIC_URL` is set. Without it, the key is the onl
 
 ## API Key Management
 
-Access to all FaaS endpoints (except `/health`) is restricted by API keys.
+Access to all FaaS endpoints (except `/health`, and the public route of a function you published) is restricted by API keys.
 
 ### Creating a Key
 
@@ -202,6 +204,7 @@ This is why a **third wrong password in a row answers `429 Too Many Requests`** 
 Two things are deliberately **not** covered:
 
 - **`/invoke/{name}` is under no rule.** Calling your functions is not throttled by request rate. What bounds it is `FAASBOX_MAX_CONCURRENCY`, which answers `429` when too many runs are already in flight — a different `429`, with a different cause. See [09 - API Reference](09-api-reference.md).
+- **The public route `/f/{name}` is under no rule either**, and it shares those same execution slots with `/invoke` and the triggers. Anyone who keeps them busy makes `/invoke` answer `429` and scheduled runs wait. A rule under PocketBase's limiter would not help: behind a proxy, every visitor arrives from the proxy's address, and one counter would throttle them all together.
 - **The OAuth endpoints are under no rule either**, `/oauth/register` included. What keeps the registrations it creates from piling up is the hourly cleanup, not the limiter.
 
 **The rules are yours to change** from the PocketBase admin at `/_/`, in the settings. FaaSBox never writes them — edit, add or remove a rule and it stays exactly as you left it, across restarts.

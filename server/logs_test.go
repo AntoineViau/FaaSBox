@@ -317,7 +317,7 @@ func TestEnsureLogsCollection_TriggerValues(t *testing.T) {
 	if !ok {
 		t.Fatalf("trigger is a %T, want a *core.SelectField", col.Fields.GetByName("trigger"))
 	}
-	for _, want := range []string{"http", "cron", "startup"} {
+	for _, want := range []string{"http", "cron", "startup", "mcp", "route"} {
 		if !slices.Contains(field.Values, want) {
 			t.Errorf("trigger values = %v, missing %q", field.Values, want)
 		}

@@ -100,6 +100,7 @@ Only one is genuinely required, and only for a feature you may not use:
 | `SUPERUSER_EMAIL` / `SUPERUSER_PASSWORD` | Recommended for a container. They create the superuser on the first start of an instance that has none, and are left alone afterwards: a password or an address changed from the editor header or in `/_/` survives every restart. | The step is skipped; create the account at `/_/` on first boot instead. |
 | `SUPERUSER_RESET` | Optional, the way back in after a lost password, see [12 - Lost Password](12-lost-password.md). Imposes the two variables above again at every start. Remove it once signed in; a value that is not a boolean stops the server. | The two variables only seed the account. |
 | `FAASBOX_PUBLIC_URL` | **Required to authorize an agent by OAuth.** The address this instance answers on, as a bare origin, scheme included. | The OAuth endpoints are not mounted and a line at startup says why; `/mcp` keeps authenticating by API key. |
+| `FAASBOX_PAGES_URL` | **Required to publish a function.** A second address of this instance, as a bare origin, on which [public routes](05-triggers.md#public-route) are served — see [Serving public pages](#serving-public-pages). | No page is served: `/f/` answers `404` on every host, a line at startup says why, and the Editor greys the option out. |
 | `FAASBOX_DEMOMODE` (+ `_EMAIL`, `_PASSWORD`) | Optional, see [15 - Demo Mode](15-demo-mode.md). Turns the instance into a read-only showcase. | A normal instance: everything runs and everything can be written. |
 | `LITESTREAM_*` | Optional, see [14 - Litestream Replication](14-litestream-replication.md). | No replication; the database stays local. |
 | `FAASBOX_MAX_*` | Optional sizing, see below. | Defaults apply. |
@@ -151,6 +152,65 @@ FAASBOX_PUBLIC_URL=faasbox.example.com
 Anything wrong with the value takes the OAuth endpoints down and leaves the rest
 of the server running: an agent then connects with an API key, as before. The
 startup log names the reason.
+
+#### Serving public pages
+
+A function with a [public route](05-triggers.md#public-route) answers anyone,
+without a key, at `/f/{idOrName}`. Those pages are served on **a host of their
+own**, named by `FAASBOX_PAGES_URL`, and nowhere else:
+
+```bash
+# The Editor on one name, the pages on another
+FAASBOX_PUBLIC_URL=https://faasbox.example.com
+FAASBOX_PAGES_URL=https://pages.example.com
+```
+
+**Why a second name.** The Editor keeps your session token in the browser's
+local storage, which any script served from the same origin can read. A page
+written by a function and served beside the Editor would need one unescaped
+query parameter to hand that token — and the whole instance — to whoever crafted
+the link. So the server keeps the two apart, in both directions: on the pages
+host only `/f/` answers — no Editor, no sign-in, no `/api/`, no admin, all `404`
+— and on every other host `/f/` answers `404`.
+
+What it takes:
+
+1. **A second DNS name** pointing at the same server: `pages.example.com` next to
+   `faasbox.example.com`, or a domain of its own.
+2. **A certificate** covering it, on whatever terminates TLS.
+3. **The variable**, a bare origin like `FAASBOX_PUBLIC_URL`: scheme and host, an
+   optional port, nothing else. The default port of the scheme is dropped.
+   `http://` is accepted on any host — the pages are not OAuth — but serve them
+   over `https://` in production like everything else.
+4. **The `Host` header passed through unchanged.** The server compares the name
+   the browser asked for with `FAASBOX_PAGES_URL`, and does not read
+   `X-Forwarded-Host`. A proxy that rewrites `Host` to an internal name makes
+   every page `404`. On Clever Cloud, add the second domain to the application.
+
+A value whose host is the one of `FAASBOX_PUBLIC_URL` is refused: it would undo
+the separation. A value that is absent, malformed or refused takes the pages
+down and leaves the rest of the server running, and a line at startup says why:
+`/f/` then answers `404` everywhere, so a link to a page no longer served lands
+on a plain "not found", never on the Editor. A [demo instance](15-demo-mode.md)
+serves no page, whatever the variable says.
+
+**A subdomain is fine because the Editor never keeps its session in a cookie.**
+A page can set a cookie on the parent domain; with nothing of the Editor's
+there, it reaches nothing. A domain of its own removes the question entirely.
+
+**Turning the pages off.** Once the variable is removed, `/f/` keeps answering
+`404`, but the rest of the pages host — if its DNS name still points at the
+server — is no longer kept apart: its root serves the Editor like any other
+name. Remove the name or point it elsewhere, and never sign in on it.
+
+In local development, `infra/dev/dev.sh` sets
+`FAASBOX_PAGES_URL=http://pages.localhost:8080`: browsers resolve any
+`*.localhost` to your own machine. Pass `FAASBOX_PAGES_URL=` (empty) to the
+script to try the instance without pages. With `curl`, give the host by hand:
+
+```bash
+curl -i -H 'Host: pages.localhost:8080' http://127.0.0.1:8080/f/hello
+```
 
 #### Serving a demo instance
 

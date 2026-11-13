@@ -310,6 +310,7 @@ import { ZardInputDirective } from '@shared/components/input';
                         <app-triggers-editor
                           [functionId]="fn.id"
                           [functionName]="fn.name"
+                          [pagesUrl]="pagesUrl()"
                           [demoMode]="demoMode()"
                           (triggerCountChange)="loadTriggerFunctions()"
                         />
@@ -432,6 +433,9 @@ export class EditorComponent implements OnInit {
 
   /** The build that answers, read once signed in (cf. ngOnInit). */
   protected readonly version = this.instance.version;
+
+  /** Where a public route publishes a function, '' when the server serves no page. */
+  protected readonly pagesUrl = this.instance.pagesUrl;
 
   /**
    * The address bar is the source of truth: these two are the only inputs of

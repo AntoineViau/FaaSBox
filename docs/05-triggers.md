@@ -2,11 +2,11 @@
 
 A function runs when something asks it to. An HTTP call is one way — see [09 - API Reference](09-api-reference.md#1-invoke-a-function). A **trigger** is the other: the server fires the function itself, on a deadline you declare, and nobody is waiting on the other end.
 
-A trigger comes in two kinds. A **cron** trigger carries a five-field expression and fires on schedule. A **startup** trigger carries no expression and fires once when the server comes up, after a delay you choose. Everything below applies to both unless it says otherwise — see [Running at Startup](#running-at-startup).
+A trigger comes in three kinds. A **cron** trigger carries a five-field expression and fires on schedule. A **startup** trigger carries no expression and fires once when the server comes up, after a delay you choose. A **public route** fires nothing on its own: it **publishes** the function, so that anyone can call it without a key — see [Public Route](#public-route). Everything below applies to the first two unless it says otherwise — see [Running at Startup](#running-at-startup).
 
 ## How it Works
 
-Triggers live in the `faasbox_triggers` collection. FaaSBox reads it at startup and whenever a record changes: cron triggers are handed to PocketBase's internal scheduler, and startup triggers get a timer of their own.
+Triggers live in the `faasbox_triggers` collection. FaaSBox reads it at startup and whenever a record changes: cron triggers are handed to PocketBase's internal scheduler, and startup triggers get a timer of their own. A public route is read at every request instead, so switching one on or off takes effect on the next visit.
 
 ## Adding a Trigger from the Editor
 
@@ -15,7 +15,7 @@ The easiest way to manage triggers is directly from the FaaSBox Editor:
 1. Open your function in the Editor.
 2. Switch to the **Triggers** tab.
 3. Click **Add trigger**. The row appears on screen — nothing is written yet.
-4. Configure the schedule (click an example in the **Cron syntax** fold, or type your own expression), the **Timezone** it is read in, the payload, and the active state. To run the function when the server comes up instead, tick **Startup trigger** — the schedule field gives way to a delay.
+4. Pick what the trigger is: **Schedule**, **At startup** or **Public route**. For a schedule, configure the expression (click an example in the **Cron syntax** fold, or type your own), the **Timezone** it is read in, the payload, and the active state. **At startup** replaces the schedule field with a delay; **Public route** replaces everything with the public URL of the function.
 5. Open the **Advanced** fold if you need to cap concurrency — see **Max queue** below.
 6. Click **Save**.
 
@@ -153,8 +153,28 @@ Three things to know:
 
 A startup run is a run like any other: it writes an entry to `faasbox_logs` with `trigger` set to `startup`, it stamps `lastRunAt` on the trigger record, and the envelope it hands the function carries `"trigger": "startup"` next to the same `triggerName`.
 
+## Public Route
+
+A cron or startup trigger runs the function for nobody. A **public route** does the opposite: it lets **anyone** run it, without a key and without a session, at
+
+```
+https://<pages host>/f/<name-or-id>
+```
+
+That is what a page for a browser needs, and a webhook from a sender that cannot be told to set `X-API-Key` (Stripe, for one), and a link that redirects. Pick **Public route** on a trigger row and the panel shows the public URL, clickable, under a warning saying exactly that: the function answers whoever has the address.
+
+- **What the function receives** is the HTTP envelope, with `"trigger": "route"` and the method the visitor used — `GET`, `HEAD`, `POST`, `PUT`, `PATCH` or `DELETE`. The four headers that carry credentials are stripped as on every other path.
+- **What it must print** is a response envelope — status, headers, body — and not a free result: see [Serving a Public Page](03-writing-functions.md#serving-a-public-page).
+- **Switching it off or deleting it unpublishes the function** at the next request: `/f/` then answers `404`, exactly as for a function that does not exist. Several public routes on one function are allowed; one active is enough.
+- **It follows the function** like any trigger: a rename moves the page to the new name — the id keeps working — and deleting the function deletes the route.
+- A route carries no schedule (the server refuses one), and its payload, max queue, delay and timezone are ignored: what the function is handed is the request.
+
+The pages are served on a host of their own, declared by `FAASBOX_PAGES_URL`, and never next to the Editor. On an instance where that variable is not set — or on a [demo instance](15-demo-mode.md) — the option is greyed out and says why, and a public route already saved is shown as **not served**: `/f/` answers `404`, and the route is kept and starts serving once the pages are turned on. See [10 - Deployment](10-deployment.md#serving-public-pages).
+
+A public route runs in the same execution slots as everything else. A visitor who keeps them busy makes `/invoke` answer `429` and makes scheduled runs wait; there is no separate quota for `/f/` and no rate limit on it.
+
 ## Monitoring Triggers
-Every time a trigger fires, it creates an entry in the **faasbox_logs** collection with the `trigger` set to `cron` or `startup`. You can see the success/failure status and the output of the run there.
+Every time a trigger fires, it creates an entry in the **faasbox_logs** collection with the `trigger` set to `cron` or `startup` — and every request on a public route writes one with `route`. You can see the success/failure status and the output of the run there.
 
 Each run also stamps the `lastRunAt` field of the trigger record, whatever the outcome — a failed or timed-out run still counts as a run, because what the stamp records is that the trigger fired.
 

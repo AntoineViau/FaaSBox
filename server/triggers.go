@@ -18,8 +18,7 @@ import (
 //
 // cron.go holds what only a five-field expression is worth — the validation of
 // that expression and the PocketBase scheduler built from it. Keeping the two
-// together would have named this collection after one of the three kinds it
-// carries.
+// together would have named this collection after one of the kinds it carries.
 
 // triggerQueueDepth tracks the number of in-flight (waiting + running) trigger
 // executions per function, keyed on the function id — the depth of a function
@@ -32,8 +31,12 @@ const faasboxTriggersCollection = "faasbox_triggers"
 // exist.
 //
 // The collection holds every trigger, not only the scheduled ones: kind tells a
-// cron trigger from a startup one, and startupDelayMinutes says how long after
-// boot the latter fires.
+// cron trigger from a startup one and from a public route, and
+// startupDelayMinutes says how long after boot a startup trigger fires.
+//
+// A route trigger fires nothing: it is the switch that opens /f/{idOrName} for
+// its function (cf. routedFunction in pages.go). Its record is read at every
+// request, and the scheduler never sees it.
 //
 // The target function is a relation, not a name. A name is editable, so a
 // trigger wired on one fired into the void from the moment its function was
@@ -74,7 +77,7 @@ func ensureTriggersCollection(app core.App) error {
 		// Left in the clear, like active, maxQueue and lastRunAt: a
 		// discriminant and a delay say nothing about the business content.
 		// Not Required either — see triggerKind for what an empty value reads as.
-		&core.SelectField{Name: "kind", MaxSelect: 1, Values: []string{"cron", "startup"}},
+		&core.SelectField{Name: "kind", MaxSelect: 1, Values: []string{"cron", "startup", "route"}},
 		&core.NumberField{Name: "startupDelayMinutes"},
 		// Left in the clear like kind, active and maxQueue: a zone name says
 		// nothing about the business content. Not Required either — an empty

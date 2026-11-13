@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -118,39 +117,19 @@ func oauthConfigFromEnv() (oauthConfig, error) {
 // parsePublicURL turns the configured address into an issuer and a resource, or
 // says why it cannot.
 //
-// It insists on a bare origin. A path, a query or a fragment would end up in the
-// issuer, which RFC 8414 forbids, and credentials would be dropped silently by
-// the normalisation below — a silent change to the identity of the server is
-// worse than a refusal. http:// is accepted on a loopback host only: anywhere
+// It insists on a bare origin (parseBareOrigin, config.go): a path, a query or
+// a fragment would end up in the issuer, which RFC 8414 forbids. The rule added
+// here is OAuth's own: http:// is accepted on a loopback host only. Anywhere
 // else it is what a misconfigured proxy looks like, and OAuth 2.1 forbids it.
 func parsePublicURL(raw string) (oauthConfig, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return oauthConfig{}, errors.New(publicURLEnv + " is not set")
-	}
-
-	u, err := url.Parse(raw)
+	u, err := parseBareOrigin(publicURLEnv, raw)
 	if err != nil {
-		return oauthConfig{}, fmt.Errorf("%s=%q cannot be parsed: %w", publicURLEnv, raw, err)
+		return oauthConfig{}, err
 	}
-
-	switch {
-	case u.Scheme != "http" && u.Scheme != "https":
-		return oauthConfig{}, fmt.Errorf("%s=%q is not an absolute http:// or https:// URL", publicURLEnv, raw)
-	case u.Host == "":
-		return oauthConfig{}, fmt.Errorf("%s=%q carries no host, so it is not an absolute URL", publicURLEnv, raw)
-	case u.User != nil:
-		return oauthConfig{}, fmt.Errorf("%s=%q carries credentials; it must be a bare origin", publicURLEnv, raw)
-	case u.Path != "" && u.Path != "/":
-		return oauthConfig{}, fmt.Errorf("%s=%q carries a path; it must be a bare origin", publicURLEnv, raw)
-	case u.RawQuery != "" || u.ForceQuery:
-		return oauthConfig{}, fmt.Errorf("%s=%q carries a query; it must be a bare origin", publicURLEnv, raw)
-	case u.Fragment != "":
-		return oauthConfig{}, fmt.Errorf("%s=%q carries a fragment; it must be a bare origin", publicURLEnv, raw)
-	case u.Scheme == "http" && !isLoopbackHost(u.Host):
+	if u.Scheme == "http" && !isLoopbackHost(u.Host) {
 		return oauthConfig{}, fmt.Errorf(
 			"%s=%q uses http:// on a host that is not a loopback address; OAuth 2.1 forbids it, "+
-				"and it usually means a reverse proxy is wired wrong", publicURLEnv, raw)
+				"and it usually means a reverse proxy is wired wrong", publicURLEnv, strings.TrimSpace(raw))
 	}
 
 	issuer := u.Scheme + "://" + u.Host

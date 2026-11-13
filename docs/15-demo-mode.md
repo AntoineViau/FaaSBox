@@ -42,7 +42,10 @@ agents. What it stops:
   instance comes up or is redeployed;
 - the **dependency install** that normally runs at startup;
 - the **hourly prune** of the execution logs — the history on display is
-  precisely what has to stay intact.
+  precisely what has to stay intact;
+- **public pages**: `/f/` answers `404`, even with `FAASBOX_PAGES_URL` set — a
+  page runs code and writes a log entry on a `GET`, which the read-only rule
+  below cannot refuse by its method. Public routes are displayed, as not served.
 
 An **AI agent cannot connect** to a demo instance, neither by API key nor by
 OAuth: every MCP message is a `POST`. The **AI MCP** page still displays the

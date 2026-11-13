@@ -53,6 +53,8 @@ import { ZardIconComponent } from '@shared/components/icon';
         @for (row of rows(); track row.key) {
           <app-trigger-card
             [row]="row"
+            [functionName]="functionName()"
+            [pagesUrl]="pagesUrl()"
             [demoMode]="demoMode()"
             (rowChange)="patch(row.key, $event)"
             (removeRow)="remove(row.key)"
@@ -90,8 +92,13 @@ export class TriggersEditorComponent {
 
   /** What a trigger points at, and what the panel loads and writes on. */
   readonly functionId = input.required<string>();
-  /** Only seeds the default name of a new trigger; never written as a reference. */
+  /**
+   * Seeds the default name of a new trigger, and is the name a route publishes
+   * under; never written as a reference.
+   */
   readonly functionName = input.required<string>();
+  /** The origin of the public pages, or '' when the server serves none. */
+  readonly pagesUrl = input('');
   /** A showcase shows the triggers and closes everything that would write one. */
   readonly demoMode = input(false);
   readonly triggerCountChange = output<void>();
@@ -306,8 +313,10 @@ export class TriggersEditorComponent {
       active: trigger.active,
       maxQueue: trigger.maxQueue ?? 0,
       // An empty column reads as 'cron', mirroring the server accessor: that is
-      // the shape a record written from the PocketBase admin carries.
-      kind: trigger.kind === 'startup' ? 'startup' : 'cron',
+      // the shape a record written from the PocketBase admin carries. The two
+      // other kinds are kept as they are — a route rewritten as a schedule on
+      // the next save would unpublish the function behind the user's back.
+      kind: trigger.kind === 'startup' || trigger.kind === 'route' ? trigger.kind : 'cron',
       startupDelayMinutes: trigger.startupDelayMinutes ?? 0,
       // Same mirror of the server accessor: an absent or empty column reads
       // 'UTC', which is what it has always meant.

@@ -39,6 +39,15 @@ fi
 export FAASBOX_PUBLIC_URL="${FAASBOX_PUBLIC_URL:-http://127.0.0.1:8080}"
 echo "🌐 Public URL: $FAASBOX_PUBLIC_URL"
 
+#    Public pages. A function opened by a public route is served on a host of
+#    its own, never beside the editor: *.localhost resolves to this machine in
+#    a browser, and curl reaches it with -H 'Host: pages.localhost:8080'.
+#    No colon in the expansion, on purpose: FAASBOX_PAGES_URL= (empty) passed
+#    to this script turns the pages off instead of falling back to the default,
+#    which is how the disabled state is tried locally.
+export FAASBOX_PAGES_URL="${FAASBOX_PAGES_URL-http://pages.localhost:8080}"
+echo "📄 Pages URL: ${FAASBOX_PAGES_URL:-(off)}"
+
 # 4. Remove previous build to detect fresh build completion
 rm -f data/pb_public/index.html
 

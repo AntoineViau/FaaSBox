@@ -45,7 +45,7 @@ func namedInstanceScenario(app *tests.TestApp, demo demoSettings, instanceName s
 		if demo.Enabled {
 			e.Router.BindFunc(refuseWrites)
 		}
-		e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName))
+		e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName, noPages))
 		registerFaaSRoutes(app, e, t.TempDir())
 	}
 	return s

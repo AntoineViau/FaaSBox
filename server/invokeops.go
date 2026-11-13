@@ -53,6 +53,31 @@ func (e *errOutputUnusable) Error() string {
 	)
 }
 
+// invocationPath is what one caller of the verb decides: which function a
+// segment designates for it, and what stdout must be to count as an answer.
+//
+// Three callers share the verb and differ on exactly these two points. /invoke
+// and MCP resolve under the scope of a key and accept any stdout; /f/ resolves
+// only what a public route opened and requires a response envelope. Everything
+// else — the slot, the dependency outcome, the status of the run, its log entry
+// — is the verb's, and is written once, below.
+type invocationPath struct {
+	resolve func(app core.App, idOrName string) (*core.Record, error)
+	decode  func(stdout string, truncated bool) (any, error)
+}
+
+// scopedInvocation is the path /invoke and invoke_function take: the function
+// is resolved under the scope of the key that asked, and stdout is decoded as
+// it always was.
+func scopedInvocation(allowed []string) invocationPath {
+	return invocationPath{
+		resolve: func(app core.App, idOrName string) (*core.Record, error) {
+			return scopedFunction(app, allowed, idOrName)
+		},
+		decode: parseFunctionOutput,
+	}
+}
+
 // invokeOutcome is what one invocation publishes. It is filled even when the
 // invocation failed: an error response says how long the failure took and what
 // the function managed to write, and losing that on the way out would make a
@@ -71,11 +96,13 @@ type invokeOutcome struct {
 // same publication of the dependency state, same log entry, and the two must not
 // diverge (cf. the parity rule between the immediate and the scheduled path).
 //
+// path says how the segment resolves and what stdout must be (invocationPath).
 // in carries the envelope stdin receives and the trigger the log entry records.
-// Both are built by the caller — invoke.go from the request it holds, mcptools.go
-// from an agent's arguments — because only the caller knows what shape the call
-// had. This file stays what it was: the verb, with no request in sight.
-func invokeFunction(ctx context.Context, app core.App, functionsDir string, allowed []string, idOrName string, in executionInput) (invokeOutcome, error) {
+// Both are built by the caller — invoke.go and pages.go from the request they
+// hold, mcptools.go from an agent's arguments — because only the caller knows
+// what shape the call had. This file stays what it was: the verb, with no
+// request in sight.
+func invokeFunction(ctx context.Context, app core.App, functionsDir string, path invocationPath, idOrName string, in executionInput) (invokeOutcome, error) {
 	// Validated before anything is reserved: a segment that never had a chance
 	// of designating a function must not cost a slot.
 	if !validName.MatchString(idOrName) || len(idOrName) > 64 {
@@ -89,10 +116,10 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 		return invokeOutcome{}, errTooBusy
 	}
 
-	// Resolve the function, scope included, then execute it. The record replaces
-	// the lookup lookupFunctionEnv used to make: the secrets come off the row
-	// already read.
-	fn, err := scopedFunction(app, allowed, idOrName)
+	// Resolve the function the way this caller's path says, then execute it. The
+	// record replaces the lookup lookupFunctionEnv used to make: the secrets come
+	// off the row already read.
+	fn, err := path.resolve(app, idOrName)
 	if err != nil {
 		var notFound *errNotFound
 		if errors.As(err, &notFound) || errors.Is(err, errScopeRestricted) {
@@ -115,12 +142,13 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 	// the same right after its own call — the two must not diverge.
 	publishDepsOutcome(app, functionsDir, fn.Id, name, res)
 
-	// Decode stdout before logging: an execution whose output did not survive the
-	// capture cap is a failure, and the log has to say so.
+	// Decode stdout before logging: an execution whose output is not what this
+	// path takes for an answer — cut at the capture cap, or not an envelope on
+	// /f/ — is a failure, and the log has to say so.
 	var result any
-	outputUsable := true
+	var decodeErr error
 	if res.Err == nil {
-		result, outputUsable = parseFunctionOutput(res.Stdout, res.StdoutTruncated)
+		result, decodeErr = path.decode(res.Stdout, res.StdoutTruncated)
 	}
 
 	// Record the run. Only errNotFound stays out: nothing ran, so there is no
@@ -132,7 +160,7 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 		status := "success"
 		if res.TimedOut {
 			status = "timeout"
-		} else if res.Err != nil || !outputUsable {
+		} else if res.Err != nil || decodeErr != nil {
 			status = "error"
 		}
 		recordExecution(app, logEntry{
@@ -170,8 +198,8 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 		return outcome, errExecTimedOut
 	case res.Err != nil:
 		return outcome, res.Err
-	case !outputUsable:
-		return outcome, &errOutputUnusable{limit: maxOutputSize}
+	case decodeErr != nil:
+		return outcome, decodeErr
 	}
 	return outcome, nil
 }
@@ -183,12 +211,16 @@ func invokeFunction(ctx context.Context, app core.App, functionsDir string, allo
 // surviving fragment as a plain string would pass a mutilated answer off as a
 // good one. A truncation that happens to leave valid JSON behind is
 // undetectable, and the "truncated" flag remains its only signal.
-func parseFunctionOutput(stdout string, truncated bool) (result any, usable bool) {
+//
+// The refusal carries the cap in force when it is built, which is now — a test
+// moves that variable under it.
+func parseFunctionOutput(stdout string, truncated bool) (any, error) {
+	var result any
 	if err := json.Unmarshal([]byte(stdout), &result); err != nil {
 		if truncated {
-			return nil, false
+			return nil, &errOutputUnusable{limit: maxOutputSize}
 		}
-		return stdout, true
+		return stdout, nil
 	}
-	return result, true
+	return result, nil
 }

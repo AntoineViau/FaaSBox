@@ -168,18 +168,19 @@ func TestMCPServerAdvertises(t *testing.T) {
 			"bun:sqlite",                // the folder is a function's own, and holds a database
 			"import.meta.dir",           // where a path into it is built from
 			"stdin", "stdout", "stderr", // execution contract
-			"envelope",     // what stdin actually carries
-			"triggerName",  // and what tells two schedules apart
-			"x-api-key",    // the headers a function never sees
-			"hyphens",      // naming rule
-			"1048576",      // size caps
-			"background",   // installs do not finish with the write
-			"day-of-week",  // cron expression
-			"startup",      // the second kind of trigger
-			"1439",         // and the bound on its delay
-			"Europe/Paris", // the zone an expression is read in
-			"empty object", // plainEnv erases
-			"do not patch", // a write replaces
+			"envelope",      // what stdin actually carries
+			"triggerName",   // and what tells two schedules apart
+			"x-api-key",     // the headers a function never sees
+			"hyphens",       // naming rule
+			"1048576",       // size caps
+			"background",    // installs do not finish with the write
+			"day-of-week",   // cron expression
+			"startup",       // the second kind of trigger
+			"/f/{idOrName}", // the third, which publishes the function
+			"1439",          // and the bound on its delay
+			"Europe/Paris",  // the zone an expression is read in
+			"empty object",  // plainEnv erases
+			"do not patch",  // a write replaces
 		} {
 			if !strings.Contains(init.Instructions, marker) {
 				t.Errorf("the instructions do not mention %q", marker)

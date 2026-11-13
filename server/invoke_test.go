@@ -95,11 +95,11 @@ func TestParseFunctionOutput(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			result, usable := parseFunctionOutput(tc.stdout, tc.truncated)
-			if usable != tc.wantUsable {
+			result, err := parseFunctionOutput(tc.stdout, tc.truncated)
+			if usable := err == nil; usable != tc.wantUsable {
 				t.Fatalf("usable = %v, want %v", usable, tc.wantUsable)
 			}
-			if !usable {
+			if err != nil {
 				return
 			}
 			if got, want := fmt.Sprintf("%v", result), fmt.Sprintf("%v", tc.wantResult); got != want {

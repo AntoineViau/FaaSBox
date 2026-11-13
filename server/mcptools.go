@@ -56,11 +56,11 @@ import (
 // next to it.
 type mcpTrigger struct {
 	Name     string `json:"name" jsonschema:"a label for this trigger"`
-	Schedule string `json:"schedule" jsonschema:"cron expression, five fields: minute hour day-of-month month day-of-week; leave it empty on a startup trigger"`
+	Schedule string `json:"schedule" jsonschema:"cron expression, five fields: minute hour day-of-month month day-of-week; leave it empty on a startup or route trigger"`
 	Payload  any    `json:"payload,omitempty" jsonschema:"the JSON handed to the function at each firing; it reaches the function as the body field of the envelope on stdin, as a string"`
 	Active   *bool  `json:"active,omitempty" jsonschema:"whether the trigger fires; defaults to true when omitted"`
 	MaxQueue int    `json:"maxQueue,omitempty" jsonschema:"how many runs of this trigger may exist at once, waiting plus running; 0 means no limit"`
-	Kind     string `json:"kind,omitempty" jsonschema:"cron for a scheduled trigger, startup to fire once when the server comes up; defaults to cron when omitted"`
+	Kind     string `json:"kind,omitempty" jsonschema:"cron for a scheduled trigger, startup to fire once when the server comes up, route to serve the function to anyone without a key at /f/{idOrName} on the pages host; defaults to cron when omitted"`
 	// The delay is a whole number of minutes rather than a duration string: it is
 	// what the column holds, and what the bound is expressed in.
 	StartupDelayMinutes int    `json:"startupDelayMinutes,omitempty" jsonschema:"on a startup trigger, how long after the server comes up it fires, in minutes, from 0 to 1439"`
@@ -80,7 +80,7 @@ type mcpCreateArgs struct {
 	SampleBody    string            `json:"sampleBody,omitempty" jsonschema:"the body of the sample call saved with the function, sent as written; leave it out for a function that needs no example call"`
 	SampleHeaders []sampleHeader    `json:"sampleHeaders,omitempty" jsonschema:"the headers of that sample call, in the order they should be read; leave it out for a call that needs none"`
 	PlainEnv      map[string]string `json:"plainEnv,omitempty" jsonschema:"secrets injected in the environment of the subprocess; leave it out for a function that needs none"`
-	Triggers      []mcpTrigger      `json:"triggers,omitempty" jsonschema:"the triggers of the function, scheduled or on startup; leave it out for a function invoked over HTTP only"`
+	Triggers      []mcpTrigger      `json:"triggers,omitempty" jsonschema:"the triggers of the function, scheduled, on startup or as a public route; leave it out for a function invoked over HTTP only"`
 }
 
 // mcpUpdateArgs is what update_function merges onto the stored function.
@@ -280,7 +280,7 @@ func addMCPTools(s *mcp.Server, app core.App, functionsDir string, allowed []str
 		// and carries the payload, and invents nothing else. An absent payload
 		// becomes "{}" inside newMCPInput, which is the only place that
 		// normalisation lives.
-		outcome, err := invokeFunction(ctx, app, functionsDir, allowed, in.IdOrName,
+		outcome, err := invokeFunction(ctx, app, functionsDir, scopedInvocation(allowed), in.IdOrName,
 			newMCPInput(string(payload)))
 		result := mcpInvokeResult{
 			Function:   outcome.Function,

@@ -10,7 +10,7 @@ Each log entry contains comprehensive details about a function run:
 |-------|-------------|
 | `function` | The function the entry belongs to. Filter and group on this one. |
 | `functionName` | The name that function carried **when it ran** — see below. |
-| `trigger` | `http` (API call), `cron` (scheduled task), `startup` (fired when the server came up) or `mcp` (an [AI agent](13-ai-agents.md) called it). |
+| `trigger` | `http` (API call), `route` (a visitor on the function's [public route](05-triggers.md#public-route)), `cron` (scheduled task), `startup` (fired when the server came up) or `mcp` (an [AI agent](13-ai-agents.md) called it). |
 | `status` | `success`, `error`, `timeout`, or `missed`. |
 | `duration` | Total execution time in milliseconds. |
 | `stdout` | The output of the function (captured from stdout), truncated to 8 KB. |
@@ -38,6 +38,7 @@ So an old entry can show a name the editor no longer uses. That is the intended 
 Two consequences:
 
 - **The four headers FaaSBox refuses to forward are not stored either.** `x-api-key`, `authorization`, `cookie` and `proxy-authorization` never enter the envelope, so they never reach this collection. Every other header does — including anything custom your callers send, so treat this column as you would any request log.
+- **A public route logs its visitors.** Every request on `/f/` that reaches the function writes one entry, envelope included — the visitor's `user-agent`, and `x-forwarded-for` when a proxy adds it. The count is bounded by retention, not by any quota: a busy page fills the history faster than anything else.
 - **Entries are bigger than they used to be**, and more of them hit the 4 KB cap below. That is the price of the context; raise `FAASBOX_MAX_LOG_PAYLOAD` if your callers send headers worth keeping.
 
 ## Output Truncation

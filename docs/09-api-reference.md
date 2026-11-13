@@ -1,6 +1,6 @@
 # 09 - API Reference
 
-FaaSBox provides a set of HTTP endpoints for managing and invoking functions. All endpoints (except `/health` and `/api/faasbox/instance`) require authentication.
+FaaSBox provides a set of HTTP endpoints for managing and invoking functions. All endpoints (except `/health`, `/api/faasbox/instance`, and the [public route](#14-public-route) `/f/{idOrName}` on the pages host) require authentication.
 
 ## Authentication
 Use the `X-API-Key` header with a valid API key.
@@ -9,7 +9,7 @@ X-API-Key: fbx_your_key_here
 ```
 
 ## Rate limits
-Every endpoint under `/api/` — the management routes below, the key creation route, and PocketBase's own — is behind a rate limiter: 300 requests per 10 seconds, and 2 per 3 seconds on authentication. Over the limit, the answer is `429 Too Many Requests`. `POST /invoke/{idOrName}` is under no such rule; the `429` it can return means something else entirely, and is documented with it. See [Rate Limiting](06-api-keys-and-security.md#5-rate-limiting).
+Every endpoint under `/api/` — the management routes below, the key creation route, and PocketBase's own — is behind a rate limiter: 300 requests per 10 seconds, and 2 per 3 seconds on authentication. Over the limit, the answer is `429 Too Many Requests`. `POST /invoke/{idOrName}` and the public route `/f/{idOrName}` are under no such rule; the `429` they can return means something else entirely, and is documented with them. See [Rate Limiting](06-api-keys-and-security.md#5-rate-limiting).
 
 ---
 
@@ -161,7 +161,8 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
   "plainEnv": { "STRIPE_KEY": "sk_test_..." },
   "triggers": [
     { "name": "nightly", "schedule": "0 3 * * *", "timezone": "Europe/Paris", "payload": {}, "active": true, "maxQueue": 1 },
-    { "name": "boot", "kind": "startup", "startupDelayMinutes": 5, "payload": {}, "active": true }
+    { "name": "boot", "kind": "startup", "startupDelayMinutes": 5, "payload": {}, "active": true },
+    { "name": "public", "kind": "route", "active": true }
   ]
 }
 ```
@@ -170,7 +171,7 @@ Four endpoints write functions over HTTP, with an API key rather than a superuse
 - `script`, `packageJson`, `sampleBody` and `sampleHeaders` are **replaced whole**. `PUT` replaces the function: a field the body does not carry becomes empty. Sending only `script` therefore clears `packageJson`, and with it the dependencies — and clears the sample call along the way. Send the full set every time.
 - `sampleBody` and `sampleHeaders` are the **sample call** saved with the function: the request the Editor's Runner replays, and what someone opening the function sees without having to compose a call of their own. The body is sent as written — JSON, XML, a form, a signed payload — and the headers are a list of `{ "name", "value" }` whose **order is kept**. Write the call the function expects and it is documentation that runs. It is not a vault: everyone who can read the function reads its sample, so put the *shape* of a signed request there and never a live secret — those belong in `plainEnv`. Four header names are dropped from the envelope on the way in (see [The Rules for Headers and Query](03-writing-functions.md#the-rules-for-headers-and-query)); a sample may carry one and it is stored as sent, but it will not reach the function.
 - `triggers`, when present, is the complete set of triggers, not a patch. `active` defaults to `true` when omitted, `maxQueue` to `0` (no limit).
-- `kind` says which deadline fires a trigger: `"cron"` for a schedule, `"startup"` to fire once when the server comes up. **Omitted, it reads as `"cron"`** — a body written before startup triggers existed still describes what it described. The rules are exclusive: a `cron` trigger must carry a `schedule` that parses, a `startup` trigger must carry **no** `schedule` at all, and either violation is a `400`.
+- `kind` says what a trigger is: `"cron"` for a schedule, `"startup"` to fire once when the server comes up, `"route"` to **publish** the function at [`/f/{idOrName}`](#14-public-route) — anyone can then call it without a key. **Omitted, it reads as `"cron"`** — a body written before the other kinds existed still describes what it described. The rules are exclusive: a `cron` trigger must carry a `schedule` that parses, a `startup` or `route` trigger must carry **no** `schedule` at all, and any violation is a `400`. On a `route`, `payload`, `maxQueue`, `startupDelayMinutes` and `timezone` are stored and ignored.
 - `timezone` says which clock the five columns of `schedule` are read in. An **IANA zone name** — `Europe/Paris`, `Asia/Kolkata` — and nothing else: a zone the server cannot resolve is a `400`, and so are `Local`, `localtime` and `posixrules` even where the server *can* resolve them. None of the three names a place: `Local` is the timezone of the running process (`TZ`, else `/etc/localtime`), `localtime` is a link to that same file placed inside the zone database on some systems, and `posixrules` is whichever zone the operating system pinned there — absent from the database FaaSBox ships. Accepting any of them would make the trigger fire on the clock of the machine, so the same record would mean one thing on the host that wrote it and another on the host that runs it, with nothing in the record saying so. **Omitted or empty, it reads as `"UTC"`** — a body written before this field existed still describes what it described. It is ignored on a `startup` trigger, whose delay is counted from boot and has no wall clock.
 - `startupDelayMinutes` is how long after the server comes up a `startup` trigger fires. A whole number of minutes, `0` to `1439` (23h59); anything else is a `400`. It is ignored on a cron trigger.
 - A startup trigger is armed **at boot and only at boot**. Writing one through this route does not fire it and does not arm it on the running server — it waits for the next start. Cron triggers, by contrast, are picked up immediately.
@@ -588,15 +589,17 @@ Used for container health checks or load balancer heartbeat. Verifies that the S
 
 **No Authentication Required.**
 
-Says what this instance is: whether it is a read-only demo, and what it is
-called. The editor reads it before its first render, to close the controls a
-showcase does not offer and to label its own header.
+Says what this instance is: whether it is a read-only demo, what it is
+called, and where its public pages are served. The editor reads it before its
+first render, to close the controls a showcase does not offer, to label its own
+header, and to show the public URL of a function.
 
 - **Response on a normal instance**: `200 OK`
     ```json
     {
       "demoMode": false,
-      "name": "toto"
+      "name": "toto",
+      "pagesUrl": "https://pages.example.com"
     }
     ```
 - **Response on a demo instance**: `200 OK`
@@ -604,6 +607,7 @@ showcase does not offer and to label its own header.
     {
       "demoMode": true,
       "name": "toto",
+      "pagesUrl": "",
       "email": "demo@example.com",
       "password": "demo"
     }
@@ -613,6 +617,12 @@ showcase does not offer and to label its own header.
 holds, and it is **always** present — an empty string on an instance that sets
 no name, or one whose value was refused. It does not follow the rule the two
 credentials follow: a label is not a secret.
+
+`pagesUrl` is the origin the [public route](#14-public-route) is served on, as
+[`FAASBOX_PAGES_URL`](10-deployment.md#serving-public-pages) set it, the default
+port removed. It is **always** present too, and empty when no page is served:
+the variable is not set, its value was refused, or the instance is a demo. It is
+no secret either — it is in every link to a page.
 
 The two credential fields exist only in demo mode, and they are exactly what
 `FAASBOX_DEMOMODE_EMAIL` and `FAASBOX_DEMOMODE_PASSWORD` hold — empty strings
@@ -684,6 +694,36 @@ Says which build of FaaSBox answers. The editor shows it beside the **FaaSBox** 
 A released image answers with its tag, without the leading `v`. Anything built another way — `go run`, or a `docker build` without `--build-arg FAASBOX_VERSION=...` — answers `"dev"`.
 
 It is not a field of [Instance Mode](#12-instance-mode) on purpose: that endpoint is public, and a version handed to anyone who asks tells a scanner which known flaws to try.
+
+---
+
+## 14. Public Route
+**Endpoint**: `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE` `/f/{idOrName}` — **on the pages host only**
+
+**No Authentication Required.**
+
+Runs a function that a trigger of kind `"route"` publishes, for anyone who asks, and answers with the response the function describes. It is the one route into a function that takes no key; see [Serving a Public Page](03-writing-functions.md#serving-a-public-page) for the function's side.
+
+- **Where**: only on the host [`FAASBOX_PAGES_URL`](10-deployment.md#serving-public-pages) names, compared with the `Host` header as received. On that host nothing else answers — not the Editor, not `/api/`, not the admin, all `404`. On every other host, `/f/` answers `404` and runs nothing. Without the variable, or on a demo instance, no function is served: `/f/` answers `404` on every host and every method.
+- **Path Parameter**: `{idOrName}`, resolved by the [same rule](#which-one-the-segment-designates) as everywhere else.
+- **Request Body**: same rules as [Invoke a Function](#1-invoke-a-function) — valid UTF-8, `FAASBOX_MAX_BODY_SIZE` at most, `400` and `413` otherwise.
+- **What the function receives**: the same envelope as `/invoke`, with `"trigger": "route"`, the method used, and `path` set to `/f/{idOrName}`. `x-api-key`, `authorization`, `cookie` and `proxy-authorization` are removed.
+- **Response**: what the function's [response envelope](03-writing-functions.md#serving-a-public-page) says — its status, its headers, its body as is. `Content-Length` is computed by the server. No `content-type` means `text/plain; charset=utf-8`.
+- **`OPTIONS`** never reaches the function: the server's CORS layer answers a preflight with `204` itself. A response to a request carrying `Origin` gets `Access-Control-Allow-Origin: *`, which the function's own `headers` may override.
+- **Error Codes** — every body is fixed or names one of the server's own rules, never what the function wrote:
+    - `400`: The request body is not valid UTF-8.
+    - `404`: `{"error":"not found"}` — no such function, no **active** route on it, or a malformed segment. The three are indistinguishable on purpose, and none of them is logged.
+    - `413`: Request body too large.
+    - `429`: Every execution slot is taken. `/f/` shares them with `/invoke` and the triggers (`FAASBOX_MAX_CONCURRENCY`).
+    - `500`: `{"error":"function failed"}` — the function threw, exited non-zero, or its dependencies could not be installed.
+    - `502`: The function's output is not a valid response envelope, or was cut at the capture limit. The message names the rule.
+    - `504`: `{"error":"function timed out"}` (> 30s).
+
+Every request that reaches a function is recorded in the [execution logs](07-execution-logs.md) with `trigger: "route"`, its envelope included.
+
+```bash
+curl -i https://pages.example.com/f/hello?name=Ada
+```
 
 ---
 

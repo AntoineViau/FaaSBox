@@ -23,7 +23,7 @@ import (
 //
 // Everything a trigger is regardless of its kind — the collection, the accessors
 // of its encrypted columns, the execution itself — lives in triggers.go. A
-// startup trigger crosses this file only to be skipped.
+// startup trigger and a route cross this file only to be skipped.
 
 const cronJobPrefix = "__faasboxCron_"
 
@@ -115,7 +115,9 @@ func cronJobIsDue(s *cron.Schedule, loc *time.Location, at time.Time) bool {
 
 // validateTriggerHook weighs a trigger record against the rules of its kind: a
 // cron trigger needs an expression that parses, a startup trigger needs no
-// expression at all and a delay within bounds.
+// expression at all and a delay within bounds, a route needs no expression
+// either. On a route, payload, maxQueue, startupDelayMinutes and timezone are
+// inert: nothing schedules it, and what it hands the function is the request.
 //
 // Every refusal is an ApiError and not an ordinary error on purpose: the record
 // endpoints wrap a hook failure through firstApiError, which keeps the first
@@ -149,7 +151,15 @@ func validateTriggerHook(e *core.RecordEvent) error {
 		}
 	}
 
-	if triggerKind(e.Record) == "startup" {
+	switch triggerKind(e.Record) {
+	case "route":
+		if schedule != "" {
+			return apis.NewBadRequestError(
+				"A public route carries no schedule. Clear the schedule, or set the kind to \"cron\".",
+				nil)
+		}
+		return e.Next()
+	case "startup":
 		if schedule != "" {
 			return apis.NewBadRequestError(
 				"A startup trigger carries no schedule. Clear the schedule, or set the kind to \"cron\".",
@@ -168,6 +178,7 @@ func validateTriggerHook(e *core.RecordEvent) error {
 		return e.Next()
 	}
 
+	// What is left is a cron trigger.
 	if schedule == "" {
 		return apis.NewBadRequestError(
 			"A cron trigger needs a schedule: five fields, minute hour day-of-month month day-of-week.",
@@ -208,10 +219,11 @@ func syncAllCronJobs(app core.App, functionsDir string, ctx context.Context) {
 			continue
 		}
 
-		// Startup triggers are armed by scheduleStartupRuns, not registered here.
-		// The blank-schedule guard below would drop them anyway, but the reader
-		// must not have to deduce the intent from a side effect.
-		if triggerKind(record) == "startup" {
+		// Only a cron trigger is registered here. A startup trigger is armed by
+		// scheduleStartupRuns, a route fires nothing and is read by /f/ at each
+		// request. The blank-schedule guard below would drop both anyway, but the
+		// reader must not have to deduce the intent from a side effect.
+		if triggerKind(record) != "cron" {
 			continue
 		}
 

@@ -10,7 +10,8 @@ import (
 )
 
 // This file owns what an instance publishes about itself: the name it carries,
-// and the one public route that says what it is.
+// where its public pages are served, and the one public route that says what it
+// is.
 //
 // The name and the demo flag are two independent facets — one is a label, the
 // other decides whether every write route is reachable — so the mode and its
@@ -67,6 +68,11 @@ func instanceNameFromEnv() string {
 // A label is not a secret, and a field that is always there spares the client a
 // missing-value case it would have to handle anyway.
 //
+// pagesUrl is always rendered on the same rule: the origin of the public pages
+// when they are mounted, "" when they are not. That origin is no secret — it is
+// in every link to a page — and the editor builds the public URL of a function
+// from it, and greys the option out without it.
+//
 // It is not folded into /health, which answers "am I alive" to an orchestrator
 // and whose contract is documented for one.
 //
@@ -75,7 +81,7 @@ func instanceNameFromEnv() string {
 // to keep the answer it got then, and open an editor whose controls promise
 // what the server now refuses. noStore says why the rule is not this route's
 // alone.
-func instanceHandler(demo demoSettings, instanceName string) func(*core.RequestEvent) error {
+func instanceHandler(demo demoSettings, instanceName string, pages pagesConfig) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		noStore(e)
 
@@ -83,11 +89,13 @@ func instanceHandler(demo demoSettings, instanceName string) func(*core.RequestE
 			return e.JSON(http.StatusOK, map[string]any{
 				"demoMode": false,
 				"name":     instanceName,
+				"pagesUrl": pages.Origin,
 			})
 		}
 		return e.JSON(http.StatusOK, map[string]any{
 			"demoMode": true,
 			"name":     instanceName,
+			"pagesUrl": pages.Origin,
 			"email":    demo.Email,
 			"password": demo.Password,
 		})

@@ -33,15 +33,19 @@ import (
 // bounds what a caller sends, and the headers around it are already bounded by
 // the HTTP server itself.
 
-// The four values a log entry's trigger column may hold. They are the vocabulary
+// The five values a log entry's trigger column may hold. They are the vocabulary
 // of the envelope as much as of the log — what feeds a function and what records
 // the run are named from the same place, so a path cannot report one and feed
 // the shape of another.
+//
+// triggerRoute is a request like triggerHTTP, with the same envelope: what
+// tells them apart is who may send it — a key on /invoke, anyone on /f/.
 const (
 	triggerHTTP    = "http"
 	triggerCron    = "cron"
 	triggerStartup = "startup"
 	triggerMCP     = "mcp"
+	triggerRoute   = "route"
 )
 
 // repeatedSeparator renders a header or a query parameter given more than once:
@@ -76,7 +80,8 @@ type executionInput struct {
 	Envelope string
 }
 
-// httpEnvelope is what an HTTP invocation hands to the function.
+// httpEnvelope is what an HTTP invocation hands to the function, on /invoke and
+// on /f/ alike.
 type httpEnvelope struct {
 	Trigger string            `json:"trigger"`
 	Method  string            `json:"method"`
@@ -104,16 +109,19 @@ type mcpEnvelope struct {
 	Body    string `json:"body"`
 }
 
-// newHTTPInput builds the envelope of an HTTP invocation.
+// newHTTPInput builds the envelope of an HTTP invocation. trigger is
+// triggerHTTP or triggerRoute: its two callers each serve one route and pass
+// their constant, on the model of newTriggerInput — nothing here deduces it from
+// the path.
 //
 // body is carried over untouched. The transport has already bounded it and
 // checked it is valid UTF-8, which is what a JSON envelope needs to carry bytes
 // without mangling them; nothing here parses it, and nothing here may.
-func newHTTPInput(r *http.Request, body []byte) executionInput {
+func newHTTPInput(r *http.Request, body []byte, trigger string) executionInput {
 	return executionInput{
-		Trigger: triggerHTTP,
+		Trigger: trigger,
 		Envelope: marshalEnvelope(httpEnvelope{
-			Trigger: triggerHTTP,
+			Trigger: trigger,
 			Method:  r.Method,
 			// The path as called, query string excluded: the query has its own
 			// field, already split into pairs.

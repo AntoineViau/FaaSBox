@@ -35,36 +35,9 @@ var validName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$`)
 // invocation over, and turns what comes back into a response — the deciding is
 // in invokeops.go, where a caller that is not a request can reach it.
 func invokeHandler(e *core.RequestEvent, functionsDir string) error {
-	// Read the request body, which becomes the "body" field of the envelope
-	// handed to the function. One extra byte beyond the limit, to detect
-	// oversized payloads: without it, LimitReader silently truncates the body
-	// and the function receives half a document, producing a confusing parsing
-	// error.
-	//
-	// The bound is on **what the caller sent**, and stays there: the envelope
-	// built around it is ours, and the headers it carries are already bounded by
-	// the HTTP server itself.
-	body, err := io.ReadAll(io.LimitReader(e.Request.Body, int64(maxBodySize)+1))
-	if err != nil {
-		return e.JSON(http.StatusBadRequest, map[string]string{
-			"error": "failed to read request body",
-		})
-	}
-	if len(body) > maxBodySize {
-		return e.JSON(http.StatusRequestEntityTooLarge, map[string]string{
-			"error": fmt.Sprintf("request body exceeds %d bytes", maxBodySize),
-		})
-	}
-	// The body travels inside a JSON envelope, and JSON carries text. Arbitrary
-	// bytes cannot go through it: encoding/json would swap every invalid
-	// sequence for U+FFFD and the function would receive a body that is not the
-	// one that was sent — silently, which is the worst way to lose a signature.
-	// The refusal is explicit instead, and a genuinely binary body is a use case
-	// this server does not claim to serve.
-	if !utf8.Valid(body) {
-		return e.JSON(http.StatusBadRequest, map[string]string{
-			"error": "request body must be valid UTF-8",
-		})
+	body, refused := readInvocationBody(e.Request)
+	if refused != nil {
+		return e.JSON(refused.status, map[string]string{"error": refused.message})
 	}
 
 	allowed, err := requestKeyScope(e)
@@ -76,8 +49,8 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 	// The envelope is built here, where the request is: the operation must not
 	// know what a *http.Request is, and the transport is the only place that
 	// does (cf. the cut between invoke.go and invokeops.go).
-	outcome, err := invokeFunction(e.Request.Context(), e.App, functionsDir, allowed,
-		e.Request.PathValue("name"), newHTTPInput(e.Request, body))
+	outcome, err := invokeFunction(e.Request.Context(), e.App, functionsDir, scopedInvocation(allowed),
+		e.Request.PathValue("name"), newHTTPInput(e.Request, body, triggerHTTP))
 	if err != nil {
 		return answerInvokeFailure(e, outcome, err)
 	}
@@ -94,6 +67,46 @@ func invokeHandler(e *core.RequestEvent, functionsDir string) error {
 		resp["truncated"] = true
 	}
 	return e.JSON(http.StatusOK, resp)
+}
+
+// bodyRefusal is a request body the server will not hand to a function, with
+// the status that says why.
+type bodyRefusal struct {
+	status  int
+	message string
+}
+
+// readInvocationBody reads the body a function is about to receive, as the
+// "body" field of its envelope. Both routes that run a function on a request —
+// /invoke and /f/ — read it here, so a bound or a refusal cannot hold on one
+// and not the other.
+//
+// One extra byte is read beyond the limit, to detect an oversized payload:
+// without it, LimitReader silently truncates the body and the function receives
+// half a document, producing a confusing parsing error.
+//
+// The bound is on **what the caller sent**, and stays there: the envelope built
+// around it is ours, and the headers it carries are already bounded by the HTTP
+// server itself.
+func readInvocationBody(r *http.Request) ([]byte, *bodyRefusal) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, int64(maxBodySize)+1))
+	if err != nil {
+		return nil, &bodyRefusal{http.StatusBadRequest, "failed to read request body"}
+	}
+	if len(body) > maxBodySize {
+		return nil, &bodyRefusal{http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("request body exceeds %d bytes", maxBodySize)}
+	}
+	// The body travels inside a JSON envelope, and JSON carries text. Arbitrary
+	// bytes cannot go through it: encoding/json would swap every invalid
+	// sequence for U+FFFD and the function would receive a body that is not the
+	// one that was sent — silently, which is the worst way to lose a signature.
+	// The refusal is explicit instead, and a genuinely binary body is a use case
+	// this server does not claim to serve.
+	if !utf8.Valid(body) {
+		return nil, &bodyRefusal{http.StatusBadRequest, "request body must be valid UTF-8"}
+	}
+	return body, nil
 }
 
 // answerInvokeFailure turns a refused or failed invocation into its response.

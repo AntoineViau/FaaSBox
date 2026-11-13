@@ -243,7 +243,7 @@ func TestInvokeFunctionOperation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	t.Cleanup(cancel)
 
-	outcome, err := invokeFunction(ctx, app, dir, unrestricted, "echo", newMCPInput(`{"n":1}`))
+	outcome, err := invokeFunction(ctx, app, dir, scopedInvocation(unrestricted), "echo", newMCPInput(`{"n":1}`))
 	if err != nil {
 		t.Fatalf("invokeFunction() failed: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestInvokeFunctionOperation(t *testing.T) {
 	}
 
 	var notFound *errNotFound
-	if _, err := invokeFunction(ctx, app, dir, unrestricted, "nope", newMCPInput("")); !errors.As(err, &notFound) {
+	if _, err := invokeFunction(ctx, app, dir, scopedInvocation(unrestricted), "nope", newMCPInput("")); !errors.As(err, &notFound) {
 		t.Errorf("invokeFunction() on an unknown function = %v, want errNotFound", err)
 	}
 }
@@ -305,7 +305,7 @@ func TestOperationsRefuseAFunctionOutOfScope(t *testing.T) {
 			return err
 		}},
 		{"invokeFunction", func() error {
-			_, err := invokeFunction(ctx, app, dir, elsewhere, "echo", newMCPInput(""))
+			_, err := invokeFunction(ctx, app, dir, scopedInvocation(elsewhere), "echo", newMCPInput(""))
 			return err
 		}},
 	}
@@ -364,6 +364,6 @@ func TestOperationsNeverSeeARequest(t *testing.T) {
 		_ func(core.App, string, []string) ([]functionSummary, error)               = listFunctions
 		_ func(core.App, []string, string, int) ([]logContract, error)              = functionLogs
 
-		_ func(context.Context, core.App, string, []string, string, executionInput) (invokeOutcome, error) = invokeFunction
+		_ func(context.Context, core.App, string, invocationPath, string, executionInput) (invokeOutcome, error) = invokeFunction
 	)
 }

@@ -89,7 +89,7 @@ func ensureLogsCollection(app core.App) error {
 				CollectionId:  functions.Id,
 			},
 			&core.TextField{Name: "functionName", Required: true},
-			&core.SelectField{Name: "trigger", Required: true, Values: []string{triggerHTTP, triggerCron, triggerStartup, triggerMCP}},
+			&core.SelectField{Name: "trigger", Required: true, Values: []string{triggerHTTP, triggerCron, triggerStartup, triggerMCP, triggerRoute}},
 			&core.SelectField{Name: "status", Required: true, Values: []string{"success", "error", "timeout", "missed"}},
 			&core.NumberField{Name: "duration"},
 			&core.TextField{Name: "stdout", Max: wantedOutputMax},
@@ -142,7 +142,7 @@ type logEntry struct {
 	// record was called when the entry was written. See ensureLogsCollection.
 	FunctionId     string
 	FunctionName   string
-	Trigger        string // "http", "cron" or "startup"
+	Trigger        string // one of the five trigger constants of envelope.go
 	Status         string // "success", "error", "timeout", "missed"
 	DurationMs     int64
 	Stdout         string

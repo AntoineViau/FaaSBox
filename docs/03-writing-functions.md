@@ -60,7 +60,7 @@ You do not have to type that skeleton from memory either: in the **Script** tab,
 ## Input and Output
 
 - **Input**: An envelope describing the call, passed as JSON to `stdin`. Read it with `Bun.stdin.text()` and parse it — see [The Input Envelope](#the-input-envelope).
-- **Output**: Anything written to `stdout` is captured and returned as the `result` field in the API response. We highly recommend returning a JSON string.
+- **Output**: Anything written to `stdout` is captured and returned as the `result` field in the API response. We highly recommend returning a JSON string. On a [public route](#serving-a-public-page), `stdout` describes the HTTP response instead.
 - **Logs**: Anything written to `stderr` (e.g., `console.error()`) is captured in the `stderr` field of the response and saved to the execution logs.
 
 ## The Input Envelope
@@ -89,6 +89,8 @@ Its shape follows the trigger.
 ```
 
 `trigger` is `startup` instead of `cron` for a [startup trigger](05-triggers.md#running-at-startup); everything else is identical.
+
+**A visitor on a public route** — `/f/{name}` on the pages host, with no key: the same shape as an HTTP call, with `"trigger": "route"` and the method the visitor used (see [Serving a Public Page](#serving-a-public-page)).
 
 **An AI agent**, through the [MCP endpoint](13-ai-agents.md) — no HTTP request is behind the call, so nothing is invented to describe one:
 
@@ -155,6 +157,87 @@ Each stream is captured up to **1 MB** by default (see [Technical Limits](#techn
 If your function writes JSON and the cut lands mid-document, the result is unusable: FaaSBox refuses it with a `502` instead of handing back the surviving fragment as a plain string. The error message states the effective limit and names the variable that raises it, `FAASBOX_MAX_OUTPUT_SIZE` — set it on the server and restart. Returning less data works too, and is usually the better fix.
 
 Free-text output is not affected as long as it fits under the limit: it comes back as a raw string, exactly as before.
+
+## Serving a Public Page
+
+A function with a **public route** trigger ([05 - Triggers](05-triggers.md#public-route)) answers anyone, without a key, at:
+
+```
+https://<pages host>/f/<name-or-id>
+```
+
+It is the one way into a function that asks for no key: a page for a browser, a webhook from a sender that cannot set `X-API-Key`, a redirect. It is served only on the host `FAASBOX_PAGES_URL` names, never beside the Editor — see [10 - Deployment](10-deployment.md#serving-public-pages) for why.
+
+On that route `stdout` is not wrapped in `{function, result}`: it **describes the response**, in an envelope that mirrors the one on `stdin`.
+
+```json
+{ "status": 200, "headers": { "content-type": "text/html; charset=utf-8" }, "body": "<h1>Hello</h1>" }
+```
+
+| Field          | Rule                                                                                                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| `body`         | Required. A string, written out exactly as given.                                                          |
+| `status`       | Optional. An integer from 200 to 599. Defaults to `200`.                                                   |
+| `headers`      | Optional. A flat object of strings. Without `content-type`, the response is `text/plain; charset=utf-8`.  |
+| `bodyEncoding` | Optional. `"base64"` decodes `body` into bytes — an image, a PDF.                                          |
+
+A page:
+
+```typescript
+const req = JSON.parse(await Bun.stdin.text());
+const name = escapeHtml(req.query.name ?? "world");
+
+console.log(JSON.stringify({
+  headers: { "content-type": "text/html; charset=utf-8" },
+  body: `<h1>Hello ${name}</h1>`,
+}));
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+```
+
+A redirect:
+
+```typescript
+console.log(JSON.stringify({ status: 302, headers: { location: "https://example.com" }, body: "" }));
+```
+
+> **Escape what you echo.** A page that writes a query parameter, a header or the body back into HTML without escaping it lets anyone who sends a link run their script on your pages host. The host is kept apart from the Editor so that such a slip cannot reach your session — it still reaches your visitors.
+
+### What Is Refused
+
+The envelope is read strictly. A run that prints anything else is answered with a `502`, and the message names the rule broken — never what the function printed. Refused:
+
+- `stdout` that is not one JSON object, or that holds anything after it;
+- an unknown field: `{"ok": true}` is an ordinary result, not an empty page;
+- `body` missing or not a string, `status` not an integer between 200 and 599, a `bodyEncoding` other than `base64`, a `body` that is not valid base64;
+- a header the server sets itself: `content-length`, `transfer-encoding`, `connection`, `keep-alive`, `upgrade`, `te`, `trailer`;
+- a header name that is not a valid HTTP token, a value containing CR, LF or NUL, or the same header twice under two casings;
+- an output cut at the [capture limit](#when-the-output-is-too-big), whatever its shape: a truncated page is never served.
+
+The run is recorded as an `error` in the execution logs, and the server log says which rule was broken — and which field or header — next to the function's name.
+
+A few things are not refused, but do not do what you might expect:
+
+- **One value per header.** `headers` is flat, so a page sets one `set-cookie` at most.
+- **`204` and `304` carry no body.** Whatever `body` holds is dropped, as HTTP requires.
+- **`OPTIONS` never reaches the function.** A CORS preflight is answered by the server itself with `204`. A response to a cross-origin request carries `access-control-allow-origin: *`, which the function may override in its `headers` on a simple request.
+- **`HEAD`** runs the function like a `GET`; the body is dropped on the way out.
+
+### When It Fails
+
+The visitor is anyone, so a failure tells them nothing about the function:
+
+| Case                                                              | Status | Body                             |
+| ----------------------------------------------------------------- | ------ | -------------------------------- |
+| No such function, no active public route, or a malformed name     | 404    | `{"error":"not found"}`          |
+| Every execution slot taken                                        | 429    | a fixed message                  |
+| The function threw, exited non-zero, or its dependencies failed   | 500    | `{"error":"function failed"}`    |
+| The run passed 30 seconds                                         | 504    | `{"error":"function timed out"}` |
+| `stdout` is not a valid response envelope                         | 502    | the rule broken                  |
+
+A function without an active public route and a function that does not exist answer the same thing. What the function wrote to `stdout` and `stderr` is in the [execution logs](07-execution-logs.md), with `route` as the trigger.
 
 ## Handling Dependencies
 

@@ -9,16 +9,18 @@ export interface FaasboxTrigger {
   /** Max simultaneous executions (waiting + running). 0 means no limit. */
   maxQueue: number;
   /**
-   * Which deadline fires this trigger. Empty reads as 'cron' server-side, which
-   * is the shape a record written from the PocketBase admin carries.
+   * What this trigger is: a schedule, a run at startup, or a public route that
+   * serves the function at /f/ on the pages host. Empty reads as 'cron'
+   * server-side, which is the shape a record written from the PocketBase admin
+   * carries.
    */
-  kind: 'cron' | 'startup' | '';
+  kind: 'cron' | 'startup' | 'route' | '';
   /** On a startup trigger, how long after boot it fires. 0 to 1439. */
   startupDelayMinutes: number;
   /**
    * The IANA zone the cron expression is read in. Empty reads as 'UTC'
    * server-side, which is the shape a record written from the PocketBase admin
-   * carries. Ignored on a startup trigger.
+   * carries. Ignored on a startup trigger and on a route.
    */
   timezone: string;
   created: string;

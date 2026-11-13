@@ -16,6 +16,7 @@ export const DEMO_MODE_HINT = 'Disabled — this instance is a read-only demo';
 interface InstanceResponse {
   demoMode?: boolean;
   name?: string;
+  pagesUrl?: string;
   email?: string;
   password?: string;
 }
@@ -42,7 +43,12 @@ interface VersionResponse {
  * forbids being stored, so this call always reaches the server: the freshness is
  * the response's own doing, and nothing here has to ask for it.
  *
- * The build version is a third facet, read apart: it is served to a superuser
+ * Where the public pages are served is a third facet: the origin a function
+ * opened by a route is published on, or the empty string when the server
+ * serves none (no `FAASBOX_PAGES_URL`, or a showcase). The Triggers tab builds
+ * the public URL from it, and turns the route option off without it.
+ *
+ * The build version is a fourth facet, read apart: it is served to a superuser
  * only, so it cannot be in the answer read before sign-in.
  */
 @Injectable({ providedIn: 'root' })
@@ -51,12 +57,15 @@ export class InstanceService {
 
   private readonly demo = signal(false);
   private readonly instanceName = signal('');
+  private readonly pagesOrigin = signal('');
   private readonly email = signal('');
   private readonly password = signal('');
   private readonly buildVersion = signal('');
 
   readonly demoMode = this.demo.asReadonly();
   readonly name = this.instanceName.asReadonly();
+  /** The origin of the public pages, '' when the server serves none. */
+  readonly pagesUrl = this.pagesOrigin.asReadonly();
   readonly demoEmail = this.email.asReadonly();
   readonly demoPassword = this.password.asReadonly();
   /** The build that answers — a release tag such as 0.7.2, or dev. Empty until read. */
@@ -71,13 +80,16 @@ export class InstanceService {
    * live here — the server refuses whatever this says. Closing the editor on a
    * network hiccup would cost a working instance its editor and add nothing to
    * the safety. The name falls back to none for the same reason: an unnamed
-   * header is the state every instance was in before the variable existed.
+   * header is the state every instance was in before the variable existed, and
+   * a missing pages origin only greys an option out: whether /f/ answers is the
+   * server's decision, not this one's.
    */
   async load(): Promise<void> {
     try {
       const info = await firstValueFrom(this.http.get<InstanceResponse>(INSTANCE_URL));
       this.demo.set(info?.demoMode === true);
       this.instanceName.set(info?.name ?? '');
+      this.pagesOrigin.set(info?.pagesUrl ?? '');
       this.email.set(info?.email ?? '');
       this.password.set(info?.password ?? '');
     } catch (e) {

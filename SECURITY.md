@@ -30,12 +30,12 @@ FaaSBox is a **personal, single-user** platform. It is meant to be run by the sa
 - Bypassing API key authentication, or a key's scope, expiry, or revocation.
 - Escaping the intended file layout — path traversal, reading or writing outside a function's directory.
 - Disclosure of what the database keeps encrypted — environment variables, function code, triggers, execution output — or of API key material or the encryption key itself, through a response, a log record, or the editor.
-- Code execution reachable without a valid API key or a superuser session.
+- Code execution reachable without a valid API key or a superuser session — except on the public route `/f/{name}`, where the owner opened it on purpose for a function they published. On that route, these are in scope: running a function that carries no active public route, serving `/f/` on any host other than the one `FAASBOX_PAGES_URL` names, serving anything but `/f/` on that host, and any part of a function's stdout, stderr or execution error reaching a response.
 - Any bypass of the execution bounds (timeouts, body and output caps) that lets a request escape them entirely.
 
 **Out of scope** — the platform doing what it was built to do:
 
-- A function behaving maliciously. FaaSBox executes arbitrary TypeScript supplied by the instance owner, by design. Owner-authored code reading files, opening network connections, or consuming resources is the product working as intended, not a flaw.
+- A function behaving maliciously. FaaSBox executes arbitrary TypeScript supplied by the instance owner, by design. Owner-authored code reading files, opening network connections, or consuming resources is the product working as intended, not a flaw. The same goes for what a published page does to its own visitors: an XSS in a page the owner wrote is a bug in that page.
 - Anything that requires a superuser session, or a valid API key already scoped to the target function. Both already grant the capability being demonstrated.
 - Resource exhaustion caused by the owner's own functions. Each invocation is bounded, but the owner is free to spend their own instance's capacity.
 - The fact that a named function exists. `POST /invoke/{name}` answers `403` and names the function when it falls outside a key's scope, rather than hiding it behind a `404`. Only the *inventory* is withheld — `GET /functions` is filtered by scope. This is a documented, deliberate trade-off.

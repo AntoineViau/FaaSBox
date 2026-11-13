@@ -210,7 +210,8 @@ What you need to know before writing one:
    A trigger carries {"trigger":"cron"|"startup","triggerName","body"}, and
    triggerName is how a function wired on two schedules tells them apart. An
    invocation you ask for carries {"trigger":"mcp","body"} — there is no
-   request behind it, so nothing else is there to read.
+   request behind it, so nothing else is there to read. A request on a public
+   route carries the HTTP shape with "trigger":"route".
 
    Four headers never reach a function, whatever their casing: x-api-key,
    authorization, cookie and proxy-authorization. They authenticate the caller,
@@ -230,13 +231,18 @@ What you need to know before writing one:
    function with no dependencies at all until its "packageJson" is fixed.
 
 5. A trigger points at the function itself, so renaming it keeps it firing. It
-   comes in two kinds. A "cron" trigger carries a schedule of five fields:
+   comes in three kinds. A "cron" trigger carries a schedule of five fields:
    minute hour day-of-month month day-of-week. A "startup" trigger carries no
    schedule and fires once when the server comes up, "startupDelayMinutes"
    after it — 0 to 1439. A startup trigger is armed at boot and nowhere else:
    creating or changing one does not fire it, it waits for the next start.
    A cron expression is read in the timezone of its own trigger: "timezone"
    carries an IANA zone name such as "Europe/Paris", and omitting it means UTC.
+   A "route" trigger carries no schedule and **publishes** the function: anyone,
+   without a key, can then call it at /f/{idOrName} on the instance's pages host.
+   On that route stdout must be a response envelope — {"status","headers","body"},
+   "body" a string and required — or the caller gets a 502. Add one only when
+   the user asked for a public endpoint.
 
 6. Writes replace, they do not patch. update_function reads the function first
    and merges what you send onto what is stored, so a field you leave out is

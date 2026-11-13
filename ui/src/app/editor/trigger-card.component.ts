@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, input, output } from '@an
 
 import { CronHelpComponent } from '@/editor/cron-help.component';
 import { DEFAULT_SCHEDULE, describeSchedule } from '@/editor/cron-presets';
+import { RouteTriggerComponent } from '@/editor/route-trigger.component';
 import { TimezoneSelectComponent } from '@/editor/timezone-select.component';
 import { DEMO_MODE_HINT } from '@/instance/instance.service';
 import { ZardButtonComponent } from '@shared/components/button';
@@ -27,12 +28,11 @@ export interface TriggerRow {
   active: boolean;
   maxQueue: number;
   /**
-   * Which deadline fires this row. Held as the named discriminant the database
-   * stores rather than a boolean: the log's own trigger column is already a
-   * list of values, and a boolean would close the door on a fourth kind. The
-   * checkbox on screen is a rendering of it.
+   * What this row is: a schedule, a run at startup, or a public route that
+   * publishes the function. Held as the named discriminant the database stores;
+   * the three-way choice on screen is a rendering of it.
    */
-  kind: 'cron' | 'startup';
+  kind: 'cron' | 'startup' | 'route';
   /** On a startup row, how long after boot it fires. 0 to 1439. */
   startupDelayMinutes: number;
   /**
@@ -48,22 +48,30 @@ export interface TriggerRow {
  */
 export const MAX_STARTUP_DELAY_MINUTES = 1439;
 
+/** The three kinds, in the order the choice shows them. */
+const KINDS: readonly { kind: TriggerRow['kind']; label: string }[] = [
+  { kind: 'cron', label: 'Schedule' },
+  { kind: 'startup', label: 'At startup' },
+  { kind: 'route', label: 'Public route' },
+];
+
 /**
  * Presentational: it owns no state and writes nothing.
  *
- * Past the 300-line guideline, deliberately: the file renders the two kinds of
- * trigger in one card, and the overshoot is the second branch plus the comments
- * carrying the toggle constraints. The concerns that could be lifted out already
- * have been — the cron help and the timezone picker are components of their own,
- * and the preset table is a plain module. The next cut, if one is wanted, moves
- * the startup branch into a component beside them; splitting anything else would
- * separate a field from the row it edits.
+ * Past the 300-line guideline, deliberately: the file renders the three kinds of
+ * trigger in one card, and the overshoot is the startup branch plus the comments
+ * carrying the switch constraints. The concerns that could be lifted out already
+ * have been — the cron help, the timezone picker and the route branch are
+ * components of their own, and the preset table is a plain module. The next cut,
+ * if one is wanted, moves the startup branch beside them; splitting anything
+ * else would separate a field from the row it edits.
  */
 @Component({
   selector: 'app-trigger-card',
   standalone: true,
   imports: [
     CronHelpComponent,
+    RouteTriggerComponent,
     TimezoneSelectComponent,
     ZardButtonComponent,
     ZardIconComponent,
@@ -89,19 +97,36 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
             />
           </div>
 
-          <!-- Which deadline fires this trigger -->
-          <label class="flex w-fit cursor-pointer items-center gap-1.5">
-            <input
-              type="checkbox"
-              [checked]="isStartup()"
-              [disabled]="demoMode()"
-              (change)="onStartupToggle($any($event.target).checked)"
-              class="h-4 w-4 accent-primary"
-            />
-            <span class="text-xs text-muted-foreground">Startup trigger</span>
-          </label>
+          <!-- What this trigger is. The route option says on its face why it is
+               off: a title alone would not show on a touch screen. -->
+          <div class="flex flex-wrap gap-x-4 gap-y-1" role="radiogroup" aria-label="Kind">
+            @for (option of KINDS; track option.kind) {
+              <label class="flex w-fit cursor-pointer items-center gap-1.5">
+                <input
+                  type="radio"
+                  [name]="'kind-' + row().key"
+                  [checked]="row().kind === option.kind"
+                  [disabled]="demoMode() || (option.kind === 'route' && !pagesUrl())"
+                  (change)="onKind(option.kind)"
+                  class="h-4 w-4 accent-primary"
+                />
+                <span class="text-xs text-muted-foreground">
+                  {{ option.label }}
+                  @if (option.kind === 'route' && !pagesUrl()) {
+                    (off: no FAASBOX_PAGES_URL on this server)
+                  }
+                </span>
+              </label>
+            }
+          </div>
 
-          @if (isStartup()) {
+          @if (row().kind === 'route') {
+            <app-route-trigger
+              [functionName]="functionName()"
+              [pagesUrl]="pagesUrl()"
+              [active]="row().active"
+            />
+          } @else if (row().kind === 'startup') {
             <!-- Delay -->
             <div>
               <label class="mb-1 block text-xs text-muted-foreground">Run this long after startup</label>
@@ -169,6 +194,9 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
             </div>
           }
 
+          <!-- A route hands the function the request: payload and queue are
+               inert on it, and a field that does nothing is not shown. -->
+          @if (row().kind !== 'route') {
           <!-- Payload -->
           <div>
             <label class="mb-1 block text-xs text-muted-foreground">Payload (JSON)</label>
@@ -208,6 +236,7 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
               </p>
             </div>
           </details>
+          }
         </div>
 
         <!-- Right actions -->
@@ -244,6 +273,10 @@ export const MAX_STARTUP_DELAY_MINUTES = 1439;
 })
 export class TriggerCardComponent {
   readonly row = input.required<TriggerRow>();
+  /** The saved name of the function, which a route publishes under. */
+  readonly functionName = input.required<string>();
+  /** The origin of the public pages, or '' when the server serves none. */
+  readonly pagesUrl = input('');
   /** A showcase shows a trigger and closes every field and button that writes it. */
   readonly demoMode = input(false);
 
@@ -253,29 +286,28 @@ export class TriggerCardComponent {
 
   protected readonly describe = describeSchedule;
   protected readonly DEMO_MODE_HINT = DEMO_MODE_HINT;
-
-  /** The checkbox is a rendering of the discriminant, nothing more. */
-  protected readonly isStartup = computed(() => this.row().kind === 'startup');
+  protected readonly KINDS = KINDS;
   protected readonly delayHours = computed(() =>
     Math.floor(this.row().startupDelayMinutes / 60),
   );
   protected readonly delayMinutes = computed(() => this.row().startupDelayMinutes % 60);
 
   /**
-   * Emptying the schedule belongs to the toggle, not to the save. A row whose
+   * Emptying the schedule belongs to the switch, not to the save. A row whose
    * expression was typed before the switch would otherwise travel as a startup
-   * trigger carrying one, which the server refuses — and the user would read a
-   * 400 about a field no longer on screen.
+   * trigger or a route carrying one, which the server refuses — and the user
+   * would read a 400 about a field no longer on screen. Back to a schedule, the
+   * row gets the default expression rather than an empty one, which the server
+   * refuses as well.
    *
-   * The timezone is deliberately left alone: it is ignored on a startup trigger,
-   * not refused, so nothing has to be emptied for the save to go through.
+   * The timezone, the payload and the queue are deliberately left alone: they
+   * are ignored where they do not apply, not refused, so nothing has to be
+   * emptied for the save to go through.
    */
-  protected onStartupToggle(checked: boolean): void {
-    if (this.demoMode()) return;
+  protected onKind(kind: TriggerRow['kind']): void {
+    if (this.demoMode() || kind === this.row().kind) return;
     this.rowChange.emit(
-      checked
-        ? { kind: 'startup', schedule: '' }
-        : { kind: 'cron', schedule: DEFAULT_SCHEDULE },
+      kind === 'cron' ? { kind, schedule: DEFAULT_SCHEDULE } : { kind, schedule: '' },
     );
   }
 

@@ -77,8 +77,8 @@ func TestEnsureTriggersCollection(t *testing.T) {
 	if kind.MaxSelect != 1 {
 		t.Errorf("kind MaxSelect = %d, want 1", kind.MaxSelect)
 	}
-	if len(kind.Values) != 2 || kind.Values[0] != "cron" || kind.Values[1] != "startup" {
-		t.Errorf("kind values = %v, want [cron startup]", kind.Values)
+	if want := []string{"cron", "startup", "route"}; !slices.Equal(kind.Values, want) {
+		t.Errorf("kind values = %v, want %v", kind.Values, want)
 	}
 
 	// In the clear, like active, maxQueue and lastRunAt: a discriminant and a
@@ -212,9 +212,10 @@ func TestTriggerKind_EmptyReadsAsCron(t *testing.T) {
 	}
 }
 
-// TestValidateTriggerHook_ByKind covers the three rules the kind brings: a cron
+// TestValidateTriggerHook_ByKind covers the rules the kind brings: a cron
 // trigger needs an expression, a startup trigger must not carry one, and its
-// delay is a whole number of minutes within bounds.
+// delay is a whole number of minutes within bounds; a route carries no
+// expression either.
 func TestValidateTriggerHook_ByKind(t *testing.T) {
 	// Every case posts one record and reads the outcome off the status: what is
 	// under test is what the hook lets through, and the wording that comes back
@@ -272,6 +273,18 @@ func TestValidateTriggerHook_ByKind(t *testing.T) {
 			body:    `{"name":"edge","kind":"startup","startupDelayMinutes":1439,"function":"echofunction001","active":true}`,
 			status:  200,
 			content: []string{`"startupDelayMinutes":1439`},
+		},
+		{
+			name:    "route trigger carrying a schedule is refused",
+			body:    `{"name":"public","kind":"route","schedule":"0 * * * *","function":"echofunction001","active":true}`,
+			status:  400,
+			content: []string{`A public route carries no schedule`},
+		},
+		{
+			name:    "route trigger with no schedule goes through",
+			body:    `{"name":"public","kind":"route","function":"echofunction001","active":true}`,
+			status:  200,
+			content: []string{`"kind":"route"`},
 		},
 	}
 
