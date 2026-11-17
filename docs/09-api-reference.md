@@ -1,6 +1,6 @@
 # 09 - API Reference
 
-FaaSBox provides a set of HTTP endpoints for managing and invoking functions. All endpoints (except `/health`, `/api/faasbox/instance`, and the [public route](#14-public-route) `/f/{idOrName}` on the pages host) require authentication.
+FaaSBox provides a set of HTTP endpoints for managing and invoking functions. All endpoints (except `/health`, `/api/faasbox/instance`, the [agent guide](#15-agent-guide) `/llms.txt`, and the [public route](#14-public-route) `/f/{idOrName}` on the pages host) require authentication.
 
 ## Authentication
 Use the `X-API-Key` header with a valid API key.
@@ -449,7 +449,7 @@ The last one is a second barrier — `/oauth/authorize` already refuses to open 
 
 ### Ending an authorization
 
-From the **AI MCP** page of the editor, or by setting `status` to `revoked` on the `faasbox_oauth_grants` record. Either way it takes effect on the agent's **next call**: the authorization is read on every request, and there is no session to invalidate.
+From the **AI Agent** page of the editor, or by setting `status` to `revoked` on the `faasbox_oauth_grants` record. Either way it takes effect on the agent's **next call**: the authorization is read on every request, and there is no session to invalidate.
 
 ---
 
@@ -723,6 +723,24 @@ Every request that reaches a function is recorded in the [execution logs](07-exe
 
 ```bash
 curl -i https://pages.example.com/f/hello?name=Ada
+```
+
+---
+
+## 15. Agent Guide
+**Endpoint**: `GET /llms.txt`
+
+**No Authentication Required.**
+
+The guide an AI agent reads when it holds an API key but no MCP client — see [Without MCP](13-ai-agents.md#without-mcp-a-key-and-llmstxt). Markdown, served as `text/plain; charset=utf-8`, opening on the instance's title and a quoted summary, as the [llms.txt](https://llmstxt.org) proposal lays out.
+
+- **What it carries**: how to call this instance — the `X-API-Key` header, the `canManage` flag —, the routes of sections 1 to 4 with their bodies and the codes that matter, the contract for writing a function, and where this instance serves its [public pages](#14-public-route), or the fact that it serves none. The contract is the text the [MCP endpoint](#5-mcp-endpoint) hands a session, except for its last point: there, the tool merges what the agent left out; here, `PUT` replaces the whole function, and the guide says so.
+- **What it leaves out**: the server version, which is not public (see [Instance Version](#13-instance-version)), and any address taken from the request. Its paths are relative to wherever it was fetched from.
+- **Composed once, at startup**: it follows the version of the server answering, and the instance name and the pages host the server was started with.
+- **Where**: on every host but the pages host, which serves `/f/` and nothing else. A demo instance serves it too; nothing it describes can be written there.
+
+```bash
+curl https://your-instance/llms.txt
 ```
 
 ---

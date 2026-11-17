@@ -9,7 +9,7 @@ import {
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import { agentSnippets, KEY_PLACEHOLDER } from '@/agents/agent-snippets';
+import { agentSnippets, KEY_PLACEHOLDER, llmsGuideUrl, llmsPrompt } from '@/agents/agent-snippets';
 import { AgentsService } from '@/agents/agents.service';
 import { AuthorizedAgentsComponent } from '@/agents/authorized-agents.component';
 import { SnippetListComponent } from '@/agents/snippet-list.component';
@@ -25,20 +25,24 @@ import { ZardIconComponent } from '@shared/components/icon';
 /**
  * How to plug an AI agent into this instance, and which ones are plugged in.
  *
- * **Two ways to prove who is calling, so two panels, both closed.** Showing one
- * set of snippets and hiding the other behind a toggle asked the reader to
- * choose before they had been told what the choice was; showing both open at
- * once put eight snippets on screen and made the page look like it wanted eight
- * things done. Closed panels state the two options in one line each, and the
- * explanation of a way arrives with the snippets of that way — the reader opens
- * the one they mean to use, and reads only that.
+ * **Three ways in, so three panels, all closed.** Two go through MCP and differ
+ * by how the agent proves who it is; the third skips MCP altogether and hands
+ * the agent a prompt that sends it to `/llms.txt`. Showing one set of snippets
+ * and hiding the others behind a toggle asked the reader to choose before they
+ * had been told what the choice was; showing all of them open put nine snippets
+ * on screen and made the page look like it wanted nine things done. Closed
+ * panels state the options in one line each, and the explanation of a way
+ * arrives with the snippets of that way — the reader opens the one they mean to
+ * use, and reads only that. None opens on its own: even without the browser
+ * sign-in, two ways are left to choose from.
  *
  * The panels are `<details>` rather than a component: the project already opens
  * disclosures that way (the scope on the keys page, the cron help), and the
- * element carries the keyboard behaviour and the open state on its own.
+ * element carries the keyboard behaviour and the open state on its own. That
+ * choice is what puts this file past 300 lines, and it is kept on purpose.
  *
- * The real content of the page is neither panel but the warning each one
- * carries: whichever way an agent authenticates, it reaches the whole instance.
+ * The real content of the page is no panel but the warning each one carries:
+ * whichever way an agent comes in, it reaches the whole instance.
  */
 @Component({
   selector: 'app-agents',
@@ -61,7 +65,7 @@ import { ZardIconComponent } from '@shared/components/icon';
             <z-icon zType="arrow-left" class="h-4 w-4 md:mr-1.5" />
             <span class="max-md:sr-only">Functions</span>
           </a>
-          <h1 class="text-lg font-semibold">AI MCP</h1>
+          <h1 class="text-lg font-semibold">AI Agent</h1>
         </div>
         <div class="flex items-center gap-2">
           <app-account [demoMode]="demoMode()" />
@@ -94,8 +98,10 @@ import { ZardIconComponent } from '@shared/components/icon';
           >
           at <code class="font-mono text-foreground">{{ endpoint() }}</code
           >. An agent connected to it lists, reads, writes, runs and inspects the functions of this
-          instance, and is told how to write one when it connects. Pick how it should prove who it
-          is.
+          instance, and is told how to write one when it connects. An agent with no MCP client does
+          the same over plain HTTP with a key, once it has read
+          <code class="font-mono text-foreground">{{ guide() }}</code
+          >. Pick the way in.
         </p>
 
         @if (oauthAvailable() === null) {
@@ -135,12 +141,7 @@ import { ZardIconComponent } from '@shared/components/icon';
             </details>
           }
 
-          <!-- Open when it is the only way in: this instance has no public
-               address, so there is no choice to present and hiding the one
-               remaining option behind a click would be friction for nothing.
-               The binding is only ever evaluated once the probe has answered,
-               so it never overwrites a panel the reader already toggled. -->
-          <details class="mb-3 rounded-lg border border-border p-3" [open]="!oauthAvailable()">
+          <details class="mb-3 rounded-lg border border-border p-3">
             <summary
               class="cursor-pointer select-none text-sm font-semibold marker:text-muted-foreground"
             >
@@ -167,14 +168,58 @@ import { ZardIconComponent } from '@shared/components/icon';
                 of this way: it works without a browser, and nothing expires it but the date you
                 set.
                 @if (!oauthAvailable()) {
-                  It is the only way available here, since this instance was not told its own public
-                  address.
+                  Signing in from the agent is not available here, since this instance was not told
+                  its own public address.
                 }
               </p>
             </div>
 
             <div class="mt-3">
               <app-snippet-list [clients]="keyClients()" />
+            </div>
+          </details>
+
+          <details class="mb-3 rounded-lg border border-border p-3">
+            <summary
+              class="cursor-pointer select-none text-sm font-semibold marker:text-muted-foreground"
+            >
+              Use a key without MCP
+              <span class="ml-1 text-xs font-normal text-muted-foreground">
+                — nothing to configure, the agent reads /llms.txt
+              </span>
+            </summary>
+
+            <div class="mt-3 space-y-2 text-sm text-muted-foreground">
+              <p>
+                Nothing goes in your client's configuration: paste the prompt below into the
+                conversation, with <code class="font-mono text-foreground">{{ placeholder }}</code>
+                replaced. The agent reads
+                <code class="font-mono text-foreground">{{ guide() }}</code
+                >, which teaches it how to write a function and how to call this instance, then
+                works over plain HTTP. It takes an agent that can send a request with a header of
+                its own — Claude Code or Codex can, a web chat usually cannot.
+              </p>
+              <p>
+                The key is the same as for MCP —
+                <strong class="text-foreground">Can manage functions</strong>, an
+                <strong class="text-foreground">open scope</strong>, an expiry — created on the
+                <a routerLink="/keys" class="underline underline-offset-2 hover:text-foreground"
+                  >API keys</a
+                >
+                page, and it reaches <strong class="text-foreground">everything</strong>: reading,
+                writing, running and deleting every function of this instance, and reading their
+                execution history.
+              </p>
+              <p>
+                The trade of this way: the key goes
+                <strong class="text-foreground">into the conversation</strong>, and with it into
+                what is sent to the provider of the model and kept in your client's history. A key
+                in an MCP configuration stays in the client.
+              </p>
+            </div>
+
+            <div class="mt-3">
+              <app-snippet-list [clients]="llmsClients()" />
             </div>
           </details>
 
@@ -227,16 +272,18 @@ export class AgentsComponent implements OnInit {
    */
   protected readonly endpoint = computed(() => `${window.location.origin}/mcp`);
 
+  /** Where the guide for an agent with no MCP client is served, read the same way. */
+  protected readonly guide = computed(() => llmsGuideUrl(window.location.origin));
+
   /**
    * Whether this instance can authorize an agent at all — `null` until the
    * probe has answered.
    *
    * Three states rather than two, and the third is what keeps the page still.
-   * Starting at `false` meant the first paint showed the key panel open and no
-   * sign-in panel, then rearranged both the moment the probe came back; and
-   * since `open` is a binding, that second pass would overwrite a panel the
-   * reader had already toggled. Nothing below is rendered until the answer is
-   * in.
+   * Starting at `false` would paint the page without its sign-in panel, then
+   * insert one above the others the moment the probe came back — moving the
+   * panel the reader was about to open. Nothing below is rendered until the
+   * answer is in.
    */
   protected readonly oauthAvailable = signal<boolean | null>(null);
 
@@ -246,6 +293,7 @@ export class AgentsComponent implements OnInit {
   protected readonly keyClients = computed(() =>
     agentSnippets(this.endpoint(), true, this.instanceName()),
   );
+  protected readonly llmsClients = computed(() => [llmsPrompt(window.location.origin)]);
 
   protected readonly grants = signal<FaasboxOAuthGrant[]>([]);
   protected readonly isLoadingGrants = signal(false);

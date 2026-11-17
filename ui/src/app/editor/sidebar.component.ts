@@ -58,7 +58,7 @@ export function badgesOf(triggers: FaasboxTrigger[]): Map<string, FunctionBadges
         </a>
         <a z-button zType="ghost" zSize="sm" class="w-full justify-start" routerLink="/agents">
           <z-icon zType="sparkles" class="mr-1.5 h-4 w-4" />
-          AI MCP
+          AI Agent
         </a>
       </div>
       <div class="flex items-center justify-between border-b border-border px-3 py-2">

@@ -12,13 +12,16 @@ import (
 // This file mounts the MCP server: the transport, the per-request construction,
 // and the instructions a session receives before it calls anything. The seven
 // tools live in mcptools.go — their schemas and descriptions are a file's worth
-// on their own.
+// on their own — and the contract the instructions teach lives in
+// agentcontract.go, shared with the guide served at /llms.txt.
 //
 // It exists because the management API answers "how do I write a function" with
 // a list of endpoints and nothing else. An agent handed a URL and a key has to
 // be told the contract by its user at every session, and discovers the bounds by
 // hitting them. MCP is the protocol that closes exactly that gap: the server
 // declares its tools with their schemas, and the client reads them on connect.
+// The guide closes it for an agent with no MCP client (llms.go), at the price of
+// the guardrails below, which only a tool can apply.
 //
 // What is served here is a facade over manageops.go and invokeops.go, in the
 // same sense manage.go is: a transport. No tool touches the database. The only
@@ -131,7 +134,7 @@ func mcpHandler(app core.App, functionsDir, instanceName string, pages pagesConf
 // variable exists.
 //
 // The same composition is spelled once more in the frontend, which builds the
-// integration snippets of the AI MCP page (agent-snippets.ts). Two languages,
+// integration snippets of the AI Agent page (agent-snippets.ts). Two languages,
 // one rule, as deniedHeaders already is: the page has to show the name a client
 // would use, and it has nothing but the instance route to build it from.
 func mcpIdentity(instanceName string) (name, title string) {
@@ -160,122 +163,20 @@ func newMCPServer(app core.App, functionsDir string, allowed []string, cache *mc
 	return server
 }
 
-// mcpInstructionsFor is what a session receives: the writing contract, then
-// where this instance serves its public pages.
-//
-// The closing paragraph is not a seventh point. Like the instance's name in the
-// identity, it is a fact about this server rather than a rule of the contract:
-// an agent that publishes a function has to be able to tell the user where the
-// page is, and nothing else it can reach says so — the tools hand back /invoke
-// paths, and the instance route is not one of them. Without pages it says that
-// too, so the agent does not hand out an address that answers 404 — without
-// naming a cause: an empty origin covers an absent variable, a refused one and a
-// showcase alike, and only the startup line knows which.
+// mcpInstructionsFor is what a session receives at initialization, before the
+// first tool is called: the writing contract (agentcontract.go), the sixth point
+// as it holds over MCP, then where this instance serves its public pages.
 func mcpInstructionsFor(pages pagesConfig) string {
-	if pages.Origin == "" {
-		return mcpInstructions + `
-
-This instance serves no public page: the operator has public pages off, and
-the startup log of the server says why. A "route" trigger is stored but
-publishes nothing, and /f/ answers 404, until they are turned on. Say so rather
-than handing out an address.`
-	}
-	return mcpInstructions + `
-
-Public pages on this instance are served at ` + pages.Origin + `: a function
-published by a "route" trigger answers at ` + pages.Origin + `/f/{idOrName},
-and nowhere else. Give the user that address once you have published one.`
+	return writingContract + "\n\n" + mcpWritesReplace + "\n\n" + pagesParagraph(pages)
 }
 
-// mcpInstructions is the contract a session receives at initialization, before
-// the first tool is called. It carries the contract for writing a FaaSBox function, which
-// is written nowhere a machine receives without being handed it.
+// mcpWritesReplace is the sixth point of the contract on this transport.
 //
-// Distilled from docs/ — 03-writing-functions.md for the execution contract, the
-// naming rule, the caps and the folder each function writes into, 05-triggers.md
-// for the triggers, and 09-api-reference.md for what a write replaces. It lives
-// in the code rather than in a served file so what an agent receives follows the
-// version of the server serving it.
-//
-// Six points, and it stays at six. Everything else belongs to the description of
-// the tool it concerns, which arrives with that tool's schema; piling it up here
-// would make the whole thing unreadable for the agent as much as for us.
-const mcpInstructions = `FaaSBox runs short TypeScript/JavaScript functions on Bun. Each invocation is a
-separate subprocess, but not a stateless one: every function has a folder of its
-own on the server's disk, and what it writes there is still there on its next
-invocation. That is enough for a local database — bun:sqlite ships with Bun,
-with nothing to install:
-
-    import { Database } from "bun:sqlite";
-    const db = new Database(import.meta.dir + "/data.sqlite", { create: true });
-
-Build paths from import.meta.dir: the working directory is the root of all
-functions, not the function's own folder. Concurrent invocations are concurrent
-processes, so let SQLite do the locking. That folder is deleted with the
-function, and FaaSBox neither backs it up nor restores it: a host whose
-filesystem does not survive a redeployment starts it empty.
-
-These tools write, run and inspect those functions.
-
-What you need to know before writing one:
-
-1. Execution contract. stdin carries an **envelope** describing the call, the
-   result is JSON on stdout, and stderr is captured as diagnostics. A working
-   skeleton:
-
-       const req = JSON.parse(await Bun.stdin.text());
-       const data = JSON.parse(req.body || "{}");
-       console.error("diagnostics go to stderr");
-       console.log(JSON.stringify({ ok: true, data }));
-
-   "body" is always a **string**, carrying what was sent byte for byte — never a
-   parsed object. That is what makes a webhook signature verifiable and what
-   lets a function be handed text, XML or a form-encoded payload; parse it
-   yourself when you expect JSON, as the second line above does.
-
-   The rest of the envelope follows the trigger. An HTTP call carries
-   {"trigger":"http","method","path","query","headers","body"}, with header
-   names lowercased and a repeated header or query parameter joined by ", ".
-   A trigger carries {"trigger":"cron"|"startup","triggerName","body"}, and
-   triggerName is how a function wired on two schedules tells them apart. An
-   invocation you ask for carries {"trigger":"mcp","body"} — there is no
-   request behind it, so nothing else is there to read. A request on a public
-   route carries the HTTP shape with "trigger":"route".
-
-   Four headers never reach a function, whatever their casing: x-api-key,
-   authorization, cookie and proxy-authorization. They authenticate the caller,
-   and a function is never told who called with what credential.
-
-2. Naming. Letters, digits and hyphens, starting and ending with a letter or a
-   digit, 64 characters at most. This is refused at save time, not merely
-   recommended: a name outside the rule is a 400 and nothing is written.
-
-3. Size. "script" and "packageJson" are capped at 1048576 characters each, and
-   the secrets of one function at roughly 75 KB of plaintext.
-
-4. Dependencies install in the background, after the write returns. The
-   "depsStatus" a write hands back is therefore not the end of the install: read
-   the function again to follow it, or simply invoke it — an invocation waits for
-   a pending install rather than failing. An install that fails leaves the
-   function with no dependencies at all until its "packageJson" is fixed.
-
-5. A trigger points at the function itself, so renaming it keeps it firing. It
-   comes in three kinds. A "cron" trigger carries a schedule of five fields:
-   minute hour day-of-month month day-of-week. A "startup" trigger carries no
-   schedule and fires once when the server comes up, "startupDelayMinutes"
-   after it — 0 to 1439. A startup trigger is armed at boot and nowhere else:
-   creating or changing one does not fire it, it waits for the next start.
-   A cron expression is read in the timezone of its own trigger: "timezone"
-   carries an IANA zone name such as "Europe/Paris", and omitting it means UTC.
-   A "route" trigger carries no schedule and **publishes** the function: anyone,
-   without a key, can then call it at /f/{idOrName} on the instance's pages host.
-   On that route stdout must be a response envelope — {"status","headers","body"},
-   "body" a string and required — or the caller gets a 502. Add one only when
-   the user asked for a public endpoint.
-
-6. Writes replace, they do not patch. update_function reads the function first
+// update_function reads the function first and merges, so what an agent leaves
+// out survives; what it still has to be told is that an explicit empty value is
+// an instruction, and that plainEnv sent empty is the one that cannot be undone.
+const mcpWritesReplace = `6. Writes replace, they do not patch. update_function reads the function first
    and merges what you send onto what is stored, so a field you leave out is
    preserved — but a field you send as an empty string does clear it, and
    "plainEnv" sent as an empty object deletes every secret of the function.
-   Leave "plainEnv" out unless you mean to rewrite the whole set.
-`
+   Leave "plainEnv" out unless you mean to rewrite the whole set.`

@@ -333,12 +333,16 @@ func registerFaaSRoutes(app *tests.TestApp, e *core.ServeEvent, functionsDir str
 
 // registerFaaSRoutesFor is registerFaaSRoutes with the OAuth footing, the
 // instance name and the pages chosen — the first the way main.go hands it to
-// the /mcp group alone, the other two the way it hands them to the same handler.
+// the /mcp group alone, the other two the way it hands them to /mcp and to the
+// guide at /llms.txt.
 func registerFaaSRoutesFor(app *tests.TestApp, e *core.ServeEvent, functionsDir string, oauth oauthConfig, instanceName string, pages pagesConfig) {
 	// Health check (public)
 	e.Router.GET("/health", func(re *core.RequestEvent) error {
 		return re.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
+
+	// The guide an agent reads with nothing but a key (public)
+	e.Router.GET("/llms.txt", llmsTxtHandler(instanceName, pages))
 
 	// Routes protected by API key
 	faas := e.Router.Group("")

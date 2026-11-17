@@ -16,6 +16,10 @@
  * The key is a placeholder, for the reason the invoke banner gives: a key's
  * value is only ever shown at creation, so the editor has nothing real to put
  * there.
+ *
+ * A third way needs no client configuration at all: a prompt pasted into the
+ * conversation, sending the agent to the guide the server publishes at
+ * `/llms.txt` (`llmsPrompt` below).
  */
 export type AgentClient = {
   readonly id: string;
@@ -31,6 +35,36 @@ export const KEY_PLACEHOLDER = 'fbx_your_key_here';
 
 /** The header name the key travels in, spelled once. */
 const KEY_HEADER = 'X-API-Key';
+
+/**
+ * Where this instance publishes the guide an agent reads when it has no MCP
+ * client — the writing contract and the HTTP API, served by `llms.go`.
+ */
+export function llmsGuideUrl(origin: string): string {
+  return `${origin}/llms.txt`;
+}
+
+/**
+ * The prompt that plugs in an agent without any configuration: read the guide,
+ * then send the key on every request.
+ *
+ * It carries the absolute address because the guide does not: the server
+ * writes no origin read off a request, so its paths are relative to wherever
+ * the agent fetched it — and this prompt is where the agent learns that.
+ *
+ * One entry in the shape of the others, so the page shows it with the same
+ * card and the same copy button.
+ */
+export function llmsPrompt(origin: string): AgentClient {
+  return {
+    id: 'llms-prompt',
+    name: 'Any agent that can send HTTP requests',
+    target: 'paste it into the conversation',
+    snippet:
+      `Read ${llmsGuideUrl(origin)} and follow it to work with my FaaSBox instance at ${origin}.\n` +
+      `Send this header on every request: ${KEY_HEADER}: ${KEY_PLACEHOLDER}`,
+  };
+}
 
 /**
  * What the client calls this server, given the name of the instance.

@@ -113,11 +113,13 @@ The simplest way in is a click. There is no secret to copy anywhere:
 claude mcp add --transport http faasbox https://your-instance/mcp
 ```
 
-Authenticate from the agent and a browser opens on this editor: it names the agent, says what authorizing hands over, and waits for your click. FaaSBox is its own OAuth 2.1 authorization server, so nothing else is involved — it only has to know its own address, which is what `FAASBOX_PUBLIC_URL` tells it. You cut the agent off later from the same **AI MCP** page.
+Authenticate from the agent and a browser opens on this editor: it names the agent, says what authorizing hands over, and waits for your click. FaaSBox is its own OAuth 2.1 authorization server, so nothing else is involved — it only has to know its own address, which is what `FAASBOX_PUBLIC_URL` tells it. You cut the agent off later from the same **AI Agent** page.
 
-The other way in is an API key carrying **Can manage functions**, sent in an `X-API-Key` header. That is the shape for a non-interactive integration, and the only one on an instance that does not publish its address. The **AI MCP** page of the editor carries the ready-made snippet for each client — Claude Code, Codex, OpenCode and the generic shape — for both ways.
+The other way in is an API key carrying **Can manage functions**, sent in an `X-API-Key` header. That is the shape for a non-interactive integration, and the only one on an instance that does not publish its address. The **AI Agent** page of the editor carries the ready-made snippet for each client — Claude Code, Codex, OpenCode and the generic shape — for both ways.
 
-**They grant the same thing**: every function of the instance, read and write, and its execution history. Read [13 - AI Agents](docs/13-ai-agents.md) before you hand out either.
+An agent with no MCP client needs no configuration at all: paste the same key into the conversation, with a prompt that sends it to `/llms.txt` — the guide the instance serves, carrying the contract and the routes. The **AI Agent** page carries that prompt too.
+
+**They grant the same thing**: every function of the instance, read and write, and its execution history. Read [13 - AI Agents](docs/13-ai-agents.md) before you hand out any of them.
 
 ---
 

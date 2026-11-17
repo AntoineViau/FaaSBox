@@ -67,7 +67,7 @@ export const routes: Routes = [
     path: 'agents',
     component: AgentsComponent,
     canActivate: [authGuard],
-    title: 'FaaSBox - AI MCP',
+    title: 'FaaSBox - AI Agent',
   },
   {
     // Where /oauth/authorize sends the browser. Not a path the server claims -

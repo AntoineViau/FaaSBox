@@ -48,9 +48,10 @@ agents. What it stops:
   below cannot refuse by its method. Public routes are displayed, as not served.
 
 An **AI agent cannot connect** to a demo instance, neither by API key nor by
-OAuth: every MCP message is a `POST`. The **AI MCP** page still displays the
+OAuth: every MCP message is a `POST`. The **AI Agent** page still displays the
 endpoint, the configuration snippets and the agents authorized before the
-freeze — the showcase shows the feature, it does not serve it.
+freeze, and `/llms.txt` is still served — the showcase shows the feature, it
+does not serve it.
 
 ## How the read-only rule works
 

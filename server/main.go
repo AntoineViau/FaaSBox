@@ -194,6 +194,12 @@ func main() {
 			// header shows beside the wordmark, and where the public pages are.
 			e.Router.GET("/api/faasbox/instance", instanceHandler(demo, instanceName, pages))
 
+			// The guide an agent reads when all it holds is a key (public,
+			// both modes): the writing contract and the HTTP API, closing on
+			// where the public pages are. The pages host never serves it — the
+			// gate above leaves nothing but /f/ there.
+			e.Router.GET("/llms.txt", llmsTxtHandler(instanceName, pages))
+
 			// Routes protected by API key
 			faas := e.Router.Group("")
 			faas.Bind(requireAPIKey(e.App, apiKeysOnly))

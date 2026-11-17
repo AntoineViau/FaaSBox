@@ -23,8 +23,8 @@ There are two credentials on this instance, and they are not interchangeable.
 | Where it works | every FaaS endpoint | [`/mcp`](13-ai-agents.md) only |
 | Reach | a scope you choose, and `canManage` if you tick it | everything, always |
 | How long | forever, or the expiry you set | ninety days, renewed on use |
-| How you end it | uncheck **Active**, or delete the key | **Revoke** on the AI MCP page |
-| Where you manage it | the **API keys** page | the **AI MCP** page |
+| How you end it | uncheck **Active**, or delete the key | **Revoke** on the AI Agent page |
+| Where you manage it | the **API keys** page | the **AI Agent** page |
 
 **A token does not restrict.** There is no selector on the consent screen: authorizing an agent grants it every function of the instance, read and write, exactly as an unscoped key carrying `canManage` would. The screen says so in words before you click. Everything under [Management Keys](#management-keys) about what that costs applies unchanged.
 
@@ -34,7 +34,7 @@ Tokens only exist if `FAASBOX_PUBLIC_URL` is set. Without it, the key is the onl
 
 ## API Key Management
 
-Access to all FaaS endpoints (except `/health`, and the public route of a function you published) is restricted by API keys.
+Access to all FaaS endpoints (except `/health`, the [agent guide](09-api-reference.md#15-agent-guide) at `/llms.txt`, and the public route of a function you published) is restricted by API keys.
 
 ### Creating a Key
 
@@ -139,7 +139,7 @@ The page also lets you narrow or widen the scope of a key that already exists, w
 
 Deleting a **function** does not touch the keys scoped to it: their list keeps an id that now designates nothing, which grants nothing. Tidying it is a matter of hygiene, not of security.
 
-**Agents are revoked elsewhere.** An authorized agent holds no key and does not appear on this page: it is listed, with its dates and its **Revoke** button, on the **AI MCP** page. Revoking one takes effect on its next call, same as here.
+**Agents are revoked elsewhere.** An authorized agent holds no key and does not appear on this page: it is listed, with its dates and its **Revoke** button, on the **AI Agent** page. Revoking one takes effect on its next call, same as here.
 
 ---
 

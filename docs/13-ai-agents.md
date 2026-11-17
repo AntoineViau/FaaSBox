@@ -2,11 +2,13 @@
 
 FaaSBox speaks [MCP](https://modelcontextprotocol.io) — the Model Context Protocol — at `POST /mcp`. An agent connected to that endpoint can list, read, write, run and inspect the functions of your instance, and is handed the contract for writing one the moment it connects.
 
-That last part is the point. The [management API](09-api-reference.md#3-manage-functions) already lets a program write a function with an API key, but it says nothing about *how* a FaaSBox function is written: an agent pointed at it has to be taught the contract by you, at every session, and finds the limits by hitting them. The MCP server declares its tools with their schemas and its instructions with the contract, so "here is a URL and a key, work it out" becomes "write me a function that emails me every morning".
+That last part is the point. The [management API](09-api-reference.md#3-manage-functions) already lets a program write a function with an API key, but its routes say nothing about *how* a FaaSBox function is written: an agent pointed at them alone has to be taught the contract by you, at every session, and finds the limits by hitting them. The MCP server declares its tools with their schemas and its instructions with the contract, so "here is a URL and a key, work it out" becomes "write me a function that emails me every morning".
+
+An agent with no MCP client gets the same contract another way: the instance serves it at `GET /llms.txt`, together with the routes, and a prompt sends the agent there — see [Without MCP](#without-mcp-a-key-and-llmstxt).
 
 ## Two Ways In, and They Grant the Same Thing
 
-An agent proves who it is in one of two ways.
+Over MCP, an agent proves who it is in one of two ways. The [third way in](#without-mcp-a-key-and-llmstxt), without MCP, uses the same key as the second and grants the same thing.
 
 **By clicking Authorize.** You paste a URL into your client, run its authentication command, and a browser opens on this editor: it names the agent, says what authorizing hands over, and waits for your click. No secret is pasted anywhere, and you can cut the agent off later from the same page. This is the intended path.
 
@@ -16,15 +18,15 @@ An agent proves who it is in one of two ways.
 >
 > There is no narrower grant today. A token carries no selector — the consent screen has nothing to tick, and says so. A key *can* be scoped, but a scoped key **creates nothing**: there is no way to compare a scope against a function that does not exist yet, so an agent that has to create functions holds a key that reaches all of them.
 >
-> Treat losing either as you would treat losing a shell on the machine. Revoke the agent from the **AI MCP** page, or the key from the [API keys](06-api-keys-and-security.md) page, and start over.
+> Treat losing either as you would treat losing a shell on the machine. Revoke the agent from the **AI Agent** page, or the key from the [API keys](06-api-keys-and-security.md) page, and start over.
 
 If you go the key route, create it from the **API keys** page of the editor: tick **Can manage functions**, leave the scope on **All functions**, set an expiry — the form proposes 30 days as soon as you tick the box — and copy the value. It is shown once and never again.
 
 ## Connecting
 
-The editor has an **AI MCP** page, in the sidebar under **API keys**. It opens on the two ways in, each behind a closed panel — *Signin from your agent* and *Use an API key*. Open the one you mean to use: it explains that way, and carries the snippet for each client with the address of *this* instance already in it. Copy it, and you are done. Nothing there needs composing by hand.
+The editor has an **AI Agent** page, in the sidebar under **API keys**. It opens on the three ways in, each behind a closed panel — *Signin from your agent*, *Use an API key* and *Use a key without MCP*. Open the one you mean to use: it explains that way, and carries the snippet for each client with the address of *this* instance already in it. Copy it, and you are done. Nothing there needs composing by hand.
 
-On an instance with no `FAASBOX_PUBLIC_URL` the first panel is absent and the second is already open, since there is no choice left to make.
+On an instance with no `FAASBOX_PUBLIC_URL` the first panel is absent. The other two are still there, closed: there is still a choice to make.
 
 The snippets below name the server `faasbox`, which is what an unnamed instance is called. Set [`FAASBOX_NAME`](04-environment-variables.md#server-configuration-variables) and the page hands you `faasbox-<name>` instead — that is how you plug two boxes into the same agent without the second overwriting the first. The page always shows the right one; these examples are the unnamed case.
 
@@ -126,9 +128,31 @@ http_headers = { "X-API-Key" = "fbx_your_key_here" }
 
 A key and a token presented together is not an error: the key is what the request is weighed on, and the token is ignored.
 
+## Without MCP: a Key and `/llms.txt`
+
+An agent with no MCP client — or one you would rather not configure — can work the same functions over the plain [management API](09-api-reference.md#3-manage-functions). What it lacks is the contract, and the instance serves it: `GET /llms.txt` is a guide written for an agent, public, carrying the contract for writing a function — the same text an MCP session receives when it connects —, the routes with their bodies and their traps, and where this instance serves its public pages. Its name follows the [llms.txt](https://llmstxt.org) proposal, a convention for a Markdown file an agent knows to read.
+
+Nothing goes in a configuration file. The *Use a key without MCP* panel of the **AI Agent** page hands you a prompt with this instance's address in it:
+
+```text
+Read https://your-instance/llms.txt and follow it to work with my FaaSBox instance at https://your-instance.
+Send this header on every request: X-API-Key: fbx_your_key_here
+```
+
+Replace the placeholder with a key created exactly as for MCP — **Can manage functions**, scope on **All functions**, an expiry — and paste the prompt into the conversation. It takes an agent that can send an HTTP request with a header of its own: Claude Code or Codex can, by running `curl`; a web chat usually cannot.
+
+Two things differ from MCP, and both are worth knowing before you pick this way:
+
+- **The key goes into the conversation.** It becomes part of what your client sends to the provider of the model, and of the history it keeps. A key in an MCP configuration file stays in the client.
+- **Nothing merges for the agent.** `update_function` reads a function and merges what the agent sent onto it; `PUT` replaces it whole. The guide tells the agent to read the function first and send the whole object back, and spells out that `plainEnv` and `triggers` replace their whole set when sent — a `plainEnv` carrying one new variable deletes every other secret, which the agent cannot read back — but that protection is a sentence the agent read, not code that runs. Look at what it changed.
+
+What the key reaches does not change: everything a `canManage` key with an open scope reaches, nothing more — see [What It Cannot Do](#what-it-cannot-do).
+
+The guide writes no address of its own: its paths are relative to wherever the agent fetched it from, which is why the prompt carries the address. It does not carry the server's version either, since anyone can read it. See [09 - API Reference](09-api-reference.md#15-agent-guide) for the route.
+
 ## Cutting an Agent Off
 
-The **AI MCP** page lists every agent that authorized itself: the name it registered under, the day you approved it, and the day its access expires on its own. **Revoke** ends one.
+The **AI Agent** page lists every agent that authorized itself: the name it registered under, the day you approved it, and the day its access expires on its own. **Revoke** ends one.
 
 It takes effect on the agent's **next call** — there is no session to wait out — and it is final: the agent has to go through the consent screen again. An authorization also dies on its own after ninety days without use, and a token it renews with is refused for good if it is ever replayed, which is how a stolen configuration file announces itself.
 
@@ -189,4 +213,4 @@ The MCP server is exactly as wide as a `canManage` key with an open scope, no wi
 | `403 API key scope cannot be read` | The `allowedFunctions` field of the key was hand-edited into something that is not a list of ids. Fix it in the PocketBase admin, or create another key. |
 | The agent connects but creating fails | The key has a restricted scope. A scoped key changes what it names and creates nothing. |
 | The agent never opens a browser | The instance has no usable `FAASBOX_PUBLIC_URL` — unset, or set to something refused, a value with no `http://` or `https://` in front being the usual one — so it publishes no authorization server and its `401` carries no signpost. Use a key, or fix the variable; the startup log names the reason. |
-| The agent worked yesterday and now gets `401` | Its authorization was revoked — from the **AI MCP** page, or by the server itself after a token was replayed. Authenticate again.  |
+| The agent worked yesterday and now gets `401` | Its authorization was revoked — from the **AI Agent** page, or by the server itself after a token was replayed. Authenticate again.  |

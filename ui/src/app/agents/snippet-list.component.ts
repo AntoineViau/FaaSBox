@@ -8,9 +8,9 @@ import { ZardIconComponent } from '@shared/components/icon';
  * One integration snippet per client, each with a button that copies it.
  *
  * A component rather than markup repeated in the page, because the page shows
- * two of these — one per way of authenticating — and the "Copied" confirmation
- * has to be per card. Two instances hold two independent signals, so the same
- * client id appearing in both lists cannot light up the wrong card.
+ * three of these — one per way in — and the "Copied" confirmation has to be per
+ * card. Each instance holds its own signal, so the same client id appearing in
+ * two lists cannot light up the wrong card.
  */
 @Component({
   selector: 'app-snippet-list',
